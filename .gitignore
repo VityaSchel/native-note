@@ -1,0 +1,51 @@
+.DS_Store
+*.swp
+*~
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.mobileprovision
+
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+xcuserdata/
+*.moved-aside
+.swiftpm/
+Packages/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Build outputs and release artifacts
+releases/
+*.app
+*.dmg
+*.pkg
+*.tar.gz
+*.zip
+
+# Coverage
+lcov.info
+*.profraw
+*.profdata
+coverage/
+
+# Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
