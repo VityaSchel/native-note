@@ -1,0 +1,1 @@
+# TODO: Getting started with Native Note

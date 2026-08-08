@@ -3,10 +3,12 @@
 ## Layout
 
 ```
-docs/              architecture, plan, decisions, threat model
-spec/              protocol spec + language-neutral conformance vectors
-server/            Rust workspace: native-note-core, native-note-server
-clients/macos/     Xcode project
+docs/              cross-cutting design, sync protocol, roadmap
+spec/vectors/      language-neutral conformance vectors
+spec/generator/    Rust tool that generates and verifies them
+server/            Cargo project, docs in its root
+clients/           shared client design, one directory per platform
+clients/macos/     Xcode project, docs in its root
 ```
 
 ## Build and test
@@ -37,13 +39,13 @@ cargo audit
 
 ### macOS client
 
-Open `clients/macos/NativeNote.xcodeproj` in Xcode 26.2 or newer. Requires macOS 26.0.
+Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer. Requires macOS 26.0.
 
 ### Conformance vectors
 
 ```sh
-cd spec/reference
-cargo test                    # verify the reference reproduces every vector
+cd spec/generator
+cargo test                    # verify the generator reproduces every vector
 cargo run --bin gen-vectors   # regenerate after an intentional protocol change
 ```
 
@@ -55,7 +57,7 @@ The generator is deterministic, salts, nonces, and keys are fixed. Regenerating 
 
 **No pre-release dependencies.** No release candidates, no betas, no git dependencies. Pin exact versions.
 
-**Adding a dependency to the server needs a written justification** in `docs/DECISIONS.md`.
+**Adding a dependency to the server needs a written justification** in [server/ARCHITECTURE.md](server/DESIGN.md).
 
 **Every claim in the README and docs must match the code.** A documentation claim the code does not support is treated as a defect.
 
@@ -71,7 +73,7 @@ The generator is deterministic, salts, nonces, and keys are fixed. Regenerating 
 
 ## Security work
 
-Read [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) before touching crypto, key storage, or the request path.
+Read [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) before touching crypto, key storage, or the request path.
 
 Never log secrets or plaintext. The server wraps key material in a `Secret<T>` whose `Debug` prints `[redacted]`.
 

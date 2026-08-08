@@ -20,21 +20,14 @@ In scope:
 - Memory-safety or parsing faults in the server's request path.
 - Data loss or corruption under crash, power loss, or concurrent writes.
 
-Out of scope — these are documented non-goals, not oversights. See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md):
-
-- Attacks requiring code execution as the user on an unlocked machine.
-- Compromise of a device that already holds the content key.
-- Traffic analysis over plain HTTP (request timing, counts, and sizes). Deploy behind TLS to close this.
-- Denial of service against a self-hosted instance.
-- Secure erasure guarantees on SSD or copy-on-write filesystems.
-- Loss of both the recovery mnemonic and every device. This is unrecoverable by design.
+Out of scope: the documented non-goals in [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model). They are boundaries, not oversights.
 
 ## Design
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — key hierarchy, encryption, transport, recovery.
-- [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) — adversaries, guarantees, explicit non-goals.
-- [docs/DECISIONS.md](docs/DECISIONS.md) — what was rejected and why.
-- `spec/` — the wire and crypto specification, plus conformance vectors every client must reproduce.
+- [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) — adversaries, guarantees, explicit non-goals.
+- [docs/PROTOCOL.md](docs/PROTOCOL.md) — keys, note encryption, transport, recovery.
+- `spec/vectors/` — conformance vectors every client must reproduce.
 
 Claims in the README and these documents are verified against the code before each release. If you find a claim that the code does not support, report it as a vulnerability.
 
@@ -42,4 +35,4 @@ Claims in the README and these documents are verified against the code before ea
 
 No custom primitives. AES-256-GCM, HKDF-SHA256, HMAC-SHA256, and Argon2id, taken from platform crypto where available.
 
-The server has two direct dependencies, twelve runtime crates. Client dependencies are limited to platform frameworks plus a vendored Argon2 reference implementation whose source hash is verified in CI.
+The server has two direct dependencies, twelve runtime crates. Client dependencies are limited to platform frameworks plus vendored Argon2 and SQLCipher, both hash-pinned and verified in CI.
