@@ -36,7 +36,7 @@ The unlock screen shows a "Unlock with Touch ID" button beside the password fiel
 ```json
 {
   "version": 1,
-  "localSalt": "<16 bytes, base64>",
+  "localSalt": "<16 bytes, hex>",
   "argon": { "m": 262144, "t": 3, "p": 4 },
   "rounds": 140
 }
