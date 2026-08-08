@@ -10,8 +10,8 @@ Local durable save happens every ~300 ms debounce, no `v` bump
 CREATE TABLE note (
     uuid      BLOB PRIMARY KEY NOT NULL,
     body      TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL,
     deleted   INTEGER NOT NULL DEFAULT 0,
     dirty     INTEGER NOT NULL DEFAULT 0,
     v         INTEGER NOT NULL DEFAULT 0,
@@ -21,7 +21,7 @@ CREATE VIRTUAL TABLE note_fts USING fts5(body, content=note);
 CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 ```
 
-Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
+Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
 
 ### Local DB encryption
 
@@ -84,13 +84,23 @@ Only applicable for when server and e2ee sync are configured. [Recovery key](../
 
 Three forms of recovery credential:
 
-- QR code with Recovery key (32 bytes), server URL (text), API key (32 bytes)
-- Saved file with Recovery key (32 bytes), server URL (text), API key (32 bytes)
-- 24 words mnemonic with server URL and API key presented separately. BIP39 encoding, English wordlist. The checksum is only reliable for a UI check, a real check is GCM verification.
+- QR code carrying the pairing credential as raw bytes, in QR byte mode
+- Saved file carrying the same 64 bytes verbatim
+- 24 words mnemonic, BIP39 encoding, English wordlist, with the API key presented separately as hex. The checksum is only reliable for a UI check, a real check is GCM verification.
+
+QR code and saved file carry the pairing credential. No `v` field, checksum is closed by GCM verification.
+
+```
+apiKey(32) ‖ recoveryKey(32)
+```
+
+Mnemonic carries the Recovery key alone:
 
 ```
 256-bit entropy + 8-bit checksum = 264 bits ÷ 11 bits/word = 24 words
 ```
+
+Server URL is not encoded in either.
 
 **Setup:**
 1. Fetch `contentKeyEncrypted` from the server and pull `v` from its metadata, if it exists
@@ -105,9 +115,10 @@ Three forms of recovery credential:
 
 **Restore:**
 1. Offer three ways to input recovery credential:
-   For QR codes: allow to use native in-app camera intent with QR scanner capability; allow to choose an image from gallery or filesystem via native APIs to scan QR code off it
-   For saved file: offer to securely choose a file with native filesystem dialog
-   For mnemonic: 24 word inputs with paste-across, wordlist autofill, and immediate checksum validation; server URL and API key entered on the same screen
+   For QR codes: native in-app camera scan, or choosing an image from the gallery or filesystem. Read the raw bytes, never a decoded string.
+   For saved file: native filesystem dialog.
+   For mnemonic: 24 word inputs with paste-across, wordlist autofill, and immediate checksum validation; API key entered as hex on the same screen.
+   Every path also asks for the server URL, which is not part of the credential.
 2. Authenticate with the API key and fetch `contentKeyEncrypted` from the server URL
 3. Decrypt Content key with Recovery key
 4. Start pulling all notes from `seq = 0` into memory, implement reasonable fail gate on Content key validity
@@ -134,10 +145,12 @@ The prompt never blocks the sync queue; other notes keep syncing. Retries use ex
 ## Exports
 
 ```
-salt      = 128-bit random
-exportKey = Argon2id(passphrase, salt, argonParams, 32)
-file      = "NNEXPORT1" ‖ argonParams ‖ salt ‖ nonce ‖ ciphertext ‖ tag
-            # AES-256-GCM(exportKey, zipBytes), aad = "NNEXPORT1" ‖ argonParams ‖ salt
+salt        = 128-bit random
+argonParams = m_be32 ‖ t_be32 ‖ p_be32
+exportKey   = Argon2id(passphrase, salt, argonParams, 32)
+header      = "NNEXPORT1" ‖ argonParams ‖ salt
+file        = header ‖ nonce ‖ ciphertext ‖ tag
+              # AES-256-GCM(exportKey, zipBytes, aad: header)
 ```
 
 The parameters travel in the header because the recipient has only the passphrase.
