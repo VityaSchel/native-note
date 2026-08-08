@@ -1,0 +1,33 @@
+{
+	"cases": [
+		{
+			"count": 2048,
+			"first": "abandon",
+			"last": "zoo",
+			"name": "wordlist",
+			"sha256": "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
+		},
+		{
+			"decodes": true,
+			"entropy": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"mnemonic": "doctor anxiety move mass federal casual cancel citizen ensure give fatal pact agree powder essence melt film river bind regret remind concert just welcome",
+			"name": "roundTrip"
+		},
+		{
+			"decodes": false,
+			"mnemonic": "anxiety doctor move mass federal casual cancel citizen ensure give fatal pact agree powder essence melt film river bind regret remind concert just welcome",
+			"name": "rejectBadChecksum"
+		},
+		{
+			"decodes": false,
+			"mnemonic": "doctor anxiety move mass federal casual cancel citizen ensure give fatal pact agree powder essence melt film river bind regret remind concert just",
+			"name": "rejectWrongWordCount"
+		},
+		{
+			"decodes": false,
+			"mnemonic": "notaword anxiety move mass federal casual cancel citizen ensure give fatal pact agree powder essence melt film river bind regret remind concert just welcome",
+			"name": "rejectUnknownWord"
+		}
+	],
+	"description": "BIP39 encoding of 256-bit entropy: 24 words, 8-bit checksum. Encoding only, never BIP39 seed derivation."
+}

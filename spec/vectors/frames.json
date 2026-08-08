@@ -1,0 +1,88 @@
+{
+	"cases": [
+		{
+			"encoded": "01000000000000000000000000",
+			"length": 13,
+			"name": "syncEmpty",
+			"roundTrips": true
+		},
+		{
+			"encoded": "01000000000000000700000001101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6f0000000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7",
+			"length": 78,
+			"name": "syncOneWrite",
+			"roundTrips": true
+		},
+		{
+			"encoded": "02",
+			"length": 1,
+			"name": "getRecovery",
+			"roundTrips": true
+		},
+		{
+			"encoded": "03000000020000003ce0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b",
+			"length": 69,
+			"name": "putRecovery",
+			"roundTrips": true
+		},
+		{
+			"encoded": "0100000001101112131415161718191a1b1c1d1e1f0100000001000000000000000100000000000000000000000100",
+			"length": 47,
+			"name": "syncAccepted",
+			"roundTrips": true
+		},
+		{
+			"encoded": "0100000001101112131415161718191a1b1c1d1e1f0200000001000000000000000000000000000000000000000100",
+			"length": 47,
+			"name": "syncConflict",
+			"roundTrips": true
+		},
+		{
+			"encoded": "010000000000000001101112131415161718191a1b1c1d1e1f00000002606162636465666768696a6b6c6d6e6f0000000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7000000000000000401",
+			"length": 83,
+			"name": "syncChanges",
+			"roundTrips": true
+		},
+		{
+			"encoded": "030100000003",
+			"length": 6,
+			"name": "putRecovery",
+			"roundTrips": true
+		},
+		{
+			"decodes": false,
+			"encoded": "7f000000000000000700000001101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6f0000000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7",
+			"error": "UnknownDiscriminant",
+			"matches": true,
+			"name": "rejectUnknownAction"
+		},
+		{
+			"decodes": false,
+			"encoded": "01000000000000000700000001101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6f0200000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7",
+			"error": "NotCanonical",
+			"matches": true,
+			"name": "rejectNonCanonicalBool"
+		},
+		{
+			"decodes": false,
+			"encoded": "010000000000000007ffffffff101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6f0000000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7",
+			"error": "Truncated",
+			"matches": true,
+			"name": "rejectImpossibleCount"
+		},
+		{
+			"decodes": false,
+			"encoded": "01000000000000000700000001101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6f0000000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e700",
+			"error": "TrailingBytes",
+			"matches": true,
+			"name": "rejectTrailingBytes"
+		},
+		{
+			"decodes": false,
+			"encoded": "0100000001101112131415161718191a1b1c1d1e1f0200000001000000000000000000000900000000000000000100",
+			"error": "NotCanonical",
+			"matches": false,
+			"name": "rejectSeqOnNonAcceptedResult"
+		}
+	],
+	"description": "Request and response frames. Fixed-width big-endian fields, length-prefixed byte strings, exactly one valid encoding per message."
+}

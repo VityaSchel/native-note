@@ -1,0 +1,95 @@
+{
+	"cases": [
+		{
+			"device": "A",
+			"explains": "First write of a new note. storedV is 0, so v = 1 is accepted.",
+			"outcome": {
+				"changes": 0,
+				"results": [
+					{
+						"seq": 1,
+						"status": "accepted",
+						"v": 1
+					}
+				]
+			},
+			"request": "0100000000000000000000000126003e292636ef34989a58f4e431b0fb000000016162636465666768696a6b6c6d6e6f70000000004e9192939495969798999a9b9c1a02d309b22dae838a84bb139bc7fbc60984c748e598a9294f734d4e64edc2346004636e0f55a0b23197a299e7e8d9b6e459be58686594ab78af47e391d74e8e83c3",
+			"response": "010000000126003e292636ef34989a58f4e431b0fb0100000001000000000000000100000000000000000000000100",
+			"step": 1
+		},
+		{
+			"device": "B",
+			"explains": "B was offline and also produced v = 1. storedV is already 1, so the write is rejected and the server's current v is returned with seq 0.",
+			"outcome": {
+				"changes": 0,
+				"results": [
+					{
+						"seq": 0,
+						"status": "conflict",
+						"v": 1
+					}
+				]
+			},
+			"request": "0100000000000000000000000126003e292636ef34989a58f4e431b0fb00000001b1b2b3b4b5b6b7b8b9babbbcbdbebfc0000000004ee1e2e3e4e5e6e7e8e9eaebec1b54f67ce2d9187fc7e7849bfe44695dae1450035ca3be9bc22be660e24072eeb6d1cbcb7d06b7bc306b8fa0db619fd93469ac698dbec6477ff63512908dd0f56b63",
+			"response": "010000000126003e292636ef34989a58f4e431b0fb0200000001000000000000000000000000000000000000000100",
+			"step": 2
+		},
+		{
+			"device": "B",
+			"explains": "B pulls to see what it conflicted with. A's version arrives in memory; B's own version is still only on disk.",
+			"outcome": {
+				"changes": 1,
+				"results": []
+			},
+			"request": "01000000000000000000000000",
+			"response": "01000000000000000126003e292636ef34989a58f4e431b0fb000000016162636465666768696a6b6c6d6e6f70000000004e9192939495969798999a9b9c1a02d309b22dae838a84bb139bc7fbc60984c748e598a9294f734d4e64edc2346004636e0f55a0b23197a299e7e8d9b6e459be58686594ab78af47e391d74e8e83c3000000000000000100",
+			"step": 3
+		},
+		{
+			"device": "B",
+			"explains": "B resolves keep-mine: discard the in-memory server version and re-push at serverV + 1.",
+			"outcome": {
+				"changes": 0,
+				"results": [
+					{
+						"seq": 2,
+						"status": "accepted",
+						"v": 2
+					}
+				]
+			},
+			"request": "0100000000000000010000000126003e292636ef34989a58f4e431b0fb00000002b2b3b4b5b6b7b8b9babbbcbdbebfc0c1000000004ee2e3e4e5e6e7e8e9eaebecedf152e574ebfb9a5651335c84b587a06d7bfb04c61326ac5613a128c4d8e0837ce701f882de883b90419a75c1b639c36da08fa5081390b93c426b1a3d4c9e4876c1c0",
+			"response": "010000000126003e292636ef34989a58f4e431b0fb0100000002000000000000000200000000000000000000000200",
+			"step": 4
+		},
+		{
+			"device": "A",
+			"explains": "A pulls from the seq it last saw and converges on B's version.",
+			"outcome": {
+				"changes": 1,
+				"results": []
+			},
+			"request": "01000000000000000100000000",
+			"response": "01000000000000000126003e292636ef34989a58f4e431b0fb00000002b2b3b4b5b6b7b8b9babbbcbdbebfc0c1000000004ee2e3e4e5e6e7e8e9eaebecedf152e574ebfb9a5651335c84b587a06d7bfb04c61326ac5613a128c4d8e0837ce701f882de883b90419a75c1b639c36da08fa5081390b93c426b1a3d4c9e4876c1c0000000000000000200",
+			"step": 5
+		},
+		{
+			"device": "A",
+			"explains": "Deletion is an ordinary write at v + 1 carrying a sealed tombstone, so a forged delete fails to decrypt.",
+			"outcome": {
+				"changes": 0,
+				"results": [
+					{
+						"seq": 3,
+						"status": "accepted",
+						"v": 3
+					}
+				]
+			},
+			"request": "0100000000000000020000000126003e292636ef34989a58f4e431b0fb00000003636465666768696a6b6c6d6e6f7071720100000036939495969798999a9b9c9d9ee6343878b60e6a10f6f07d987f94ea9e6a172533529acaf9f1531848aecf80deb275300fa4799c969382",
+			"response": "010000000126003e292636ef34989a58f4e431b0fb0100000003000000000000000300000000000000000000000300",
+			"step": 6
+		}
+	],
+	"description": "End-to-end sync: concurrent v = 1 writes, conflict, keep-mine resolution, convergence, tombstone. Envelope framing is covered by envelope.json."
+}

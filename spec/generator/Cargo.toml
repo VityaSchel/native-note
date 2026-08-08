@@ -1,0 +1,23 @@
+[package]
+name = "native-note-vectors"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "Generates and verifies the language-neutral conformance vectors in spec/vectors."
+
+[lib]
+name = "native_note_vectors"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gen-vectors"
+path = "src/bin/gen_vectors.rs"
+
+[dependencies]
+aes-gcm = "=0.11.0"
+argon2 = "=0.5.3"
+hkdf = "=0.13.0"
+hmac = "=0.13.0"
+serde_json = "=1.0.151"
+sha2 = "=0.11.0"

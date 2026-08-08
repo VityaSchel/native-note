@@ -1,0 +1,77 @@
+{
+	"cases": [
+		{
+			"innerLength": 0,
+			"lengthPrefix": "00000000",
+			"name": "inner0",
+			"paddedLength": 256,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 251,
+			"lengthPrefix": "000000fb",
+			"name": "inner251",
+			"paddedLength": 256,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 252,
+			"lengthPrefix": "000000fc",
+			"name": "inner252",
+			"paddedLength": 256,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 253,
+			"lengthPrefix": "000000fd",
+			"name": "inner253",
+			"paddedLength": 512,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 507,
+			"lengthPrefix": "000001fb",
+			"name": "inner507",
+			"paddedLength": 512,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 508,
+			"lengthPrefix": "000001fc",
+			"name": "inner508",
+			"paddedLength": 512,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 509,
+			"lengthPrefix": "000001fd",
+			"name": "inner509",
+			"paddedLength": 1024,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 1020,
+			"lengthPrefix": "000003fc",
+			"name": "inner1020",
+			"paddedLength": 1024,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 1021,
+			"lengthPrefix": "000003fd",
+			"name": "inner1021",
+			"paddedLength": 2048,
+			"roundTrips": true
+		},
+		{
+			"name": "rejectNonBucketLength",
+			"paddedLength": 128,
+			"unpads": false
+		},
+		{
+			"name": "rejectNonZeroFill",
+			"unpads": false
+		}
+	],
+	"description": "padded = len_be32 ‖ inner ‖ zero fill, to the next doubling bucket from 256 B."
+}

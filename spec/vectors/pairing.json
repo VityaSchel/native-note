@@ -1,0 +1,23 @@
+{
+	"cases": [
+		{
+			"apiKey": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+			"blob": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"length": 64,
+			"name": "blob",
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"splits": true
+		},
+		{
+			"length": 63,
+			"name": "rejectShort",
+			"splits": false
+		},
+		{
+			"length": 65,
+			"name": "rejectLong",
+			"splits": false
+		}
+	],
+	"description": "Pairing credential: apiKey ‖ recoveryKey, exactly 64 raw bytes. No version field — the length discriminates. No server URL: it is public, and migrating servers must not invalidate the credential."
+}

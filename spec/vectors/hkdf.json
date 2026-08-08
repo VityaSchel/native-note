@@ -1,0 +1,54 @@
+{
+	"cases": [
+		{
+			"ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+			"info": "native-note/envelope/v1",
+			"length": 32,
+			"name": "envelopeKey",
+			"okm": "7ed56c30992d62a451e18d2bd43e1b6756bbceba6e801c38bebb4902f894fb76",
+			"salt": null
+		},
+		{
+			"ikm": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"info": "native-note/id-blind/v1",
+			"length": 32,
+			"name": "blindingKey",
+			"okm": "a7c06b50199f6ff08e2129fd21a41c0abf6e50a8365a5d43bb65a7f9caa99fe4",
+			"salt": null
+		},
+		{
+			"ikm": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"info": "native-note/note/v1",
+			"length": 32,
+			"name": "noteKey",
+			"okm": "df9961fc4eaee326099e28181d65242fa478c29bd7d19350f549df731b96da0d",
+			"salt": "606162636465666768696a6b6c6d6e6f"
+		},
+		{
+			"ikm": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+			"info": "native-note/machine-chain/v1/seed",
+			"length": 32,
+			"name": "chainSeed",
+			"okm": "f031e8b2e990dd1987067598c83784f61e7c65f702db4743aef4632c8148e596",
+			"salt": null
+		},
+		{
+			"ikm": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+			"info": "native-note/machine-chain/v1/out",
+			"length": 32,
+			"name": "chainOut",
+			"okm": "4d8a9ebafeca0c632e4c269c41c4ba784572a8ec20ccc5e467a9eec02a62c28c",
+			"salt": null
+		},
+		{
+			"argonOut": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+			"info": "native-note/localdb/v1",
+			"length": 32,
+			"machineId": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+			"name": "localDbKey",
+			"okm": "7109e93e1e74f41dd11152d6c0a840deb039a03e172737f83da930bf1a141913",
+			"salt": "808182838485868788898a8b8c8d8e8f"
+		}
+	],
+	"description": "HKDF-SHA256 derivations for every info label in the protocol."
+}

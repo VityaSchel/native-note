@@ -1,0 +1,22 @@
+{
+	"cases": [
+		{
+			"blindingKey": "a7c06b50199f6ff08e2129fd21a41c0abf6e50a8365a5d43bb65a7f9caa99fe4",
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"name": "blindingKey"
+		},
+		{
+			"blindedId": "26003e292636ef34989a58f4e431b0fb",
+			"name": "uuid",
+			"uuid": "0b8f1d2e-3a4b-4c5d-8e9f-001122334455",
+			"uuidBytes": "0b8f1d2e3a4b4c5d8e9f001122334455"
+		},
+		{
+			"blindedId": "187c8cd7df97ceb02094f043d4a8ade9",
+			"name": "uuidOneBitApart",
+			"uuid": "0b8f1d2e-3a4b-4c5d-8e9f-001122334454",
+			"uuidBytes": "0b8f1d2e3a4b4c5d8e9f001122334454"
+		}
+	],
+	"description": "blindedId = HMAC-SHA256(blindingKey, uuid) truncated to 16 bytes."
+}

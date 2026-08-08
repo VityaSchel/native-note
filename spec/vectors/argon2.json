@@ -1,0 +1,15 @@
+{
+	"cases": [
+		{
+			"length": 32,
+			"m": 1024,
+			"name": "argon2id",
+			"output": "23fed16e2b29221c74586ef9beb344b36a28aeaa61ea5f868a7bad711a8ae373",
+			"p": 1,
+			"password": "correct horse battery staple",
+			"salt": "808182838485868788898a8b8c8d8e8f",
+			"t": 1
+		}
+	],
+	"description": "Argon2id at fixed low-cost parameters. Production parameters are calibrated per device; these pin the algorithm only."
+}

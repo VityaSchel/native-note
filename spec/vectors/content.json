@@ -1,0 +1,90 @@
+{
+	"cases": [
+		{
+			"content": {
+				"body": "Groceries\nmilk\nbread",
+				"createdAt": 1786183200000,
+				"kind": "note",
+				"updatedAt": 1786183500000,
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e00000001447726f6365726965730a6d696c6b0a6272656164",
+			"length": 58,
+			"name": "note",
+			"roundTrips": true
+		},
+		{
+			"content": {
+				"deletedAt": 1786186800000,
+				"kind": "tombstone",
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"encoded": "01020b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b80",
+			"length": 26,
+			"name": "tombstone",
+			"roundTrips": true
+		},
+		{
+			"content": {
+				"body": "Ünïcode — 日本語 🔐",
+				"createdAt": 1786183200000,
+				"kind": "note",
+				"updatedAt": 1786183500000,
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e00000001cc39c6ec3af636f646520e2809420e697a5e69cace8aa9e20f09f9490",
+			"length": 66,
+			"name": "nonAscii",
+			"roundTrips": true
+		},
+		{
+			"content": {
+				"body": "",
+				"createdAt": 1786183200000,
+				"kind": "note",
+				"updatedAt": 1786183500000,
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e000000000",
+			"length": 38,
+			"name": "emptyBody",
+			"roundTrips": true
+		},
+		{
+			"decodes": false,
+			"encoded": "02020b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b80",
+			"error": "UnknownDiscriminant",
+			"matches": true,
+			"name": "rejectUnknownVersion"
+		},
+		{
+			"decodes": false,
+			"encoded": "017f0b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b80",
+			"error": "UnknownDiscriminant",
+			"matches": true,
+			"name": "rejectUnknownKind"
+		},
+		{
+			"decodes": false,
+			"encoded": "01020b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b8000",
+			"error": "TrailingBytes",
+			"matches": true,
+			"name": "rejectTrailingBytes"
+		},
+		{
+			"decodes": false,
+			"encoded": "01020b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b",
+			"error": "Truncated",
+			"matches": true,
+			"name": "rejectTruncated"
+		},
+		{
+			"decodes": false,
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e000000001ff",
+			"error": "NotCanonical",
+			"matches": true,
+			"name": "rejectInvalidUtf8"
+		}
+	],
+	"description": "Note content: version ‖ kind ‖ fields. Timestamps are epoch milliseconds; the body is length-prefixed UTF-8."
+}

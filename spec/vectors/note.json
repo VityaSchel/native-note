@@ -1,0 +1,60 @@
+{
+	"cases": [
+		{
+			"aad": "26003e292636ef34989a58f4e431b0fb00000001606162636465666768696a6b6c6d6e6f",
+			"blindedId": "26003e292636ef34989a58f4e431b0fb",
+			"content": {
+				"body": "Groceries\nmilk\nbread",
+				"createdAt": 1786183200000,
+				"kind": "note",
+				"updatedAt": 1786183500000,
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"name": "note",
+			"nonce": "707172737475767778797a7b",
+			"opensUnderWrongVersion": false,
+			"payload": "707172737475767778797a7b91e5bc6b48f94df2b889526b4407f40a59443a59c8014d808a94105df7e7230d6e15ef5cc4b5466e9792e2afd5b00dece9e227b89b8b3a2b51be1a9dd4e363c18d81fd57f3d28a826aa2",
+			"plaintext": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e00000001447726f6365726965730a6d696c6b0a6272656164",
+			"roundTrips": true,
+			"v": 1,
+			"writeId": "606162636465666768696a6b6c6d6e6f"
+		},
+		{
+			"aad": "26003e292636ef34989a58f4e431b0fb00000002606162636465666768696a6b6c6d6e6f",
+			"blindedId": "26003e292636ef34989a58f4e431b0fb",
+			"content": {
+				"deletedAt": 1786186800000,
+				"kind": "tombstone",
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"name": "tombstone",
+			"nonce": "707172737475767778797a7b",
+			"opensUnderWrongVersion": false,
+			"payload": "707172737475767778797a7b91e6bc6b48f94df2b889526b4407f40a59443a59c8014c57bc148dff669c67ff44dc246bcf641ddf203e",
+			"plaintext": "01020b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b80",
+			"roundTrips": true,
+			"v": 2,
+			"writeId": "606162636465666768696a6b6c6d6e6f"
+		},
+		{
+			"aad": "26003e292636ef34989a58f4e431b0fb00000003606162636465666768696a6b6c6d6e6f",
+			"blindedId": "26003e292636ef34989a58f4e431b0fb",
+			"content": {
+				"body": "Ünïcode — 日本語 🔐",
+				"createdAt": 1786183200000,
+				"kind": "note",
+				"updatedAt": 1786183500000,
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"name": "nonAscii",
+			"nonce": "707172737475767778797a7b",
+			"opensUnderWrongVersion": false,
+			"payload": "707172737475767778797a7b91e5bc6b48f94df2b889526b4407f40a59443a59c8014d808a94105df7e7230d6e15ef5cc4bdc280963228bed3b11bc6660bdff3777eeda8ac76a2f1dad4ec6e79090f0d4e7b52a1d51fd1bc300886499bd2",
+			"plaintext": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e00000001cc39c6ec3af636f646520e2809420e697a5e69cace8aa9e20f09f9490",
+			"roundTrips": true,
+			"v": 3,
+			"writeId": "606162636465666768696a6b6c6d6e6f"
+		}
+	],
+	"description": "Note payloads. The key is derived per write from writeId; the AAD binds blindedId, v and writeId, so a payload will not open at another version."
+}
