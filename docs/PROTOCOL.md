@@ -20,7 +20,9 @@ Stored on the server in encrypted form to allow recovery. Server never learns it
 
 ### Recovery key
 
-Encrypts Content key to store securely on the server. 32 secure random bytes generated during server setup (client-side).
+Encrypts Content key to store securely on the server.
+
+32 secure random bytes generated during server setup (client-side). Serialized as 24 BIP39 words for humans, or as a lowercase 64-character hex string like the API key.
 
 ```
 contentKeyEncrypted = AES-256-GCM(recoveryKey, e2eeContentKey)
@@ -29,6 +31,8 @@ contentKeyEncrypted = AES-256-GCM(recoveryKey, e2eeContentKey)
 Clients never persist the recovery key, user is responsible for storing it securely. Clients pin the last-seen `v` and report an unexpected advance to prevent racing overwrite.
 
 ## Notes
+
+Clients render the first line of `body` as the title.
 
 Note store request, visible to the server:
 
@@ -49,36 +53,38 @@ noteKey = HKDF-SHA256(e2eeContentKey, salt: writeId, info: "native-note/note/v1"
 payload = AES-256-GCM(noteKey, content, aad: blindedId ‖ v_be32 ‖ writeId)
 ```
 
-Content is canonical JSON.
+Content is the binary layout below.
 
 ### Content
 
-End-to-end encrypted with Content key. Opaque to server. Fields:
+End-to-end encrypted with the Content key, opaque to the server. Fixed binary layout, big-endian:
 
-- `uuid` — note's UUID
+```
+version(1) = 0x01
+kind(1)
+  0x01 note        uuid(16) ‖ createdAt_be64 ‖ updatedAt_be64 ‖ bodyLen_be32 ‖ body
+  0x02 tombstone   uuid(16) ‖ deletedAt_be64
+```
 
-Additionally, for new note version only:
+Timestamps are epoch milliseconds as signed 64-bit. `body` is UTF-8.
 
-- `body` - note's content. There is no `title` field — clients render the first line of `body` as the title
-- `createdAt` - date
-- `updatedAt` - date
+`version` is separate from the frame's version byte. An unknown `version` or `kind` is rejected.
 
-Additionally, for tombstone only:
+## Binary encoding
 
-- `deletedAt` — date
+Everything inside the envelope is fixed-layout binary.
 
-## Canonical encoding
+Rules, applied uniformly so that every message has exactly one valid encoding:
 
-Mandatory for every client, or deterministic vectors are impossible:
+- Integers are unsigned big-endian at their stated width, except timestamps which are signed.
+- Variable-length fields are `len_be32 ‖ bytes`. Arrays are `count_be32 ‖ item*`.
+- Booleans are `0x00` or `0x01`. Any other value is rejected.
+- Enum discriminants are one byte. Unknown values are rejected.
+- A message must consume its buffer exactly. Trailing bytes are rejected.
 
-- Compact UTF-8 JSON, no insignificant whitespace.
-- Keys sorted by Unicode code point.
-- Absent optionals omitted, never `null`.
-- Timestamps RFC 3339 with `Z`, no offsets.
-- Binary values (`blindedId`, `writeId`, `payload`, `blob`) as standard base64 (RFC 4648 §4) with padding. Encoders emit canonical form; decoders reject anything else.
-- `seq` is a JSON number and stays below 2^53 (unreachable in practice).
+Decoders must be total: bounds-check every read, never allocate from a length or count before it has been checked against the remaining input, and return an error rather than panicking.
 
-### Ordering
+## Ordering
 
 The server assigns a monotonic `seq` to every accepted write; clients pull `since=seq`. It is an application counter the server maintains, incremented inside the same transaction as the write it stamps, strictly increasing, never reused, and never reassigned to an earlier value. Clients echo it back as-is. List ordering and date grouping are computed locally by `updatedAt`.
 
@@ -97,7 +103,7 @@ response =           nonce ‖ ciphertext ‖ tag    # AES-256-GCM(envelopeKey, 
 
 ### Padding
 
-`padded = len_be32 ‖ innerJSON ‖ zero fill` to the next bucket. Buckets double from 256 B up to the request body limit. Both directions pad before sealing, so neither request nor response length leaks more than a bucket.
+`padded = len_be32 ‖ inner ‖ zero fill` to the next bucket. Buckets double from 256 B up to the request body limit. Both directions pad before sealing, so neither request nor response length leaks more than a bucket.
 
 ## API
 
@@ -117,52 +123,52 @@ Every action is sealed under `envelopeKey`. There is no server-side device enrol
 
 Every outcome is a field inside the sealed response. Responses are padded to size buckets before sealing.
 
+Each action is one byte, and it is echoed in the response.
+
+| `action` | Byte | Purpose                               |
+| -------- | ---- | ------------------------------------- |
+| `sync`   | 0x01 | Push writes, pull since `seq`         |
+| `get`    | 0x02 | Read `contentKeyEncrypted`            |
+| `put`    | 0x03 | Store or rotate `contentKeyEncrypted` |
+
 #### Action `sync`
 
-Push writes, pull since `seq`
-
 ```
-sync request   { "action": "sync", "since": seq,
-                 "writes": [ { blindedId, v, writeId, deleted, payload } ] }
+request    0x01 ‖ since_be64 ‖ writeCount_be32 ‖ write*
+write      blindedId(16) ‖ v_be32 ‖ writeId(16) ‖ deleted(1) ‖ payloadLen_be32 ‖ payload
 
-sync response  { "results": [ { blindedId, status, v, seq } ],
-                 "changes": [ { blindedId, v, writeId, deleted, payload } ],
-                 "nextSeq": seq, "more": bool }
+response   0x01 ‖ resultCount_be32 ‖ result*
+                ‖ changeCount_be32 ‖ change*
+                ‖ nextSeq_be64 ‖ more(1)
+result     blindedId(16) ‖ status(1) ‖ v_be32 ‖ seq_be64
+change     same layout as write
 ```
 
-`results` carries one entry per submitted write. **`v` and `seq` must be echoed** — without them the client cannot advance and every later write conflicts.
+`results` carries one entry per submitted write, in the order submitted. **`v` and `seq` must be echoed** — without them the client cannot advance and every later write conflicts.
 
-| `status`    | Description                                              |
-| ----------- | -------------------------------------------------------- |
-| `accepted`  | Stored. `v` and `seq` are the values now on the server   |
-| `conflict`  | `v != storedV + 1`. `v` is the server's current version  |
-| `too_large` | Payload over the configured note limit                   |
-| `exhausted` | `v` is at `u32::MAX`; the note accepts no further writes |
-| `quota`     | Storage limit reached                                    |
+| `status`    | Byte | Description                                              |
+| ----------- | ---- | -------------------------------------------------------- |
+| `accepted`  | 0x01 | Stored. `v` and `seq` are the values now on the server   |
+| `conflict`  | 0x02 | `v != storedV + 1`. `v` is the server's current version  |
+| `too_large` | 0x03 | Payload over the configured note limit                   |
+| `exhausted` | 0x04 | `v` is at `u32::MAX`; the note accepts no further writes |
+| `quota`     | 0x05 | Storage limit reached                                    |
+
+`seq` is `0` on every status except `accepted`, and a non-zero `seq` alongside another status is rejected.
 
 `more` is set when `changes` was truncated by the response size limit; the client pulls again from `nextSeq`.
 
-#### Action `get_recovery_blob`
-
-Read `contentKeyEncrypted`
+#### Actions `get` and `put`
 
 ```
-get_recovery_blob request   { "action": "get_recovery_blob" }
+get request    0x02
+get response   0x02 ‖ v_be32 ‖ blobLen_be32 ‖ blob
 
-get_recovery_blob response  { "blob": bytes, "v": u32 }
+put request    0x03 ‖ v_be32 ‖ blobLen_be32 ‖ blob
+put response   0x03 ‖ status(1) ‖ v_be32
 ```
 
-#### Action `put_recovery_blob`
-
-Write `contentKeyEncrypted`
-
-```
-put_recovery_blob request   { "action": "put_recovery_blob", "v": u32, "blob": bytes }
-
-put_recovery_blob response  { "status": "accepted" | "conflict" }
-```
-
-A `put` follows the same `v == storedV + 1` rule as notes. On `conflict` the client should report that the recovery phrase was rotated on another device.
+A `put` follows the same `v == storedV + 1` rule as notes. On `conflict` the client reports that the recovery phrase was rotated on another device.
 
 ## HKDF label registry
 

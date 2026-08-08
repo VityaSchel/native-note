@@ -27,7 +27,7 @@ Out of scope: the documented non-goals in [docs/ARCHITECTURE.md § Threat model]
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — key hierarchy, encryption, transport, recovery.
 - [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) — adversaries, guarantees, explicit non-goals.
 - [docs/PROTOCOL.md](docs/PROTOCOL.md) — keys, note encryption, transport, recovery.
-- `spec/vectors/` — conformance vectors every client must reproduce.
+- [spec/README.md](spec/README.md) — conformance vectors every client must reproduce.
 
 Claims in the README and these documents are verified against the code before each release. If you find a claim that the code does not support, report it as a vulnerability.
 

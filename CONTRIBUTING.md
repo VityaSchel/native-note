@@ -6,6 +6,7 @@
 docs/              cross-cutting design, sync protocol, roadmap
 spec/vectors/      language-neutral conformance vectors
 spec/generator/    Rust tool that generates and verifies them
+spec/wordlists/    BIP39 wordlists, pinned by hash
 server/            Cargo project, docs in its root
 clients/           shared client design, one directory per platform
 clients/macos/     Xcode project, docs in its root
@@ -42,6 +43,8 @@ cargo audit
 Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer. Requires macOS 26.0.
 
 ### Conformance vectors
+
+Format and per-file contents: [spec/README.md](spec/README.md).
 
 ```sh
 cd spec/generator

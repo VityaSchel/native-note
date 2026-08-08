@@ -8,8 +8,12 @@
   - Not IETF ChaCha20-Poly1305: less hardware acceleration support, not available in Android Keystore
 - **Password KDF**: Argon2id, vendored, client only
   - Not PBKDF2: Crackable on GPUs for users without secure enclave
+- **Protocol format:** fixed-layout binary
+  - Not JSON: base64 is ~133% of binary and needs a parser
+  - Not CBOR or MessagePack: not natively available
+  - Fixed layout removes canonicalization as a rule to follow
 - **Transport envelope:** HKDF-SHA256 (RFC 5869) into AES-256-GCM, `nonce ‖ ciphertext ‖ tag`
-  - Not JWE: ~33% base64 overhead on 1 MiB notes, and JOSE's algorithm-agility pitfalls
+  - Not JWE: JOSE's algorithm-agility pitfalls, on top of the base64 cost
   - Not libsodium `secretbox`: not platform-native anywhere
   - Not HPKE PSK mode: absent on Android, which ships Base mode only
 - **Note nonce:** Per-write key from random `writeId`, plus random nonce
@@ -23,7 +27,7 @@
 | [Server](../server/DESIGN.md)              | Rust 1.95+                   |
 | [macOS client](../clients/macos/README.md) | Swift 6.2+, SwiftUI + AppKit |
 
-No shared core. Each client implements [clients/ARCHITECTURE.md](../clients/DESIGN.md) and must pass `spec/vectors/`.
+No shared core. Each client implements [clients/DESIGN.md](../clients/DESIGN.md) and must pass the [conformance vectors](../spec/README.md).
 
 ## Primitives
 
