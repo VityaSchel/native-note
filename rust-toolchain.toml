@@ -1,8 +1,5 @@
 [toolchain]
 channel = "1.95.0"
 components = ["rustfmt", "clippy", "llvm-tools-preview"]
-targets = [
-	"x86_64-unknown-linux-musl",
-	"aarch64-unknown-linux-musl",
-]
+targets = ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"]
 profile = "minimal"
