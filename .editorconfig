@@ -27,3 +27,9 @@ indent_size = 4
 
 [{Makefile,*.mk}]
 indent_style = tab
+
+[clients/macos/**/*.{json,pbxproj,xcscheme,xcworkspacedata,plist,xcsettings}]
+indent_style = unset
+indent_size = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset

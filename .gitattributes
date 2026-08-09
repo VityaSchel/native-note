@@ -1,0 +1,2 @@
+spec/vectors/*.json linguist-generated=true
+clients/macos/**/*.pbxproj -diff

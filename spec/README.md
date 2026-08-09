@@ -18,7 +18,9 @@ The generator is deterministic, enforced by CI. A spec change is not done until 
 
 ## Reading a vector file
 
-Each file is `{ "description": ..., "cases": [ ... ] }`, and each case has a `name`.
+Each file is `{ "$generated": ..., "description": ..., "cases": [ ... ] }`, and each case has a `name`.
+
+**These files are generated and must not be hand-edited.** CI regenerates and fails on any difference, a protocol change shows up as a reviewable vector diff, and a client can run its conformance tests without a Rust toolchain.
 
 All binary is lowercase hex.
 

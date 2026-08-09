@@ -1,4 +1,5 @@
 {
+	"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
 	"cases": [
 		{
 			"innerLength": 0,

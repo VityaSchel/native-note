@@ -1,4 +1,5 @@
 {
+	"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
 	"cases": [
 		{
 			"blindingKey": "a7c06b50199f6ff08e2129fd21a41c0abf6e50a8365a5d43bb65a7f9caa99fe4",

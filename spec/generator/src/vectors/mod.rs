@@ -5,7 +5,9 @@ mod keys;
 mod padding;
 mod sync;
 
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::ser::PrettyFormatter;
+use serde_json::{Serializer, Value, json};
 
 pub const API_KEY: u8 = 0x00;
 pub const CONTENT_KEY: u8 = 0x20;
@@ -22,7 +24,11 @@ pub fn uuid_bytes() -> [u8; 16] {
 }
 
 pub fn file(description: &str, cases: Vec<Value>) -> Value {
-	json!({ "description": description, "cases": cases })
+	json!({
+		"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
+		"description": description,
+		"cases": cases,
+	})
 }
 
 pub fn all() -> Vec<(&'static str, Value)> {
@@ -43,7 +49,11 @@ pub fn all() -> Vec<(&'static str, Value)> {
 }
 
 pub fn render(value: &Value) -> String {
-	let mut s = serde_json::to_string_pretty(value).expect("vector values always serialize");
-	s.push('\n');
-	s
+	let mut out = Vec::new();
+	let mut serializer = Serializer::with_formatter(&mut out, PrettyFormatter::with_indent(b"\t"));
+	value
+		.serialize(&mut serializer)
+		.expect("vector values always serialize");
+	out.push(b'\n');
+	String::from_utf8(out).expect("serde_json emits UTF-8")
 }

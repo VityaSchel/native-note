@@ -290,6 +290,7 @@ dependencies = [
  "argon2",
  "hkdf",
  "hmac",
+ "serde",
  "serde_json",
  "sha2",
 ]

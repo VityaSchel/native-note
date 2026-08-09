@@ -1,7 +1,7 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::content::{sample_note, sample_tombstone};
-use super::{file, uuid_bytes, CONTENT_KEY};
+use super::{CONTENT_KEY, file, uuid_bytes};
 use crate::content::Content;
 use crate::frame::{self, Request, Response, Status, Write};
 use crate::hex::encode as hx;
