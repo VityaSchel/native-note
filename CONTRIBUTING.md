@@ -64,6 +64,19 @@ The generator is deterministic, salts, nonces, and keys are fixed. Regenerating 
 
 **Every claim in the README and docs must match the code.** A documentation claim the code does not support is treated as a defect.
 
+## Naming
+
+| Context                                | Form                                              | Examples                                    |
+| -------------------------------------- | ------------------------------------------------- | ------------------------------------------- |
+| Human-readable                         | `Native Note`                                     | window title, README, release notes         |
+| Paths, URLs, identifiers               | `native-note`                                     | directories, repo, crates, Xcode targets    |
+| PascalCase languages, mainly Swift     | `NativeNote`                                      | type names and the files holding them       |
+| Where a hyphen is not allowed          | `nativenote` or `native_note`, decided per case   | bundle IDs, Swift module names              |
+
+Never `nativeNote`. Never `NativeNote` outside a PascalCase language context — it is a type name, not a path.
+
+The bundle ID is `dev.hloth.nativenote` rather than `dev.hloth.native-note` because Android package segments disallow hyphens and the identifier must be the same on every platform.
+
 ## Style
 
 - Tabs for indentation, four-wide, where possible.
