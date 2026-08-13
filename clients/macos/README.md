@@ -31,6 +31,16 @@ Optional biometric unlock stores Local DB key in the Keychain under `kSecAccessC
 
 The unlock screen shows a "Unlock with Touch ID" button beside the password field's submit. Pressing it reads the Keychain item, which triggers the system biometric prompt.
 
+### Entitlements
+
+| Entitlement                                         | Reason     |
+| --------------------------------------------------- | ---------- |
+| `com.apple.security.app-sandbox`                    | on         |
+| `com.apple.security.network.client`                 | sync       |
+| `com.apple.security.files.user-selected.read-write` | zip export |
+
+`com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Release builds must be signed for distribution so that it is dropped.
+
 ### Unlock parameters
 
 `localSalt`, `argonParams` and `rounds` per [ARCHITECTURE.md](../DESIGN.md#unlock-parameters), stored as JSON at `~/Library/Application Support/dev.hloth.nativenote/app-lock.json`, mode `0600`, beside the encrypted database.
