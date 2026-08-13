@@ -41,20 +41,29 @@ The unlock screen shows a "Unlock with Touch ID" button beside the password fiel
 
 `com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Release builds must be signed for distribution so that it is dropped.
 
+### Storage
+
+| State             | Store                  |
+| ----------------- | ---------------------- |
+| App preferences   | `UserDefaults`         |
+| Unlock parameters | `app-lock.plist`       |
+| Notes             | the SQLCipher database |
+
+Unlock parameters are stored in a binary plist because they're part of the database's identity, migrated along with it and not overridable by a managed value from a configuration profile.
+
 ### Unlock parameters
 
-`localSalt`, `argonParams` and `rounds` per [ARCHITECTURE.md](../DESIGN.md#unlock-parameters), stored as JSON at `~/Library/Application Support/dev.hloth.nativenote/app-lock.json`, mode `0600`, beside the encrypted database.
+`localSalt`, `argonParams` and `rounds` per [ARCHITECTURE.md](../DESIGN.md#unlock-parameters), stored in `app-lock.plist`, mode `0600`, the absolute path is `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`.
 
-```json
-{
-  "version": 1,
-  "localSalt": "<16 bytes, hex>",
-  "argon": { "m": 262144, "t": 3, "p": 4 },
-  "rounds": 140
-}
+```
+version     1
+localSalt   16 bytes
+argon       { m: 262144, t: 3, p: 4 }    # m in KiB, so 262144 is 256 MiB
+rounds      140
+enclaveKey  Secure Enclave key blob      # absent without a Secure Enclave
 ```
 
-`m` is in KiB, so `262144` is 256 MiB.
+A rekey writes `app-lock.next.plist` and keeps the old file until the new key is proven. Startup prefers the pending one.
 
 ### Machine ID
 

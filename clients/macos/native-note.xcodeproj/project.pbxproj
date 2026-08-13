@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A7B544C4302899F700E267CC /* SQLCipher in Frameworks */ = {isa = PBXBuildFile; productRef = A7B544C2302899F700E267CC /* SQLCipher */; };
 		A7B544C5302899F700E267CC /* argon2 in Frameworks */ = {isa = PBXBuildFile; productRef = A7B544C3302899F700E267CC /* argon2 */; };
+		A7B544CB302899F700E267CC /* vectors in Resources */ = {isa = PBXBuildFile; fileRef = A7B544CA302899F700E267CC /* vectors */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -32,6 +33,7 @@
 		A7B54494302899EF00E267CC /* Native Note.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Native Note.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7B544A1302899F600E267CC /* native-note-tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "native-note-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7B544AB302899F600E267CC /* native-note-ui-tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "native-note-ui-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A7B544CA302899F700E267CC /* vectors */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vectors; path = "../../spec/vectors"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -85,6 +87,7 @@
 				A7B54496302899EF00E267CC /* native-note */,
 				A7B544A4302899F600E267CC /* native-note-tests */,
 				A7B544AE302899F600E267CC /* native-note-ui-tests */,
+				A7B544CA302899F700E267CC /* vectors */,
 				A7B54495302899EF00E267CC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -232,6 +235,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7B544CB302899F700E267CC /* vectors in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -63,6 +63,8 @@ xcodebuild test -enableCodeCoverage YES -project native-note.xcodeproj -scheme n
 
 UI tests are skipped by default; they take over the login session. Run with `-only-testing:native-note-ui-tests`.
 
+`spec/vectors` is a folder reference in the test target, not a path read at runtime.
+
 **Verified locally only.** CI has no macOS runner, so a green CI run says nothing about the client —
 run the Xcode tests before opening a pull request that touches it. Anyone reproducing a macOS build
 is a macOS user by definition, so a macOS-only host costs no reach.
