@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A7B544C4302899F700E267CC /* SQLCipher in Frameworks */ = {isa = PBXBuildFile; productRef = A7B544C2302899F700E267CC /* SQLCipher */; };
+		A7B544C5302899F700E267CC /* argon2 in Frameworks */ = {isa = PBXBuildFile; productRef = A7B544C3302899F700E267CC /* argon2 */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A7B544A2302899F600E267CC /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +57,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A7B544C4302899F700E267CC /* SQLCipher in Frameworks */,
+				A7B544C5302899F700E267CC /* argon2 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +119,8 @@
 			);
 			name = "native-note";
 			packageProductDependencies = (
+				A7B544C2302899F700E267CC /* SQLCipher */,
+				A7B544C3302899F700E267CC /* argon2 */,
 			);
 			productName = "native-note";
 			productReference = A7B54494302899EF00E267CC /* Native Note.app */;
@@ -195,6 +204,10 @@
 			);
 			mainGroup = A7B5448B302899EE00E267CC;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A7B544C0302899F700E267CC /* XCRemoteSwiftPackageReference "SQLCipher.swift" */,
+				A7B544C1302899F700E267CC /* XCRemoteSwiftPackageReference "phc-winner-argon2" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A7B54495302899EF00E267CC /* Products */;
 			projectDirPath = "";
@@ -597,6 +610,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A7B544C0302899F700E267CC /* XCRemoteSwiftPackageReference "SQLCipher.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sqlcipher/SQLCipher.swift.git";
+			requirement = {
+				kind = revision;
+				revision = 205df55271aa1ba512a9bfe3fd1813bc9ac52a19;
+			};
+		};
+		A7B544C1302899F700E267CC /* XCRemoteSwiftPackageReference "phc-winner-argon2" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/P-H-C/phc-winner-argon2.git";
+			requirement = {
+				kind = revision;
+				revision = f57e61e19229e23c4445b85494dbf7c07de721cb;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A7B544C2302899F700E267CC /* SQLCipher */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A7B544C0302899F700E267CC /* XCRemoteSwiftPackageReference "SQLCipher.swift" */;
+			productName = SQLCipher;
+		};
+		A7B544C3302899F700E267CC /* argon2 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A7B544C1302899F700E267CC /* XCRemoteSwiftPackageReference "phc-winner-argon2" */;
+			productName = argon2;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A7B5448C302899EE00E267CC /* Project object */;
 }

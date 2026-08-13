@@ -6,7 +6,7 @@
   - More hardware-acceleration support, available in Android Keystore
   - Not XChaCha20-Poly1305: not available natively, CryptoKit's `ChaChaPoly` and Android's `ChaCha20/Poly1305` are both the 96-bit-nonce IETF variant
   - Not IETF ChaCha20-Poly1305: less hardware acceleration support, not available in Android Keystore
-- **Password KDF**: Argon2id, vendored, client only
+- **Password KDF**: Argon2id, client only
   - Not PBKDF2: Crackable on GPUs for users without secure enclave
 - **Protocol format:** fixed-layout binary
   - Not JSON: base64 is ~133% of binary and needs a parser
@@ -82,7 +82,7 @@ Known limitations, out of scope:
 Documented risks and vulnerabilities:
 
 - **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes
-- **Vendored Argon2 and SQLCipher** are third-party C in the client. Source hashes pinned and verified in CI. Both are far more scrutinized than equivalent hand-rolled code.
+- **Argon2 and SQLCipher** are third-party C in the client, pinned to commit revisions. SQLCipher is a prebuilt binary.
 - **Hand-rolled HTTP parser.** Constrained grammar, fuzzed, reverse proxy recommended for public deployments.
 - **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule.
 - **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. They cannot substitute a key they control — a planted blob fails the tag on decrypt — only render recovery unusable.

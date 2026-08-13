@@ -35,4 +35,4 @@ Claims in the README and these documents are verified against the code before ea
 
 No custom primitives. AES-256-GCM, HKDF-SHA256, HMAC-SHA256, and Argon2id, taken from platform crypto where available.
 
-The server has two direct dependencies, twelve runtime crates. Client dependencies are limited to platform frameworks plus vendored Argon2 and SQLCipher, both hash-pinned and verified in CI.
+The server has two direct dependencies, twelve runtime crates. Client dependencies are limited to platform frameworks plus Argon2 and SQLCipher, neither copied into this repository — `Package.resolved` pins both to commit revisions, and SQLCipher's framework additionally by SHA-256.

@@ -1,6 +1,6 @@
 # Native Note
 
-A self-hosted personal note-taking app running natively on your macOS (Android, iOS, Windows, Linux in future). The optional sync server is just a single Rust binary.
+A self-hosted end-to-end encrypted personal note-taking app running natively on your macOS (Android, iOS, Windows, Linux in future). The optional sync server is just a single Rust binary.
 
 ## Features
 

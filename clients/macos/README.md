@@ -4,8 +4,8 @@ Dependencies:
 
 - CryptoKit
 - Security
-- vendored SQLCipher
-- Argon2
+- [SQLCipher.swift](https://github.com/sqlcipher/SQLCipher.swift) — revision `205df55` (`4.17.0`), a prebuilt XCFramework published by Zetetic
+- [phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) — revision `f57e61e`, built from source
 
 ## Implementation details
 
@@ -17,11 +17,13 @@ Primitives:
 
 - AES-256-GCM — `CryptoKit.AES.GCM`
 - HKDF-SHA256 — `CryptoKit.HKDF<SHA256>`
-- Argon2id — vendored `phc-winner-argon2`
+- Argon2id — `phc-winner-argon2`, the reference implementation
 - HMAC-SHA256 — `CryptoKit.HMAC<SHA256>`
 - P-256 ECDH — `CryptoKit.SecureEnclave.P256.KeyAgreement`
 
-SQLCipher is built against **CommonCrypto**, so the AES and HMAC come from platform crypto rather than a bundled OpenSSL.
+SQLCipher uses the **CommonCrypto** backend, not a bundled OpenSSL — `PRAGMA cipher_provider` returns `commoncrypto` on a keyed connection.
+
+Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee.
 
 Local DB key's hardware binding uses Machine ID — the same passcode-to-hardware entanglement the SEP performs with its UID key for the device passcode, rebuilt from public APIs.
 
