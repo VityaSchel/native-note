@@ -25,8 +25,6 @@ SQLCipher uses the **CommonCrypto** backend, not a bundled OpenSSL — `PRAGMA c
 
 Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee.
 
-Local DB key's hardware binding uses Machine ID — the same passcode-to-hardware entanglement the SEP performs with its UID key for the device passcode, rebuilt from public APIs.
-
 Optional biometric unlock stores Local DB key in the Keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`. `BiometryCurrentSet` is invalidated by the OS when the enrolled biometric set changes, so adding a fingerprint cannot silently extend access.
 
 The unlock screen shows a "Unlock with Touch ID" button beside the password field's submit. Pressing it reads the Keychain item, which triggers the system biometric prompt.
@@ -53,36 +51,25 @@ Unlock parameters are stored in a binary plist because they're part of the datab
 
 ### Unlock parameters
 
-`localSalt`, `argonParams` and `rounds` per [ARCHITECTURE.md](../DESIGN.md#unlock-parameters), stored in `app-lock.plist`, mode `0600`, the absolute path is `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`.
+`localSalt` and `argonParams` per [ARCHITECTURE.md](../DESIGN.md#unlock-parameters), stored in `app-lock.plist`, mode `0600`, the absolute path is `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`.
 
 ```
 version     1
 localSalt   16 bytes
 argon       { m: 262144, t: 3, p: 4 }    # m in KiB, so 262144 is 256 MiB
-rounds      140
 enclaveKey  Secure Enclave key blob      # absent without a Secure Enclave
 ```
 
-A rekey writes `app-lock.next.plist` and keeps the old file until the new key is proven. Startup prefers the pending one.
+A rekey writes `app-lock.next.plist` and keeps `app-lock.plist` until the new key is proven. Startup tries the pending file first and falls back to the current one, so an interrupted rekey still opens.
 
 ### Machine ID
 
-The Apple implementation of [`hardwareOp`](../DESIGN.md#hardwarechain). The Enclave can only hold **P-256** keys, so each round is a key agreement against it:
+The Apple implementation of [`hardwareOp`](../DESIGN.md#hardwarebinding). The Enclave holds only **P-256** keys, so the operation is a key agreement of the device key with its own public key:
 
 ```
 enclaveKey = SecureEnclave.P256.KeyAgreement.PrivateKey    # device-bound, non-extractable, no ACL flags
-
-hardwareOp(x, i) {
-    attempt = 0
-    do {
-        s = HKDF-SHA256(x, info: "native-note/machine-chain/v1/\(i)/\(attempt)", 32)
-        attempt += 1
-    } while (s is not a valid P-256 scalar)    # p ≈ 2⁻³² per draw
-    return ECDH(enclaveKey, publicKey(s))      # runs on the chip
-}
+hardwareOp() = ECDH(enclaveKey, publicKey(enclaveKey))     # d²G, runs on the chip
 ```
 
-Rejection by redrawing from an incremented HKDF counter is the standard candidate-testing method from FIPS 186 key generation — deterministic and unbiased, unlike nudging bytes of a rejected value. Every input yields a valid scalar eventually, so the operation never fails on a wrong password. This loop must stay byte-identical across app versions, or the chain diverges and the database will not open.
-
-`enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`. Not `kSecAccessControlApplicationPassword`: a wrong password fails the unwrap immediately instead of requiring invoking the full chain.
+`app-lock.plist` stores the key blob, and that blob contains `dG` in the clear. Recovering `d²G` from `dG` is the computational Diffie-Hellman problem, so the result is unreachable without the chip. `enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`
 

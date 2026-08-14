@@ -90,5 +90,5 @@ Documented risks and vulnerabilities:
 - **No per-device revocation.** Losing a device means rotating the API key on the rest.
 - **A short password or pin without hardware binding** is brute-forceable offline in hours.
 - **In-app unlock attempt limiting is not a security control.** The counter sits in storage the attacker owns, and a real attacker attacks the database file rather than the app. It is a panic feature — wipe after N — and friction, nothing more.
-- **Hardware binding buys unparallelizable cost, not a lockout.** A disk image cannot compute `machineId` at all, at any password length. On the running machine there is no attempt limit; the chain merely cannot run faster than the chip runs it, and cannot be moved to rented hardware.
+- **Hardware binding does not add per-guess cost.** A disk image cannot compute `machineId` at any password length, so it cannot be attacked offline at all. An attacker who runs code on the machine reads `machineId` with one call and then guesses offline at Argon2id cost.
 - **The content key never rotates.** The recovery layer exists so a leaked mnemonic does not require entire database re-encryption.

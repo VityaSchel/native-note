@@ -34,8 +34,7 @@ struct HKDFVectorTests {
 		#expect(labels["blindingKey"] == KeyDerivation.idBlind)
 		#expect(labels["noteKey"] == KeyDerivation.note)
 		#expect(labels["localDbKey"] == KeyDerivation.localDb)
-		#expect(labels["chainSeed"] == KeyDerivation.chainSeed)
-		#expect(labels["chainOut"] == KeyDerivation.chainOut)
+		#expect(labels["machineId"] == KeyDerivation.machineId)
 	}
 
 	@Test func localDbKeyConcatenatesArgonOutputAndMachineId() throws {
@@ -104,30 +103,5 @@ struct Argon2VectorTests {
 				parameters: Argon2.Parameters(m: 1, t: 0, p: 1)
 			)
 		}
-	}
-}
-
-struct MachineChainScalarTests {
-	@Test func derivationMatchesVectors() throws {
-		for vector in try Vectors.load("scalar.json") {
-			let index = UInt32(try #require(vector.int("index")))
-			let (scalar, attempt) = MachineChain.scalar(x: try vector.require("x"), index: index)
-
-			#expect(scalar == (try vector.require("scalar")), "case \(vector.name)")
-			#expect(attempt == UInt32(try #require(vector.int("attempt"))), "case \(vector.name)")
-			#expect(KeyDerivation.chainRound(index: index, attempt: attempt) == vector.string("info"))
-		}
-	}
-
-	@Test func rejectsZeroAndValuesAtOrAboveTheGroupOrder() {
-		let order = Data(Hex.decode("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")!)
-		var aboveOrder = order
-		aboveOrder[31] += 1
-
-		#expect(!MachineChain.isValidScalar(Data(repeating: 0, count: 32)))
-		#expect(!MachineChain.isValidScalar(order))
-		#expect(!MachineChain.isValidScalar(aboveOrder))
-		#expect(!MachineChain.isValidScalar(Data(repeating: 1, count: 31)))
-		#expect(MachineChain.isValidScalar(Data(repeating: 1, count: 32)))
 	}
 }

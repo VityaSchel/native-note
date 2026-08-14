@@ -180,9 +180,7 @@ Every `info` label in the protocol, in one place. New labels must not collide; a
 | `native-note/id-blind/v1`                      | `blindingKey`       | Content key            |
 | `native-note/note/v1`                          | `noteKey` per write | Content key            |
 | `native-note/localdb/v1`                       | `localDbKey`        | `argonOut ‖ machineId` |
-| `native-note/machine-chain/v1/seed`            | chain seed          | `argonOut`             |
-| `native-note/machine-chain/v1/<i>[/<attempt>]` | round scalar        | previous round         |
-| `native-note/machine-chain/v1/out`             | `machineId`         | last round             |
+| `native-note/machine-id/v1`                    | `machineId`         | hardware agreement     |
 
 ### Limits
 

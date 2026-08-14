@@ -51,7 +51,6 @@ Every case whose name starts with `reject` is a negative test. Passing them matt
 | `argon2.json`   | Argon2id at fixed low-cost parameters. Pins the algorithm, not the production cost                                                     |
 | `mnemonic.json` | Wordlist identity, 24-word round-trip, bad checksum, wrong word count, unknown word                                                    |
 | `pairing.json`  | The 64-byte pairing credential and its length rejections                                                                               |
-| `scalar.json`   | Machine-chain scalar derivation, including the `attempt` counter used for rejection sampling                                           |
 | `sync.json`     | Six-step end-to-end scenario over the reference server semantics                                                                       |
 
 ## Notes on specific files
@@ -59,8 +58,6 @@ Every case whose name starts with `reject` is a negative test. Passing them matt
 **`mnemonic.json`** pins the wordlist by SHA-256. Substituting a different list would still produce 24 valid-looking words that decode to different entropy — silently, and only discovered when a recovery fails. Verify the hash before trusting a decode. The encoding is BIP39's word mapping and checksum only; **BIP39 seed derivation is never used**.
 
 **`argon2.json`** uses `m=1024, t=1, p=1` so CI stays fast. Production parameters are calibrated per device and stored in the unlock parameter file — see [`clients/DESIGN.md`](../clients/DESIGN.md#unlock-parameters). This vector exists to confirm you are calling Argon2**id** with the right version and output length, nothing more.
-
-**`scalar.json`** covers the machine chain's scalar derivation, which is the one part reproducible off-device. The chain itself cannot be vectored: `hardwareOp` runs inside secure hardware whose key never leaves the chip, so `machineId` differs per device by design.
 
 **`content.json` and `frames.json`** carry most of the negative cases, because the binary decoder is the only attacker-reachable parser after GCM verification. Every `reject` case there corresponds to a rule in [`docs/PROTOCOL.md` § Binary encoding](../docs/PROTOCOL.md#binary-encoding).
 

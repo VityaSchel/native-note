@@ -6,12 +6,7 @@ nonisolated enum KeyDerivation {
 	static let idBlind = "native-note/id-blind/v1"
 	static let note = "native-note/note/v1"
 	static let localDb = "native-note/localdb/v1"
-	static let chainSeed = "native-note/machine-chain/v1/seed"
-	static let chainOut = "native-note/machine-chain/v1/out"
-
-	static func chainRound(index: UInt32, attempt: UInt32) -> String {
-		"native-note/machine-chain/v1/\(index)/\(attempt)"
-	}
+	static let machineId = "native-note/machine-id/v1"
 
 	static func derive(ikm: Data, salt: Data = Data(), info: String, length: Int = 32) -> Data {
 		HKDF<SHA256>.deriveKey(

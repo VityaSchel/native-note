@@ -7,7 +7,6 @@ pub mod hex;
 pub mod kdf;
 pub mod mnemonic;
 pub mod note;
-pub mod scalar;
 pub mod server;
 pub mod vectors;
 

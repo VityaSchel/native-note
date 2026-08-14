@@ -40,7 +40,6 @@ pub fn all() -> Vec<(&'static str, Value)> {
 		("frames.json", frames::frames()),
 		("envelope.json", frames::envelope()),
 		("padding.json", padding::padding()),
-		("scalar.json", keys::scalar()),
 		("argon2.json", keys::argon2()),
 		("mnemonic.json", credentials::mnemonic()),
 		("pairing.json", credentials::pairing()),

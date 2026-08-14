@@ -3,61 +3,38 @@ import Testing
 
 @testable import NativeNote
 
-struct MachineChainTests {
-	static let argonOut = Data(repeating: 0xa5, count: 32)
+struct MachineBindingTests {
+	@Test(.enabled(if: MachineKey.isAvailable))
+	func isStableForOneDeviceKey() throws {
+		let key = try MachineKey()
+
+		#expect(try MachineBinding.machineId(key: key) == MachineBinding.machineId(key: key))
+	}
 
 	@Test(.enabled(if: MachineKey.isAvailable))
 	func survivesReloadingTheKeyFromItsStoredRepresentation() throws {
 		let key = try MachineKey()
-		let first = try MachineChain.machineId(argonOut: Self.argonOut, rounds: 4, key: key)
+		let before = try MachineBinding.machineId(key: key)
 		let reloaded = try MachineKey(representation: key.representation)
 
-		#expect(try MachineChain.machineId(argonOut: Self.argonOut, rounds: 4, key: reloaded) == first)
+		#expect(try MachineBinding.machineId(key: reloaded) == before)
 	}
 
 	@Test(.enabled(if: MachineKey.isAvailable))
-	func aDifferentPasswordProducesADifferentMachineId() throws {
+	func differsPerDeviceKey() throws {
+		#expect(try MachineBinding.machineId(key: MachineKey()) != MachineBinding.machineId(key: MachineKey()))
+	}
+
+	@Test(.enabled(if: MachineKey.isAvailable))
+	func doesNotDependOnThePassword() throws {
 		let key = try MachineKey()
-		let mine = try MachineChain.machineId(argonOut: Self.argonOut, rounds: 4, key: key)
-		let theirs = try MachineChain.machineId(argonOut: Data(repeating: 0x5a, count: 32), rounds: 4, key: key)
+		let localSalt = Data(repeating: 0x80, count: 16)
+		let machineId = try MachineBinding.machineId(key: key)
+
+		let mine = KeyDerivation.localDbKey(argonOut: Data(repeating: 0xa5, count: 32), machineId: machineId, localSalt: localSalt)
+		let theirs = KeyDerivation.localDbKey(argonOut: Data(repeating: 0x5a, count: 32), machineId: machineId, localSalt: localSalt)
 
 		#expect(mine != theirs)
-	}
-
-	@Test(.enabled(if: MachineKey.isAvailable))
-	func aDifferentDeviceKeyProducesADifferentMachineId() throws {
-		let mine = try MachineChain.machineId(argonOut: Self.argonOut, rounds: 4, key: try MachineKey())
-		let theirs = try MachineChain.machineId(argonOut: Self.argonOut, rounds: 4, key: try MachineKey())
-
-		#expect(mine != theirs)
-	}
-
-	@Test(.enabled(if: MachineKey.isAvailable))
-	func acceptsEveryInputSoAWrongPasswordGetsNoPassFailOracle() throws {
-		let key = try MachineKey()
-		for byte in UInt8.zero ..< 32 {
-			#expect(throws: Never.self) {
-				try MachineChain.machineId(argonOut: Data(repeating: byte, count: 32), rounds: 1, key: key)
-			}
-		}
-	}
-
-	@Test(.enabled(if: MachineKey.isAvailable))
-	func calibrationReturnsAUsableRoundCount() throws {
-		let key = try MachineKey()
-
-		let rounds = try MachineChain.calibrateRounds(target: 0.1, probe: 4, key: key)
-
-		#expect((1 ... 100_000).contains(rounds))
-		#expect(throws: Never.self) {
-			try MachineChain.machineId(argonOut: Self.argonOut, rounds: min(rounds, 8), key: key)
-		}
-	}
-
-	@Test func roundsAreChainedRatherThanIndependent() throws {
-		let seed = KeyDerivation.derive(ikm: Self.argonOut, info: KeyDerivation.chainSeed)
-
-		#expect(MachineChain.scalar(x: seed, index: 0).scalar != MachineChain.scalar(x: seed, index: 1).scalar)
 	}
 }
 
@@ -65,7 +42,6 @@ struct UnlockParametersTests {
 	static let sample = UnlockParameters(
 		localSalt: Data(repeating: 0x80, count: 16),
 		argon: Argon2.floor,
-		rounds: 140,
 		enclaveKey: Data(repeating: 0x11, count: 8)
 	)
 
@@ -84,7 +60,6 @@ struct UnlockParametersTests {
 			try PropertyListSerialization.propertyList(from: encoded, format: nil) as? [String: Any]
 		)
 		#expect(plist["localSalt"] as? Data == Self.sample.localSalt)
-		#expect(plist["rounds"] as? Int == 140)
 		#expect((plist["argon"] as? [String: Any])?["m"] as? Int == 262_144)
 		#expect(try PropertyListDecoder().decode(UnlockParameters.self, from: encoded) == Self.sample)
 	}
@@ -137,23 +112,42 @@ struct AppLockTests {
 		try AppLock.write(future, to: url)
 
 		#expect(throws: AppLock.Unreadable.unsupportedVersion(2)) { try AppLock.read(from: url) }
-		#expect(AppLock.load(in: directory) == nil)
+		#expect(AppLock.candidates(in: directory).isEmpty)
 	}
 
-	@Test func prefersPendingParametersSoAnInterruptedRekeyStillOpens() throws {
+	@Test func offersPendingParametersFirstButKeepsTheCurrentOneAsFallback() throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		var next = UnlockParametersTests.sample
-		next.rounds = 999
+		next.localSalt = Data(repeating: 0x99, count: 16)
 
 		try AppLock.write(UnlockParametersTests.sample, to: AppLock.current(in: directory))
-		#expect(AppLock.load(in: directory)?.rounds == 140)
+		#expect(AppLock.candidates(in: directory).map(\.localSalt) == [UnlockParametersTests.sample.localSalt])
 
 		try AppLock.write(next, to: AppLock.pendingRekey(in: directory))
-		#expect(AppLock.load(in: directory)?.rounds == 999)
+		#expect(
+			AppLock.candidates(in: directory).map(\.localSalt)
+				== [next.localSalt, UnlockParametersTests.sample.localSalt]
+		)
+	}
+
+	@Test func promotingARekeyLeavesExactlyOneFile() throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		var next = UnlockParametersTests.sample
+		next.localSalt = Data(repeating: 0x99, count: 16)
+		try AppLock.write(UnlockParametersTests.sample, to: AppLock.current(in: directory))
+		try AppLock.write(next, to: AppLock.pendingRekey(in: directory))
+
+		try AppLock.promoteRekey(in: directory)
+
+		#expect(AppLock.candidates(in: directory).map(\.localSalt) == [next.localSalt])
+		#expect(!FileManager.default.fileExists(atPath: AppLock.pendingRekey(in: directory).path))
+		let mode = try FileManager.default.attributesOfItem(atPath: AppLock.current(in: directory).path)[.posixPermissions] as? NSNumber
+		#expect(mode?.int16Value == 0o600)
 	}
 
 	@Test func reportsNothingWhenTheAppHasNeverBeenSetUp() {
-		#expect(AppLock.load(in: temporaryDirectory()) == nil)
+		#expect(AppLock.candidates(in: temporaryDirectory()).isEmpty)
 	}
 }

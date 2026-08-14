@@ -3,10 +3,11 @@ use serde_json::{Value, json};
 
 use super::{API_KEY, CONTENT_KEY, LOCAL_SALT, UUID, file, uuid_bytes};
 use crate::hex::encode as hx;
-use crate::{kdf, note, scalar, seq_bytes};
+use crate::{kdf, note, seq_bytes};
 
 const ARGON_OUT: u8 = 0xa0;
 const MACHINE_ID: u8 = 0xc0;
+const SHARED_SECRET: u8 = 0xd0;
 
 fn hkdf_case(name: &str, ikm: &[u8], salt: Option<&[u8]>, info: &str, len: usize) -> Value {
 	json!({
@@ -33,8 +34,13 @@ pub fn hkdf() -> Value {
 			hkdf_case("envelopeKey", &api_key, None, kdf::ENVELOPE, 32),
 			hkdf_case("blindingKey", &content_key, None, kdf::ID_BLIND, 32),
 			hkdf_case("noteKey", &content_key, Some(&write_id), kdf::NOTE, 32),
-			hkdf_case("chainSeed", &argon_out, None, kdf::CHAIN_SEED, 32),
-			hkdf_case("chainOut", &machine_id, None, kdf::CHAIN_OUT, 32),
+			hkdf_case(
+				"machineId",
+				&seq_bytes(SHARED_SECRET, 32),
+				None,
+				kdf::MACHINE_ID,
+				32,
+			),
 			json!({
 				"name": "localDbKey",
 				"argonOut": hx(&argon_out),
@@ -79,33 +85,6 @@ pub fn blinding() -> Value {
 				"0b8f1d2e-3a4b-4c5d-8e9f-001122334454",
 			),
 		],
-	)
-}
-
-pub fn scalar() -> Value {
-	let seed = kdf::hkdf(
-		&seq_bytes(ARGON_OUT, 32),
-		None,
-		kdf::CHAIN_SEED.as_bytes(),
-		32,
-	);
-	let cases = (0u32..4)
-		.map(|index| {
-			let (candidate, attempt) = scalar::derive(&seed, index);
-			json!({
-				"name": format!("round{index}"),
-				"x": hx(&seed),
-				"index": index,
-				"attempt": attempt,
-				"info": kdf::chain_round(index, attempt),
-				"scalar": hx(&candidate),
-			})
-		})
-		.collect();
-
-	file(
-		"Machine-chain scalar derivation. Candidates are redrawn from an incremented attempt counter, never adjusted.",
-		cases,
 	)
 }
 

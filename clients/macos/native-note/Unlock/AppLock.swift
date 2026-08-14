@@ -15,11 +15,17 @@ nonisolated enum AppLock {
 		directory.appending(path: "app-lock.next.plist")
 	}
 
-	static func load(in directory: URL = directory) -> UnlockParameters? {
-		[pendingRekey(in: directory), current(in: directory)]
-			.lazy
-			.compactMap { try? read(from: $0) }
-			.first
+	static func candidates(in directory: URL = directory) -> [UnlockParameters] {
+		[pendingRekey(in: directory), current(in: directory)].compactMap { try? read(from: $0) }
+	}
+
+	static func promoteRekey(in directory: URL = directory) throws {
+		try Data(contentsOf: pendingRekey(in: directory)).write(to: current(in: directory), options: .atomic)
+		try FileManager.default.setAttributes(
+			[.posixPermissions: 0o600],
+			ofItemAtPath: current(in: directory).path
+		)
+		try FileManager.default.removeItem(at: pendingRekey(in: directory))
 	}
 
 	static func read(from url: URL) throws -> UnlockParameters {

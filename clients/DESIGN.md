@@ -2,7 +2,7 @@
 
 ## Local DB
 
-SQLCipher, WAL, `synchronous=FULL`. Foreign keys enforced with explicit `ON DELETE`.
+SQLCipher, WAL, `synchronous=FULL`. `PRAGMA foreign_keys = ON` from v1, so every relation added later carries an explicit `ON DELETE`.
 
 Local durable save happens every ~300 ms debounce, no `v` bump
 
@@ -17,9 +17,26 @@ CREATE TABLE note (
     v         INTEGER NOT NULL DEFAULT 0,
     seq       INTEGER
 ) STRICT;
+CREATE INDEX note_updatedAt ON note (updatedAt DESC);
+CREATE INDEX note_dirty ON note (dirty) WHERE dirty = 1;
+
 CREATE VIRTUAL TABLE note_fts USING fts5(body, content=note);
+
+CREATE TRIGGER note_fts_insert AFTER INSERT ON note BEGIN
+    INSERT INTO note_fts (rowid, body) VALUES (new.rowid, new.body);
+END;
+CREATE TRIGGER note_fts_delete AFTER DELETE ON note BEGIN
+    INSERT INTO note_fts (note_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+END;
+CREATE TRIGGER note_fts_update AFTER UPDATE ON note BEGIN
+    INSERT INTO note_fts (note_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+    INSERT INTO note_fts (rowid, body) VALUES (new.rowid, new.body);
+END;
+
 CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 ```
+
+`content=note` is an external-content index: without the three triggers it is populated once and never updated again.
 
 Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
 
@@ -29,45 +46,43 @@ Unlocks the app. Only used for app database encryption, never leaves the device.
 
 ```
 argonOut   = Argon2id(password, localSalt, argonParams, 32)
-machineId  = hardwareChain(argonOut, rounds)
+machineId  = hardwareBinding()
 localDbKey = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-note/localdb/v1", 32)
 ```
 
 `localDbKey` is passed as a **raw key** (`PRAGMA key = "x'<64 hex>'"`), not a passphrase.
 
-#### `hardwareChain`
+#### `hardwareBinding`
 
-`rounds` sequential operations on the device's secure hardware, each feeding the next:
+
+Hardware binding adds protection against a stolen disk image, but unlike Argon2id does not add per-guess cost. One operation on the device's secure hardware, independent of the password. 
 
 ```
-x = HKDF-SHA256(argonOut, info: "native-note/machine-chain/v1/seed", 32)
-for (i in 0 ..< rounds) {
-    x = hardwareOp(x, i)
-}
-machineId = HKDF-SHA256(x, info: "native-note/machine-chain/v1/out", 32)
+machineId = HKDF-SHA256(hardwareOp(), info: "native-note/machine-id/v1", 32)
 ```
 
 `hardwareOp` is platform-specific and must satisfy three properties:
 
 1. **Only this physical device can compute it.** The hardware key is non-extractable, so a disk image cannot reproduce `machineId` at any password length.
 2. **It never prompts.** Biometric or presence gating would break the password-only path.
-3. **It succeeds for every input.** A wrong password must yield a different chain, not a failure. Any construction where the hardware rejects a wrong password early hands the attacker a cheap oracle and collapses the cost per guess from `rounds` operations to one.
-
-Operations serialize through one chip, so the cost per guess is fixed regardless of how much hardware an attacker brings. This is binding plus an unparallelizable floor, not a lockout — there is no attempt counter.
+3. **It is deterministic and takes no secret input.** Anything derived from the password must not reach the hardware: ECDH is symmetric, so `devicePriv·(sG)` equals `s·devicePub`, the attacker derives `s` from their own password guess, and the device public key is recoverable from the stored key blob.
 
 Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alone carries those users.
 
 #### Unlock parameters
 
-`localSalt`, `argonParams` and `rounds` are needed *before* the database can be opened, so they cannot live inside it. They are stored in the app's private data directory as plaintext, alongside the encrypted database. Each platform documents the exact path and format in its own architecture file.
-
-Tampering is fail-closed, not a weakening: altering any of them changes `localDbKey`, so the database simply refuses to open. Lowering `argonParams` or `rounds` cannot make an attacker's guessing cheaper, because the values that produced the key are the ones that must be reproduced.
-
-`rounds` and `argonParams` are calibrated at setup: Argon2id to ~1.0 s with floor `m=256 MiB, t=3, p=4`, the chain to ~1.0 s. Calibrating `rounds` is safe in a way software calibration is not: an attacker must use this device's chip, so the measured cost is their cost.
+`localSalt` and `argonParams` are public key parameters, so they're stored outside of the database. They must exactly match the values that produced the key. `argonParams` is calibrated at setup to ~1.0 s with floor `m=256 MiB, t=3, p=4`.
 
 #### Changing the password
 
-`localDbKey` changes with the password, so the database is rekeyed: write the new unlock parameters to a **new** file keeping the old, `PRAGMA rekey`, verify a fresh open with the new key, only then delete the old file. Startup tries the new file and falls back to the old, so a crash at any point leaves the database openable.
+`localDbKey` changes with the password, so the database is rekeyed:
+
+1. Write the new unlock parameters to a pending file, keeping the current one
+2. Run `PRAGMA rekey`
+3. Verify a fresh open with the new key
+4. Replace the current key file with the pending one
+
+Startup tries all readable parameter files, so a crash between any steps does not leave the database unopenable.
 
 #### Unlocking with biometrics
 

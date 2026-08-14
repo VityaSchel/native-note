@@ -26,19 +26,11 @@
 			"salt": "606162636465666768696a6b6c6d6e6f"
 		},
 		{
-			"ikm": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
-			"info": "native-note/machine-chain/v1/seed",
+			"ikm": "d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef",
+			"info": "native-note/machine-id/v1",
 			"length": 32,
-			"name": "chainSeed",
-			"okm": "f031e8b2e990dd1987067598c83784f61e7c65f702db4743aef4632c8148e596",
-			"salt": null
-		},
-		{
-			"ikm": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
-			"info": "native-note/machine-chain/v1/out",
-			"length": 32,
-			"name": "chainOut",
-			"okm": "4d8a9ebafeca0c632e4c269c41c4ba784572a8ec20ccc5e467a9eec02a62c28c",
+			"name": "machineId",
+			"okm": "65fcc2d25835a3615d70c90fc411fa8bc2e038abfbfee13bf6367e3a9a1fbef4",
 			"salt": null
 		},
 		{

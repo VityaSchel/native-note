@@ -6,12 +6,7 @@ pub const ENVELOPE: &str = "native-note/envelope/v1";
 pub const ID_BLIND: &str = "native-note/id-blind/v1";
 pub const NOTE: &str = "native-note/note/v1";
 pub const LOCALDB: &str = "native-note/localdb/v1";
-pub const CHAIN_SEED: &str = "native-note/machine-chain/v1/seed";
-pub const CHAIN_OUT: &str = "native-note/machine-chain/v1/out";
-
-pub fn chain_round(index: u32, attempt: u32) -> String {
-	format!("native-note/machine-chain/v1/{index}/{attempt}")
-}
+pub const MACHINE_ID: &str = "native-note/machine-id/v1";
 
 pub fn hkdf(ikm: &[u8], salt: Option<&[u8]>, info: &[u8], len: usize) -> Vec<u8> {
 	let hk = Hkdf::<Sha256>::new(salt, ikm);
