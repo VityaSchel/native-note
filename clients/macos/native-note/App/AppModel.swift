@@ -18,7 +18,6 @@ import Observation
 	private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	private(set) var failure: Failure?
-	private(set) var failingSaves: [UUID: String] = [:]
 	var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -26,6 +25,10 @@ import Observation
 		}
 	}
 	var search = ""
+
+	var unsavedReason: String? {
+		failingSaves.values.first?.reason
+	}
 
 	var groups: [NoteGroup] {
 		NoteGrouping.groups(for: visibleNotes, now: .now)
@@ -37,8 +40,14 @@ import Observation
 
 	private let directory: URL
 	private let database: URL
+	private struct FailingSave {
+		let note: Note
+		let reason: String
+	}
+
 	private let scheduler: SaveScheduler
 	private var store: NoteStore?
+	private var failingSaves: [UUID: FailingSave] = [:]
 	private var matches: [UUID]?
 
 	init(directory: URL = AppLock.directory, scheduler: SaveScheduler = SaveScheduler()) {
@@ -142,8 +151,14 @@ import Observation
 	private func saveFailed(_ failed: Note, to store: NoteStore, after error: Error) {
 		let reason = Self.reason(for: error)
 		if failingSaves.isEmpty { failure = .unsaved(reason) }
-		failingSaves[failed.id] = reason
-		scheduleSave(notes.first { $0.id == failed.id } ?? failed, to: store)
+		let latest = Self.newer(notes.first { $0.id == failed.id }, failed)
+		failingSaves[failed.id] = FailingSave(note: latest, reason: reason)
+		scheduleSave(latest, to: store)
+	}
+
+	private static func newer(_ held: Note?, _ other: Note) -> Note {
+		guard let held, held.updatedAt > other.updatedAt else { return other }
+		return held
 	}
 
 	private func replaceInMemory(_ note: Note) {
@@ -157,6 +172,12 @@ import Observation
 			let opened = try await open()
 			store = opened
 			notes = try await opened.liveNotes()
+			for failing in failingSaves.values {
+				guard let index = notes.firstIndex(where: { $0.id == failing.note.id }) else { continue }
+				notes[index] = Self.newer(failing.note, notes[index])
+				scheduleSave(notes[index], to: opened)
+			}
+			if let unsavedReason { failure = .unsaved(unsavedReason) }
 			phase = .unlocked
 		} catch {
 			failure = Self.failure(from: error)

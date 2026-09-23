@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	func terminate(reply: @escaping (Bool) -> Void) -> NSApplication.TerminateReply {
 		Task {
 			let saved = await model.flushPendingSaves()
-			reply(saved || confirmQuitLosingEdits(model.failingSaves.values.first ?? ""))
+			reply(saved || confirmQuitLosingEdits(model.unsavedReason ?? ""))
 		}
 		return .terminateLater
 	}

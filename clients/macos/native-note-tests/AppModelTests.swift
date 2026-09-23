@@ -290,7 +290,7 @@ struct SavePathTests {
 		#expect(model.failure == nil)
 		try blocker.execute("ROLLBACK")
 		#expect(await model.flushPendingSaves())
-		#expect(model.failingSaves.isEmpty)
+		#expect(model.unsavedReason == nil)
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed while it was busy again")
@@ -323,6 +323,35 @@ struct SavePathTests {
 		try blocker.execute("ROLLBACK")
 		#expect(await model.flushPendingSaves())
 		#expect(try await disk.note(id: id)?.body == "typed then locked while busy")
+	}
+
+	@Test func unlockingWhileASaveStillFailsKeepsTheTypedText() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let disk = try await observer(of: directory)
+		await model.createNote()
+		let id = try #require(model.selection)
+		model.edit(id, "saved before")
+		await model.flushPendingSaves()
+		let blocker = try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		)
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed then locked while busy")
+		await model.lock()
+		model.dismissFailure()
+		await model.unlock(password: password)
+
+		#expect(model.phase == .unlocked)
+		#expect(model.notes.first { $0.id == id }?.body == "typed then locked while busy")
+		#expect(model.failure?.isUnsaved == true)
+		#expect(await model.flushPendingSaves() == false)
+		try blocker.execute("ROLLBACK")
+		#expect(await model.flushPendingSaves())
+		#expect(try await disk.note(id: id)?.body == "typed then locked while busy")
+		#expect(model.notes.first { $0.id == id }?.body == "typed then locked while busy")
 	}
 
 	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
