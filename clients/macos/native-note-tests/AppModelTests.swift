@@ -366,7 +366,8 @@ struct SavePathTests {
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let delegate = AppDelegate(model: model)
+		let prompt = QuitPrompt()
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: prompt.ask)
 		var replied: Bool?
 
 		model.edit(id, "typed then quit")
@@ -374,7 +375,47 @@ struct SavePathTests {
 		await settle { replied != nil }
 
 		#expect(replied == true)
+		#expect(prompt.reasons.isEmpty)
 		#expect(try await disk.note(id: id)?.body == "typed then quit")
+	}
+
+	@Test func quittingWithEditsThatCannotBeSavedAsksFirst() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let id = try #require(model.selection)
+		let blocker = try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		)
+		let prompt = QuitPrompt()
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: prompt.ask)
+		var replied: Bool?
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed while the database was busy")
+		_ = delegate.terminate { replied = $0 }
+		await settle { replied != nil }
+		#expect(replied == false)
+		#expect(prompt.reasons.count == 1)
+		#expect(prompt.reasons.first?.isEmpty == false)
+
+		prompt.quitAnyway = true
+		replied = nil
+		_ = delegate.terminate { replied = $0 }
+		await settle { replied != nil }
+		#expect(replied == true)
+		#expect(prompt.reasons.count == 2)
+		try blocker.execute("ROLLBACK")
+	}
+
+	@Test func theQuitAlertDefaultsToKeepingTheApp() {
+		let alert = AppDelegate.quitLosingEditsAlert("disk I/O error")
+		alert.layout()
+
+		#expect(alert.buttons.map(\.title) == ["Cancel", "Quit Anyway"])
+		#expect(alert.buttons.last?.hasDestructiveAction == true)
+		#expect(alert.informativeText.hasPrefix("disk I/O error"))
 	}
 
 	@Test func leavingTheAppSavesAtOnce() async throws {
@@ -406,6 +447,16 @@ struct SavePathTests {
 		try await settle { try await disk.note(id: id)?.body == "typed then slept" }
 
 		#expect(try await disk.note(id: id)?.body == "typed then slept")
+	}
+}
+
+@MainActor private final class QuitPrompt {
+	var reasons: [String] = []
+	var quitAnyway = false
+
+	func ask(_ reason: String) -> Bool {
+		reasons.append(reason)
+		return quitAnyway
 	}
 }
 
