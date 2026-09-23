@@ -143,7 +143,9 @@ nonisolated final class Statement {
 	deinit { sqlite3_finalize(handle) }
 
 	func bind(_ index: Int32, _ value: Data) {
-		value.withUnsafeBytes { sqlite3_bind_blob(handle, index, $0.baseAddress, Int32($0.count), transientBinding) }
+		value.withUnsafeBytes { bytes in
+			_ = sqlite3_bind_blob(handle, index, bytes.baseAddress, Int32(bytes.count), transientBinding)
+		}
 	}
 
 	func bind(_ index: Int32, _ value: String) {
