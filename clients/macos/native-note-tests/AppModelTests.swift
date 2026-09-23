@@ -392,6 +392,30 @@ struct SavePathTests {
 		#expect(model.failure != nil)
 	}
 
+	@Test func aFailingSearchIsReportedOnceWhileTheUserTypes() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		).execute("DROP TABLE note_fts")
+
+		var reports = 0
+		for query in ["k", "ka", "kay", "kaya", "kayak"] {
+			model.search = query
+			await model.runSearch()
+			if model.failure != nil { reports += 1 }
+			model.dismissFailure()
+		}
+		model.search = ""
+		await model.runSearch()
+		model.search = "k"
+		await model.runSearch()
+
+		#expect(reports == 1)
+		#expect(model.failure != nil)
+	}
+
 	@Test func deletingWithASavePendingLeavesAnEmptyTombstone() async throws {
 		let (model, directory) = try await unlockedModel()
 		defer { try? FileManager.default.removeItem(at: directory) }

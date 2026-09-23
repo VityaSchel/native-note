@@ -48,6 +48,7 @@ import Observation
 	private let scheduler: SaveScheduler
 	private var store: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
+	private var searchFailing = false
 	private var matches: [UUID]?
 
 	init(directory: URL = AppLock.directory, scheduler: SaveScheduler = SaveScheduler()) {
@@ -75,6 +76,7 @@ import Observation
 		store = nil
 		failure = nil
 		failingSaves = [:]
+		searchFailing = false
 		await scheduler.flushAll()
 	}
 
@@ -115,13 +117,16 @@ import Observation
 		let text = search
 		guard !text.isEmpty else {
 			matches = nil
+			searchFailing = false
 			return
 		}
 		do {
 			matches = try await store.search(text).map(\.id)
+			searchFailing = false
 		} catch {
 			matches = []
-			report(error)
+			if !searchFailing { report(error) }
+			searchFailing = true
 		}
 	}
 
