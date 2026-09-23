@@ -13,6 +13,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		self.init(model: AppModel())
 	}
 
+	func applicationWillFinishLaunching(_ notification: Notification) {
+		if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+			NSApp.setActivationPolicy(.prohibited)
+		}
+	}
+
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		NSWorkspace.shared.notificationCenter.addObserver(
 			self,

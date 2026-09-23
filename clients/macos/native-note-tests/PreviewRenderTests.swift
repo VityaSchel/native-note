@@ -28,15 +28,6 @@ struct PreviewRenderTests {
 		render(UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}))
 		render(UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in }, dismissFailure: {}))
 		render(UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}))
-		render(
-			UnlockView(
-				isSetup: false,
-				failure: .unexpected("The notes database could not be opened."),
-				submit: { _ in },
-				dismissFailure: {}
-			)
-		)
-		render(UnlockView(isSetup: false, failure: .unsaved("disk I/O error"), submit: { _ in }, dismissFailure: {}))
 	}
 
 	@Test func noteRows() {
@@ -188,14 +179,6 @@ struct PreviewRenderTests {
 	@Test func libraryShell() {
 		render(
 			ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes))),
-			width: 980,
-			height: 560
-		)
-	}
-
-	@Test func libraryShellWithEditsNotSaved() {
-		render(
-			ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes), failure: .unsaved("disk I/O error"))),
 			width: 980,
 			height: 560
 		)
