@@ -301,6 +301,26 @@ struct SavePathTests {
 		#expect(try await disk.note(id: id)?.body == "typed while it was busy again")
 	}
 
+	@Test func theUnsavedAlertClearsOnceTheSaveLands() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let id = try #require(model.selection)
+		let blocker = try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		)
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed while the database was busy")
+		#expect(await model.flushPendingSaves() == false)
+		#expect(model.failure?.isUnsaved == true)
+		try blocker.execute("ROLLBACK")
+		#expect(await model.flushPendingSaves())
+
+		#expect(model.failure == nil)
+	}
+
 	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {
 		let (model, directory) = try await unlockedModel()
 		defer { try? FileManager.default.removeItem(at: directory) }

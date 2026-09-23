@@ -146,6 +146,7 @@ import Observation
 
 	private func saveLanded(_ id: UUID) {
 		failingSaves[id] = nil
+		if failingSaves.isEmpty, case .unsaved = failure { failure = nil }
 	}
 
 	private func saveFailed(_ failed: Note, to store: NoteStore, after error: Error) {
