@@ -174,6 +174,8 @@ import Observation
 			.unexpected("No unlock parameters were found beside the notes database.")
 		case SQLiteError.checkpointBlocked:
 			.unexpected("The notes database is busy. Try again.")
+		case SQLiteError.newerSchema:
+			.unexpected("The notes database was written by a newer version of Native Note. Update the app to open it.")
 		case let SQLiteError.cannotOpen(_, message):
 			.unexpected("The notes database could not be opened. \(message)")
 		case let SQLiteError.cannotExecute(_, message, _):

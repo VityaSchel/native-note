@@ -6,6 +6,9 @@ nonisolated enum Schema {
 
 	static func migrate(_ connection: SQLiteConnection) throws {
 		let applied = Int(try connection.scalar("PRAGMA user_version").flatMap(Int.init) ?? 0)
+		guard applied <= migrations.count else {
+			throw SQLiteError.newerSchema(found: applied, known: migrations.count)
+		}
 		guard applied < migrations.count else { return }
 
 		try connection.transaction {

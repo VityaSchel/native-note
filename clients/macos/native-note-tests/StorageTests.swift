@@ -148,6 +148,17 @@ struct SchemaTests {
 		#expect(try SQLiteConnection(url: url, rawKey: key).scalar("PRAGMA user_version") == "1")
 		#expect(try await reopened.liveNotes().isEmpty)
 	}
+
+	@Test func refusesADatabaseFromANewerVersion() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		_ = try await store(at: url)
+		try SQLiteConnection(url: url, rawKey: key).execute("PRAGMA user_version = \(Schema.migrations.count + 1)")
+
+		await #expect(throws: SQLiteError.newerSchema(found: Schema.migrations.count + 1, known: Schema.migrations.count)) {
+			_ = try await NoteStore.open(url: url, key: key)
+		}
+	}
 }
 
 struct NoteStoreTests {

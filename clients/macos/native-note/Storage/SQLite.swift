@@ -9,6 +9,7 @@ nonisolated enum SQLiteError: Error, Equatable {
 	case keyMustBe32Bytes(count: Int)
 	case wrongKey
 	case checkpointBlocked
+	case newerSchema(found: Int, known: Int)
 }
 
 nonisolated final class SQLiteConnection {
