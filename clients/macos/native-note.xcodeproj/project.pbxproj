@@ -33,7 +33,7 @@
 		A7B54494302899EF00E267CC /* Native Note.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Native Note.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7B544A1302899F600E267CC /* native-note-tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "native-note-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7B544AB302899F600E267CC /* native-note-ui-tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "native-note-ui-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A7B544CA302899F700E267CC /* vectors */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vectors; path = "../../spec/vectors"; sourceTree = SOURCE_ROOT; };
+		A7B544CA302899F700E267CC /* vectors */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vectors; path = ../../spec/vectors; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
