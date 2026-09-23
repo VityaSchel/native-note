@@ -2,9 +2,11 @@ import SwiftUI
 
 @main
 struct NativeNoteApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
+	@NSApplicationDelegateAdaptor private var delegate: AppDelegate
+
+	var body: some Scene {
+		WindowGroup {
+			ContentView(model: delegate.model)
+		}
+	}
 }

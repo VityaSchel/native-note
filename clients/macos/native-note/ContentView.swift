@@ -1,11 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-	@State private var model: AppModel
-
-	init(model: AppModel = AppModel()) {
-		_model = State(initialValue: model)
-	}
+	@Bindable var model: AppModel
 
 	var body: some View {
 		Group {
@@ -31,6 +27,7 @@ struct ContentView: View {
 			}
 		}
 		.frame(minWidth: 720, minHeight: 460)
+		.onDisappear { Task { await model.flushPendingSaves() } }
 	}
 
 	private var library: some View {
@@ -45,7 +42,7 @@ struct ContentView: View {
 				.onChange(of: model.search) { Task { await model.runSearch() } }
 		} detail: {
 			if let note = model.selectedNote {
-				NoteEditor(text: Binding(get: { note.body }, set: { model.edit($0) }))
+				NoteEditor(text: Binding(get: { note.body }, set: { model.edit(note.id, $0) }))
 					.id(note.id)
 			} else {
 				ContentUnavailableView("No note selected", systemImage: "note.text")
@@ -64,7 +61,7 @@ struct ContentView: View {
 				.disabled(model.selection == nil)
 			}
 			ToolbarItem {
-				Button { model.lock() } label: {
+				Button { Task { await model.lock() } } label: {
 					Label("Lock", systemImage: "lock")
 				}
 			}

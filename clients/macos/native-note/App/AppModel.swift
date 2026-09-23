@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-@MainActor @Observable final class AppModel {
+@Observable final class AppModel {
 	enum Phase: Equatable {
 		case loading
 		case needsSetup
@@ -17,7 +17,12 @@ import Observation
 	private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	private(set) var failure: Failure?
-	var selection: UUID?
+	var selection: UUID? {
+		didSet {
+			guard let previous = oldValue, previous != selection else { return }
+			Task { await scheduler.flush(previous) }
+		}
+	}
 	var search = ""
 
 	var groups: [NoteGroup] {
@@ -34,10 +39,10 @@ import Observation
 	private var store: NoteStore?
 	private var matches: [UUID]?
 
-	init(directory: URL = AppLock.directory, debounce: Duration = .milliseconds(300)) {
+	init(directory: URL = AppLock.directory, scheduler: SaveScheduler = SaveScheduler()) {
 		self.directory = directory
 		database = directory.appending(path: "notes.db")
-		scheduler = SaveScheduler(debounce: debounce)
+		self.scheduler = scheduler
 	}
 
 	func start() {
@@ -52,35 +57,44 @@ import Observation
 		await attach { try await Unlock.open(password: password, database: self.database, in: self.directory) }
 	}
 
-	func lock() {
-		store = nil
-		notes = []
-		selection = nil
+	func lock() async {
 		phase = .locked
+		selection = nil
+		notes = []
+		store = nil
+		await scheduler.flushAll()
+	}
+
+	@discardableResult
+	func flushPendingSaves() async -> Bool {
+		await scheduler.flushAll()
 	}
 
 	func createNote() async {
 		let now = Date()
 		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: true)
-		await write { try await $0.save(note) }
-		selection = notes.contains { $0.id == note.id } ? note.id : nil
+		guard await write({ try await $0.save(note) }) else { return }
+		notes.insert(note, at: 0)
+		selection = note.id
 	}
 
-	func edit(_ body: String) {
-		guard var edited = selectedNote, edited.body != body else { return }
+	func edit(_ id: UUID, _ body: String) {
+		guard var edited = notes.first(where: { $0.id == id }), edited.body != body else { return }
 		edited.body = body
 		edited.updatedAt = Date()
 		edited.dirty = true
 		replaceInMemory(edited)
 
-		let pending = edited
-		scheduler.schedule { [weak self] in await self?.write { try await $0.save(pending) } }
+		guard let store else { return }
+		scheduleSave(edited, to: store)
 	}
 
 	func deleteSelected() async {
 		guard let id = selection else { return }
 		selection = nil
-		await write { try await $0.markDeleted(id: id, at: Date()) }
+		guard await write({ try await $0.markDeleted(id: id, at: Date()) }) else { return }
+		await scheduler.discard(id)
+		notes.removeAll { $0.id == id }
 	}
 
 	func runSearch() async {
@@ -99,9 +113,21 @@ import Observation
 		return notes.filter { ranking[$0.id] != nil }.sorted { ranking[$0.id]! < ranking[$1.id]! }
 	}
 
-	private func discardSelectionIfMissing() {
-		guard let selected = selection, !notes.contains(where: { $0.id == selected }) else { return }
-		selection = nil
+	private func scheduleSave(_ note: Note, to store: NoteStore) {
+		scheduler.schedule(note.id) { [weak self] in
+			do {
+				try await store.save(note)
+				return true
+			} catch {
+				await self?.retry(note, to: store, after: error)
+				return false
+			}
+		}
+	}
+
+	private func retry(_ failed: Note, to store: NoteStore, after error: Error) {
+		report(error)
+		scheduleSave(notes.first { $0.id == failed.id } ?? failed, to: store)
 	}
 
 	private func replaceInMemory(_ note: Note) {
@@ -115,22 +141,25 @@ import Observation
 			let opened = try await open()
 			store = opened
 			notes = try await opened.liveNotes()
-			discardSelectionIfMissing()
 			phase = .unlocked
 		} catch {
 			failure = Self.failure(from: error)
 		}
 	}
 
-	private func write(_ body: @escaping (NoteStore) async throws -> Void) async {
-		guard let store else { return }
+	private func write(_ body: (NoteStore) async throws -> Void) async -> Bool {
+		guard let store else { return false }
 		do {
 			try await body(store)
-			notes = try await store.liveNotes()
-			discardSelectionIfMissing()
+			return true
 		} catch {
-			failure = Self.failure(from: error)
+			report(error)
+			return false
 		}
+	}
+
+	private func report(_ error: Error) {
+		failure = Self.failure(from: error)
 	}
 
 	func dismissFailure() {

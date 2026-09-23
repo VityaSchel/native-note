@@ -4,7 +4,7 @@
 
 SQLCipher, WAL, `synchronous=FULL`. `PRAGMA foreign_keys = ON` from v1, so every relation added later carries an explicit `ON DELETE`.
 
-Local durable save happens every ~300 ms debounce, no `v` bump
+A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A local save never bumps `v` and never writes to a tombstone.
 
 ```sql
 CREATE TABLE note (
