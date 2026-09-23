@@ -218,6 +218,19 @@ struct NoteStoreTests {
 		#expect(try await notes.liveNotes().isEmpty)
 	}
 
+	@Test func closingReleasesTheDatabase() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let notes = try await store(at: url)
+		try await notes.save(sample())
+		#expect(FileManager.default.fileExists(atPath: url.path + "-wal"))
+
+		await notes.close()
+
+		#expect(!FileManager.default.fileExists(atPath: url.path + "-wal"))
+		await #expect(throws: SQLiteError.closed) { try await notes.liveNotes() }
+	}
+
 	@Test func aSaveNeverRevivesATombstone() async throws {
 		let url = temporaryDatabase()
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

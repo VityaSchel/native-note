@@ -139,6 +139,74 @@ struct SavePathTests {
 		#expect(model.notes.first { $0.id == id }?.body == "typed then locked")
 	}
 
+	@Test func lockingClosesTheDatabase() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		model.edit(try #require(model.selection), "typed then locked")
+
+		await model.lock()
+
+		#expect(!FileManager.default.fileExists(atPath: directory.appending(path: "notes.db-wal").path))
+	}
+
+	@Test func lockingWithEditsInTwoNotesSavesBoth() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let first = try #require(model.selection)
+		await model.createNote()
+		let second = try #require(model.selection)
+		await model.createNote()
+
+		model.edit(first, "first note")
+		model.edit(second, "second note")
+		await model.lock()
+
+		#expect(model.failure == nil)
+		let disk = try await observer(of: directory)
+		#expect(try await disk.note(id: first)?.body == "first note")
+		#expect(try await disk.note(id: second)?.body == "second note")
+	}
+
+	@Test func lockingWhileASaveIsInFlightKeepsTheNewerText() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let id = try #require(model.selection)
+
+		model.edit(id, "first")
+		let saving = Task { await model.flushPendingSaves() }
+		await Task.yield()
+		model.edit(id, "first and more")
+		await model.lock()
+		_ = await saving.value
+
+		#expect(model.failure == nil)
+		#expect(try await observer(of: directory).note(id: id)?.body == "first and more")
+	}
+
+	@Test func aStoreKeptOpenForAFailingSaveClosesOnceItLands() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let id = try #require(model.selection)
+		var blocker: SQLiteConnection? = try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try await rawKey()
+		)
+
+		try blocker?.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed then locked while busy")
+		await model.lock()
+		try blocker?.execute("ROLLBACK")
+		blocker = nil
+		#expect(await model.flushPendingSaves())
+
+		#expect(!FileManager.default.fileExists(atPath: directory.appending(path: "notes.db-wal").path))
+		#expect(try await observer(of: directory).note(id: id)?.body == "typed then locked while busy")
+	}
+
 	@Test func leavingANoteSavesItAtOnce() async throws {
 		let (model, directory) = try await unlockedModel()
 		defer { try? FileManager.default.removeItem(at: directory) }

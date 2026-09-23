@@ -47,6 +47,7 @@ import Observation
 
 	private let scheduler: SaveScheduler
 	private var store: NoteStore?
+	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
 	private var searchFailing = false
 	private var matches: [UUID]?
@@ -70,6 +71,7 @@ import Observation
 	}
 
 	func lock() async {
+		let closing = store
 		phase = .locked
 		selection = nil
 		notes = []
@@ -78,6 +80,8 @@ import Observation
 		failingSaves = [:]
 		searchFailing = false
 		await scheduler.flushAll()
+		guard let closing else { return }
+		if unsavedReason == nil { await closing.close() } else { retiring = closing }
 	}
 
 	@discardableResult
@@ -124,6 +128,7 @@ import Observation
 			matches = try await store.search(text).map(\.id)
 			searchFailing = false
 		} catch {
+			guard store === self.store else { return }
 			matches = []
 			if !searchFailing { report(error) }
 			searchFailing = true
@@ -140,7 +145,7 @@ import Observation
 		scheduler.schedule(note.id) { [weak self] in
 			do {
 				try await store.save(note)
-				await self?.saveLanded(note.id)
+				await self?.saveLanded(note.id, in: store)
 				return true
 			} catch {
 				await self?.saveFailed(note, to: store, after: error)
@@ -149,9 +154,13 @@ import Observation
 		}
 	}
 
-	private func saveLanded(_ id: UUID) {
+	private func saveLanded(_ id: UUID, in landed: NoteStore) async {
 		failingSaves[id] = nil
-		if failingSaves.isEmpty, case .unsaved = failure { failure = nil }
+		guard failingSaves.isEmpty else { return }
+		if case .unsaved = failure { failure = nil }
+		guard landed === retiring else { return }
+		retiring = nil
+		await landed.close()
 	}
 
 	private func saveFailed(_ failed: Note, to store: NoteStore, after error: Error) {
@@ -159,7 +168,7 @@ import Observation
 		if failingSaves.isEmpty { failure = .unsaved(reason) }
 		let latest = Self.newer(notes.first { $0.id == failed.id }, failed)
 		failingSaves[failed.id] = FailingSave(note: latest, reason: reason)
-		scheduleSave(latest, to: store)
+		scheduleSave(latest, to: self.store ?? store)
 	}
 
 	private static func newer(_ held: Note?, _ other: Note) -> Note {
@@ -177,11 +186,16 @@ import Observation
 		do {
 			let opened = try await open()
 			store = opened
+			let carried = failingSaves.values.map(\.note)
 			notes = try await opened.liveNotes()
-			for failing in failingSaves.values {
-				guard let index = notes.firstIndex(where: { $0.id == failing.note.id }) else { continue }
-				notes[index] = Self.newer(failing.note, notes[index])
-				scheduleSave(notes[index], to: opened)
+			for note in carried {
+				guard let index = notes.firstIndex(where: { $0.id == note.id }) else { continue }
+				notes[index] = Self.newer(note, notes[index])
+				if failingSaves[note.id] != nil { scheduleSave(notes[index], to: opened) }
+			}
+			if let old = retiring {
+				retiring = nil
+				await old.close()
 			}
 			if let unsavedReason { failure = .unsaved(unsavedReason) }
 			phase = .unlocked
@@ -196,7 +210,7 @@ import Observation
 			try await body(store)
 			return true
 		} catch {
-			report(error)
+			if store === self.store { report(error) }
 			return false
 		}
 	}
@@ -224,6 +238,8 @@ import Observation
 			"No unlock parameters were found beside the notes database."
 		case SQLiteError.checkpointBlocked:
 			"The notes database is busy. Try again."
+		case SQLiteError.closed:
+			"The notes database is closed."
 		case SQLiteError.newerSchema:
 			"The notes database was written by a newer version of Native Note. Update the app to open it."
 		case let SQLiteError.cannotOpen(_, message):

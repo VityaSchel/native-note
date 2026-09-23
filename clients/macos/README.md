@@ -11,6 +11,8 @@ Dependencies:
 
 - Editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage. We chose it over SwiftUI `TextEditor` because `TextEditor` cannot do reliable per-range styling, so the heading would need its own field and unified selection would break. Also the right base for the markdown editor later
 - Database writes off `@MainActor`, published state on it, so it doesn't jank on large notes
+- Argon2 and Secure Enclave calls run on `Unlock`'s serial queue, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
+- Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
 - `AppModel` is owned by the `AppDelegate`, not the `App`, so `applicationShouldTerminate` can hold quit until pending saves land
 - No `try!` outside tests, so it doesn't crash on any Keychain ACL or directory failure
 

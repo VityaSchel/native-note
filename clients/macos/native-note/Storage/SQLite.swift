@@ -10,6 +10,7 @@ nonisolated enum SQLiteError: Error, Equatable {
 	case wrongKey
 	case checkpointBlocked
 	case newerSchema(found: Int, known: Int)
+	case closed
 }
 
 nonisolated final class SQLiteConnection {

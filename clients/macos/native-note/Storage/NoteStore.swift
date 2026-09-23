@@ -3,15 +3,27 @@ import Foundation
 actor NoteStore {
 	private static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, seq"
 
-	private let connection: SQLiteConnection
+	private var opened: SQLiteConnection?
 
 	static func open(url: URL, key: Data) async throws -> NoteStore {
 		try await Task.detached(priority: .userInitiated) { try NoteStore(url: url, key: key) }.value
 	}
 
 	private init(url: URL, key: Data) throws {
-		connection = try SQLiteConnection(url: url, rawKey: key)
+		let connection = try SQLiteConnection(url: url, rawKey: key)
 		try Schema.migrate(connection)
+		opened = connection
+	}
+
+	func close() {
+		opened = nil
+	}
+
+	private var connection: SQLiteConnection {
+		get throws {
+			guard let opened else { throw SQLiteError.closed }
+			return opened
+		}
 	}
 
 	func save(_ note: Note) throws {
