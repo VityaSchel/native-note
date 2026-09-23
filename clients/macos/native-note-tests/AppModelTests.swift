@@ -321,6 +321,22 @@ struct SavePathTests {
 		#expect(model.failure == nil)
 	}
 
+	@Test func lockingClearsALibraryFailure() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		).execute("DROP TABLE note_fts")
+		model.search = "kayak"
+		await model.runSearch()
+		try #require(model.failure != nil)
+
+		await model.lock()
+
+		#expect(model.failure == nil)
+	}
+
 	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {
 		let (model, directory) = try await unlockedModel()
 		defer { try? FileManager.default.removeItem(at: directory) }
@@ -389,7 +405,7 @@ struct SavePathTests {
 		await model.runSearch()
 
 		#expect(model.groups.isEmpty)
-		#expect(model.failure != nil)
+		#expect(model.failure?.isUnexpected == true)
 	}
 
 	@Test func aFailingSearchIsReportedOnceWhileTheUserTypes() async throws {
@@ -536,6 +552,10 @@ struct SavePathTests {
 private extension AppModel.Failure {
 	var isUnsaved: Bool {
 		if case .unsaved = self { true } else { false }
+	}
+
+	var isUnexpected: Bool {
+		if case .unexpected = self { true } else { false }
 	}
 }
 
