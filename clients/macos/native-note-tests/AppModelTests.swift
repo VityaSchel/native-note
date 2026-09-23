@@ -116,6 +116,12 @@ struct SavePathTests {
 		return (model, directory)
 	}
 
+	private func rawKey() async throws -> Data {
+		try await Task.detached { [password, parameters] in
+			try Unlock.localDbKey(password: password, parameters: parameters)
+		}.value
+	}
+
 	private func observer(of directory: URL) async throws -> NoteStore {
 		try await Unlock.open(password: password, database: directory.appending(path: "notes.db"), in: directory)
 	}
@@ -236,7 +242,7 @@ struct SavePathTests {
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 
 		try blocker.execute("BEGIN IMMEDIATE")
@@ -257,7 +263,7 @@ struct SavePathTests {
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 
 		model.edit(id, "typed just before delete")
@@ -278,7 +284,7 @@ struct SavePathTests {
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 
 		try blocker.execute("BEGIN IMMEDIATE")
@@ -308,7 +314,7 @@ struct SavePathTests {
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 
 		try blocker.execute("BEGIN IMMEDIATE")
@@ -326,7 +332,7 @@ struct SavePathTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		).execute("DROP TABLE note_fts")
 		model.search = "kayak"
 		await model.runSearch()
@@ -345,7 +351,7 @@ struct SavePathTests {
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 
 		try blocker.execute("BEGIN IMMEDIATE")
@@ -371,7 +377,7 @@ struct SavePathTests {
 		await model.flushPendingSaves()
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 
 		try blocker.execute("BEGIN IMMEDIATE")
@@ -398,7 +404,7 @@ struct SavePathTests {
 		await model.flushPendingSaves()
 		try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		).execute("DROP TABLE note_fts")
 
 		model.search = "kayak"
@@ -413,7 +419,7 @@ struct SavePathTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		).execute("DROP TABLE note_fts")
 
 		var reports = 0
@@ -475,7 +481,7 @@ struct SavePathTests {
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
 			url: directory.appending(path: "notes.db"),
-			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+			rawKey: try await rawKey()
 		)
 		let prompt = QuitPrompt()
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: prompt.ask)

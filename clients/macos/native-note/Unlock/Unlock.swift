@@ -7,6 +7,8 @@ nonisolated enum Unlock {
 		case wrongPassword
 	}
 
+	private static let blockingWork = DispatchQueue(label: "dev.hloth.nativenote.unlock", qos: .userInitiated)
+
 	static func localDbKey(password: String, parameters: UnlockParameters) throws -> Data {
 		let argonOut = try Argon2.hash(
 			password: Data(password.utf8),
@@ -31,31 +33,29 @@ nonisolated enum Unlock {
 		)
 	}
 
-	static func setUp(password: String, database: URL, in directory: URL) async throws -> NoteStore {
+	@concurrent static func setUp(password: String, database: URL, in directory: URL) async throws -> NoteStore {
 		try FileManager.default.createDirectory(
 			at: directory,
 			withIntermediateDirectories: true,
 			attributes: [.posixPermissions: 0o700]
 		)
-		let parameters = try createParameters()
-		let store = try await NoteStore.open(
-			url: database,
-			key: try localDbKey(password: password, parameters: parameters)
-		)
+		let (parameters, key) = try await offThePool {
+			let parameters = try createParameters()
+			return (parameters, try localDbKey(password: password, parameters: parameters))
+		}
+		let store = try await NoteStore.open(url: database, key: key)
 		try AppLock.write(parameters, to: AppLock.current(in: directory))
 		return store
 	}
 
-	static func open(password: String, database: URL, in directory: URL) async throws -> NoteStore {
+	@concurrent static func open(password: String, database: URL, in directory: URL) async throws -> NoteStore {
 		let candidates = AppLock.candidates(in: directory)
 		guard !candidates.isEmpty else { throw Failure.neverSetUp }
 
 		for parameters in candidates {
 			do {
-				return try await NoteStore.open(
-					url: database,
-					key: try localDbKey(password: password, parameters: parameters)
-				)
+				let key = try await offThePool { try localDbKey(password: password, parameters: parameters) }
+				return try await NoteStore.open(url: database, key: key)
 			} catch SQLiteError.wrongKey {
 				continue
 			}
@@ -63,7 +63,7 @@ nonisolated enum Unlock {
 		throw Failure.wrongPassword
 	}
 
-	static func changePassword(
+	@concurrent static func changePassword(
 		to newPassword: String,
 		from parameters: UnlockParameters,
 		store: NoteStore,
@@ -72,11 +72,17 @@ nonisolated enum Unlock {
 	) async throws {
 		var next = parameters
 		next.localSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
-		let newKey = try localDbKey(password: newPassword, parameters: next)
+		let newKey = try await offThePool { [next] in try localDbKey(password: newPassword, parameters: next) }
 
 		try AppLock.write(next, to: AppLock.pendingRekey(in: directory))
 		try await store.rekey(to: newKey)
 		_ = try await NoteStore.open(url: database, key: newKey)
 		try AppLock.promoteRekey(in: directory)
+	}
+
+	private static func offThePool<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
+		try await withCheckedThrowingContinuation { continuation in
+			blockingWork.async { continuation.resume(with: Result(catching: work)) }
+		}
 	}
 }

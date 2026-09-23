@@ -27,6 +27,7 @@ private func seed(_ password: String, in place: (directory: URL, database: URL))
 	return parameters
 }
 
+@Suite(.serialized)
 struct UnlockFlowTests {
 	@Test func opensWithTheRightPasswordAndRefusesTheWrong() async throws {
 		let place = workspace()

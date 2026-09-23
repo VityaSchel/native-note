@@ -3,6 +3,7 @@ import Testing
 
 @testable import NativeNote
 
+@Suite(.serialized)
 struct MachineBindingTests {
 	@Test(.enabled(if: MachineKey.isAvailable))
 	func isStableForOneDeviceKey() throws {

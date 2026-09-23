@@ -15,6 +15,9 @@ nonisolated enum Argon2 {
 	static let floor = Parameters(m: 256 * 1024, t: 3, p: 4)
 
 	static func hash(password: Data, salt: Data, parameters: Parameters, length: Int = 32) throws -> Data {
+		#if DEBUG
+			dispatchPrecondition(condition: .notOnQueue(.main))
+		#endif
 		var out = [UInt8](repeating: 0, count: length)
 		let code = password.withUnsafeBytes { password in
 			salt.withUnsafeBytes { salt in
