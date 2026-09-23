@@ -52,7 +52,11 @@ final class SaveScheduler {
 	func flushAll() async -> Bool {
 		var landed = true
 		for id in Set(pending.keys).union(writing.keys) {
-			landed = await flush(id) && landed
+			var saved = await flush(id)
+			if !saved, pending[id] != nil {
+				saved = await flush(id)
+			}
+			landed = saved && landed
 		}
 		return landed
 	}

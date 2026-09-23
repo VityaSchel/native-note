@@ -157,6 +157,20 @@ struct SaveSchedulerTests {
 		#expect(await scheduler.flush(failing))
 	}
 
+	@Test func flushAllGivesARequeuedWriteOneMoreTry() async {
+		let scheduler = scheduler()
+		let saves = Log()
+		let id = UUID()
+
+		scheduler.schedule(id) {
+			await scheduler.schedule(id) { await saves.append(2) }
+			return false
+		}
+
+		#expect(await scheduler.flushAll())
+		#expect(await saves.values == [2])
+	}
+
 	@Test func discardDropsThePendingWrite() async {
 		let scheduler = scheduler()
 		let saves = Log()
