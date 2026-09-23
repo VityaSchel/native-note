@@ -38,6 +38,8 @@ nonisolated final class SQLiteConnection {
 			try Self.confirmKeyOpens(opened)
 			try Self.execute("PRAGMA journal_mode = WAL", on: opened)
 			try Self.execute("PRAGMA synchronous = FULL", on: opened)
+			try Self.execute("PRAGMA fullfsync = ON", on: opened)
+			try Self.execute("PRAGMA checkpoint_fullfsync = ON", on: opened)
 			try Self.execute("PRAGMA foreign_keys = ON", on: opened)
 		} catch {
 			sqlite3_close_v2(opened)

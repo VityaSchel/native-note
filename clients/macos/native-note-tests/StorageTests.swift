@@ -130,6 +130,8 @@ struct DatabaseEncryptionTests {
 
 		#expect(try connection.scalar("PRAGMA journal_mode") == "wal")
 		#expect(try connection.scalar("PRAGMA synchronous") == "2")
+		#expect(try connection.scalar("PRAGMA fullfsync") == "1")
+		#expect(try connection.scalar("PRAGMA checkpoint_fullfsync") == "1")
 		#expect(try connection.scalar("PRAGMA foreign_keys") == "1")
 	}
 }
