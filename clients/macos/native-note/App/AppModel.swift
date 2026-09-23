@@ -104,7 +104,12 @@ import Observation
 			matches = nil
 			return
 		}
-		matches = try? await store.search(text).map(\.id)
+		do {
+			matches = try await store.search(text).map(\.id)
+		} catch {
+			matches = []
+			report(error)
+		}
 	}
 
 	private var visibleNotes: [Note] {

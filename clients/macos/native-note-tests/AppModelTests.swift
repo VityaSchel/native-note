@@ -270,6 +270,24 @@ struct SavePathTests {
 		#expect(try await disk.note(id: id)?.body == "typed just before delete")
 	}
 
+	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		model.edit(try #require(model.selection), "kayak")
+		await model.flushPendingSaves()
+		try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		).execute("DROP TABLE note_fts")
+
+		model.search = "kayak"
+		await model.runSearch()
+
+		#expect(model.groups.isEmpty)
+		#expect(model.failure != nil)
+	}
+
 	@Test func deletingWithASavePendingLeavesAnEmptyTombstone() async throws {
 		let (model, directory) = try await unlockedModel()
 		defer { try? FileManager.default.removeItem(at: directory) }
