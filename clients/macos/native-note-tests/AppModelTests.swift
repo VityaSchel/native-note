@@ -482,13 +482,13 @@ struct SavePathTests {
 		try blocker.execute("ROLLBACK")
 	}
 
-	@Test func theQuitAlertDefaultsToKeepingTheApp() {
+	@Test func theQuitAlertOnlyQuitsOnAnExplicitClick() {
 		let alert = AppDelegate.quitLosingEditsAlert("disk I/O error")
-		alert.layout()
 
 		#expect(alert.buttons.map(\.title) == ["Cancel", "Quit Anyway"])
+		#expect(alert.buttons.map(\.keyEquivalent) == ["\u{1b}", ""])
 		#expect(alert.buttons.last?.hasDestructiveAction == true)
-		#expect(alert.informativeText.hasPrefix("disk I/O error"))
+		#expect(alert.informativeText.contains("disk I/O error"))
 	}
 
 	@Test func leavingTheAppSavesAtOnce() async throws {

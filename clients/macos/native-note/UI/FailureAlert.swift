@@ -13,9 +13,9 @@ private struct FailureAlert: ViewModifier {
 	private var presented: (title: String, message: String)? {
 		switch failure {
 		case let .unsaved(reason):
-			("Your latest edits couldn't be saved", "\(reason)\n\nNative Note keeps trying while it's open.")
+			("Your latest edits could not be saved.", "Native Note will keep trying to save them until you quit.\n\n\(reason)")
 		case let .unexpected(message):
-			("Native Note could not continue", message)
+			("Native Note could not continue.", message)
 		case .wrongPassword, nil:
 			nil
 		}

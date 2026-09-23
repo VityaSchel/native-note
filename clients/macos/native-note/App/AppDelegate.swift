@@ -46,8 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	static func quitLosingEditsAlert(_ reason: String) -> NSAlert {
 		let alert = NSAlert()
 		alert.alertStyle = .warning
-		alert.messageText = "Your latest edits couldn't be saved"
-		alert.informativeText = [reason, "Quitting now loses them."].filter { !$0.isEmpty }.joined(separator: "\n\n")
+		alert.messageText = "Your latest edits could not be saved."
+		alert.informativeText = "If you quit now, these edits will be lost.\n\n\(reason)"
 		alert.addButton(withTitle: "Cancel")
 		alert.addButton(withTitle: "Quit Anyway").hasDestructiveAction = true
 		return alert
