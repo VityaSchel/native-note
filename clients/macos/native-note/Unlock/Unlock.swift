@@ -32,6 +32,11 @@ nonisolated enum Unlock {
 	}
 
 	static func setUp(password: String, database: URL, in directory: URL) async throws -> NoteStore {
+		try FileManager.default.createDirectory(
+			at: directory,
+			withIntermediateDirectories: true,
+			attributes: [.posixPermissions: 0o700]
+		)
 		let parameters = try createParameters()
 		let store = try await NoteStore.open(
 			url: database,
