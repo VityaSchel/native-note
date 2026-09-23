@@ -25,6 +25,7 @@ actor NoteStore {
 				dirty = excluded.dirty,
 				v = excluded.v,
 				seq = excluded.seq
+			WHERE note.deleted = 0
 			""",
 			on: connection.handle
 		)

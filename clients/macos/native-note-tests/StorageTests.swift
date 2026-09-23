@@ -205,6 +205,23 @@ struct NoteStoreTests {
 		#expect(try await notes.liveNotes().isEmpty)
 	}
 
+	@Test func aSaveNeverRevivesATombstone() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let notes = try await store(at: url)
+		var note = sample(body: "kayak")
+		try await notes.save(note)
+		try await notes.markDeleted(id: note.id, at: Date(epochMilliseconds: 1_760_000_009_000))
+
+		note.body = "kayak, typed before the delete"
+		try await notes.save(note)
+
+		let tombstone = try await notes.note(id: note.id)
+		#expect(tombstone?.deleted == true)
+		#expect(tombstone?.body == "")
+		#expect(try await notes.search("kayak").isEmpty)
+	}
+
 	@Test func listsNewestFirstAndReportsPendingPushes() async throws {
 		let url = temporaryDatabase()
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
