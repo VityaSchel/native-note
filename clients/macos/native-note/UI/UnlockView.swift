@@ -17,15 +17,6 @@ struct UnlockView: View {
 		return nil
 	}
 
-	private var alertMessage: String? {
-		guard case let .unexpected(message) = failure else { return nil }
-		return message
-	}
-
-	private var showingAlert: Binding<Bool> {
-		Binding(get: { alertMessage != nil }, set: { presented in if !presented { dismissFailure() } })
-	}
-
 	var body: some View {
 		VStack(spacing: 16) {
 			Text(isSetup ? "Set an unlock password" : "Native Note")
@@ -66,11 +57,7 @@ struct UnlockView: View {
 		}
 		.padding(32)
 		.frame(width: 360)
-		.alert("Native Note could not continue", isPresented: showingAlert) {
-			Button("OK", role: .cancel) {}
-		} message: {
-			Text(alertMessage ?? "")
-		}
+		.failureAlert(failure, dismiss: dismissFailure)
 	}
 
 	private func send() {
@@ -103,6 +90,15 @@ struct UnlockView: View {
 	UnlockView(
 		isSetup: false,
 		failure: .unexpected("The notes database could not be opened. unable to open database file"),
+		submit: { _ in },
+		dismissFailure: {}
+	)
+}
+
+#Preview("Locked, edits not saved") {
+	UnlockView(
+		isSetup: false,
+		failure: .unsaved("disk I/O error"),
 		submit: { _ in },
 		dismissFailure: {}
 	)

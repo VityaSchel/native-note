@@ -36,6 +36,7 @@ struct PreviewRenderTests {
 				dismissFailure: {}
 			)
 		)
+		render(UnlockView(isSetup: false, failure: .unsaved("disk I/O error"), submit: { _ in }, dismissFailure: {}))
 	}
 
 	@Test func noteRows() {
@@ -187,6 +188,14 @@ struct PreviewRenderTests {
 	@Test func libraryShell() {
 		render(
 			ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes))),
+			width: 980,
+			height: 560
+		)
+	}
+
+	@Test func libraryShellWithEditsNotSaved() {
+		render(
+			ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes), failure: .unsaved("disk I/O error"))),
 			width: 980,
 			height: 560
 		)

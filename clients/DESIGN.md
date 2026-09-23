@@ -4,7 +4,7 @@
 
 SQLCipher, WAL, `synchronous=FULL` with `fullfsync` and `checkpoint_fullfsync` on; on macOS `synchronous=FULL` alone does not survive power loss. A database whose `user_version` is newer than the app is refused, not opened. `PRAGMA foreign_keys = ON` from v1, so every relation added later carries an explicit `ON DELETE`.
 
-A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A local save never bumps `v` and never writes to a tombstone.
+A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A local save never bumps `v` and never writes to a tombstone. A failed save keeps retrying with the latest text and is reported once until it lands; lock clears the report before its final save, so a failure there shows on the lock screen.
 
 ```sql
 CREATE TABLE note (

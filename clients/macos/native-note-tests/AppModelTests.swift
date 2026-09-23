@@ -270,6 +270,61 @@ struct SavePathTests {
 		#expect(try await disk.note(id: id)?.body == "typed just before delete")
 	}
 
+	@Test func aFailingSaveIsReportedOnceWhileItRetries() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let disk = try await observer(of: directory)
+		await model.createNote()
+		let id = try #require(model.selection)
+		let blocker = try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		)
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed while the database was busy")
+		#expect(await model.flushPendingSaves() == false)
+		#expect(model.failure?.isUnsaved == true)
+		model.dismissFailure()
+		#expect(await model.flushPendingSaves() == false)
+		#expect(model.failure == nil)
+		try blocker.execute("ROLLBACK")
+		#expect(await model.flushPendingSaves())
+		#expect(model.failingSaves.isEmpty)
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed while it was busy again")
+		#expect(await model.flushPendingSaves() == false)
+		#expect(model.failure?.isUnsaved == true)
+		try blocker.execute("ROLLBACK")
+		#expect(await model.flushPendingSaves())
+		#expect(try await disk.note(id: id)?.body == "typed while it was busy again")
+	}
+
+	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {
+		let (model, directory) = try await unlockedModel()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let disk = try await observer(of: directory)
+		await model.createNote()
+		let id = try #require(model.selection)
+		let blocker = try SQLiteConnection(
+			url: directory.appending(path: "notes.db"),
+			rawKey: try Unlock.localDbKey(password: password, parameters: parameters)
+		)
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed then locked while busy")
+		#expect(await model.flushPendingSaves() == false)
+		model.dismissFailure()
+		await model.lock()
+
+		#expect(model.phase == .locked)
+		#expect(model.failure?.isUnsaved == true)
+		try blocker.execute("ROLLBACK")
+		#expect(await model.flushPendingSaves())
+		#expect(try await disk.note(id: id)?.body == "typed then locked while busy")
+	}
+
 	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
 		let (model, directory) = try await unlockedModel()
 		defer { try? FileManager.default.removeItem(at: directory) }
@@ -351,6 +406,12 @@ struct SavePathTests {
 		try await settle { try await disk.note(id: id)?.body == "typed then slept" }
 
 		#expect(try await disk.note(id: id)?.body == "typed then slept")
+	}
+}
+
+private extension AppModel.Failure {
+	var isUnsaved: Bool {
+		if case .unsaved = self { true } else { false }
 	}
 }
 

@@ -11,12 +11,14 @@ import Observation
 
 	enum Failure: Equatable {
 		case wrongPassword
+		case unsaved(String)
 		case unexpected(String)
 	}
 
 	private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	private(set) var failure: Failure?
+	private(set) var failingSaves: [UUID: String] = [:]
 	var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -62,6 +64,8 @@ import Observation
 		selection = nil
 		notes = []
 		store = nil
+		failure = nil
+		failingSaves = [:]
 		await scheduler.flushAll()
 	}
 
@@ -122,16 +126,23 @@ import Observation
 		scheduler.schedule(note.id) { [weak self] in
 			do {
 				try await store.save(note)
+				await self?.saveLanded(note.id)
 				return true
 			} catch {
-				await self?.retry(note, to: store, after: error)
+				await self?.saveFailed(note, to: store, after: error)
 				return false
 			}
 		}
 	}
 
-	private func retry(_ failed: Note, to store: NoteStore, after error: Error) {
-		report(error)
+	private func saveLanded(_ id: UUID) {
+		failingSaves[id] = nil
+	}
+
+	private func saveFailed(_ failed: Note, to store: NoteStore, after error: Error) {
+		let reason = Self.reason(for: error)
+		if failingSaves.isEmpty { failure = .unsaved(reason) }
+		failingSaves[failed.id] = reason
 		scheduleSave(notes.first { $0.id == failed.id } ?? failed, to: store)
 	}
 
@@ -175,31 +186,39 @@ import Observation
 		switch error {
 		case Unlock.Failure.wrongPassword, SQLiteError.wrongKey:
 			.wrongPassword
-		case Unlock.Failure.neverSetUp:
-			.unexpected("No unlock parameters were found beside the notes database.")
-		case SQLiteError.checkpointBlocked:
-			.unexpected("The notes database is busy. Try again.")
-		case SQLiteError.newerSchema:
-			.unexpected("The notes database was written by a newer version of Native Note. Update the app to open it.")
-		case let SQLiteError.cannotOpen(_, message):
-			.unexpected("The notes database could not be opened. \(message)")
-		case let SQLiteError.cannotExecute(_, message, _):
-			.unexpected(message)
-		case let SQLiteError.keyMustBe32Bytes(count):
-			.unexpected("The unlock key was \(count) bytes rather than 32.")
 		default:
-			.unexpected(String(describing: error))
+			.unexpected(reason(for: error))
+		}
+	}
+
+	private static func reason(for error: Error) -> String {
+		switch error {
+		case Unlock.Failure.neverSetUp:
+			"No unlock parameters were found beside the notes database."
+		case SQLiteError.checkpointBlocked:
+			"The notes database is busy. Try again."
+		case SQLiteError.newerSchema:
+			"The notes database was written by a newer version of Native Note. Update the app to open it."
+		case let SQLiteError.cannotOpen(_, message):
+			"The notes database could not be opened. \(message)"
+		case let SQLiteError.cannotExecute(_, message, _):
+			message
+		case let SQLiteError.keyMustBe32Bytes(count):
+			"The unlock key was \(count) bytes rather than 32."
+		default:
+			String(describing: error)
 		}
 	}
 }
 
 #if DEBUG
 	extension AppModel {
-		static func previewing(_ notes: [Note]) -> AppModel {
+		static func previewing(_ notes: [Note], failure: Failure? = nil) -> AppModel {
 			let model = AppModel(directory: URL(fileURLWithPath: "/dev/null"))
 			model.notes = notes
 			model.phase = .unlocked
 			model.selection = notes.first?.id
+			model.failure = failure
 			return model
 		}
 	}

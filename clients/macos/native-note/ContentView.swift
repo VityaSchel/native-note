@@ -66,12 +66,18 @@ struct ContentView: View {
 				}
 			}
 		}
+		.failureAlert(model.failure, dismiss: model.dismissFailure)
 	}
 }
 
 #if DEBUG
 	#Preview("Library") {
 		ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes)))
+			.frame(width: 980, height: 560)
+	}
+
+	#Preview("Library, edits not saved") {
+		ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes), failure: .unsaved("disk I/O error")))
 			.frame(width: 980, height: 560)
 	}
 
