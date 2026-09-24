@@ -19,8 +19,35 @@ nonisolated enum AppLock {
 		directory.appending(path: "app-lock.next.plist")
 	}
 
-	static func candidates(in directory: URL) -> [UnlockParameters] {
-		[pendingRekeyFile(in: directory), currentFile(in: directory)].compactMap { try? read(from: $0) }
+	static func parameterFiles(in directory: URL) -> [URL] {
+		[pendingRekeyFile(in: directory), currentFile(in: directory)].filter { FileManager.default.fileExists(atPath: $0.path) }
+	}
+
+	static func keep(_ opened: URL, in directory: URL) throws {
+		let pending = pendingRekeyFile(in: directory)
+		if opened == pending {
+			try promoteRekey(in: directory)
+		} else if FileManager.default.fileExists(atPath: pending.path) {
+			try FileManager.default.removeItem(at: pending)
+		}
+	}
+
+	static func setAside(_ database: URL) throws {
+		guard FileManager.default.fileExists(atPath: database.path) else { return }
+		let aside = try asideFile(for: database)
+		for suffix in ["-wal", "-shm", ""] {
+			let file = URL(fileURLWithPath: database.path + suffix)
+			guard FileManager.default.fileExists(atPath: file.path) else { continue }
+			try FileManager.default.moveItem(at: file, to: URL(fileURLWithPath: aside.path + suffix))
+		}
+	}
+
+	static func asideFile(for database: URL) throws -> URL {
+		let identity = try FileManager.default.attributesOfItem(atPath: database.path)
+		let created = identity[.creationDate] as? Date ?? .now
+		let number = identity[.systemFileNumber] as? Int ?? 0
+		let stamp = created.formatted(.iso8601.year().month().day().dateSeparator(.omitted).time(includingFractionalSeconds: false).timeSeparator(.omitted).timeZone(separator: .omitted))
+		return database.deletingLastPathComponent().appending(path: "notes-set-aside-\(stamp)-\(number).db")
 	}
 
 	static func promoteRekey(in directory: URL) throws {

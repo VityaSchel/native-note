@@ -3,15 +3,25 @@ import Foundation
 actor NoteStore {
 	private static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, seq"
 
+	private let url: URL
 	private var opened: SQLiteConnection?
 
-	static func open(url: URL, key: Data) async throws -> NoteStore {
-		try await Task.detached(priority: .userInitiated) { try NoteStore(url: url, key: key) }.value
+	static func create(url: URL, key: Data) async throws -> NoteStore {
+		try await connect(url: url, key: key, create: true)
 	}
 
-	private init(url: URL, key: Data) throws {
-		let connection = try SQLiteConnection(url: url, rawKey: key)
+	static func open(url: URL, key: Data) async throws -> NoteStore {
+		try await connect(url: url, key: key, create: false)
+	}
+
+	private static func connect(url: URL, key: Data, create: Bool) async throws -> NoteStore {
+		try await Task.detached(priority: .userInitiated) { try NoteStore(url: url, key: key, create: create) }.value
+	}
+
+	private init(url: URL, key: Data, create: Bool) throws {
+		let connection = try SQLiteConnection(url: url, rawKey: key, create: create)
 		try Schema.migrate(connection)
+		self.url = url
 		opened = connection
 	}
 
@@ -51,8 +61,16 @@ actor NoteStore {
 		try statement.step()
 	}
 
-	func rekey(to newKey: Data) throws {
+	func rekey(from oldKey: Data, to newKey: Data) throws -> Bool {
 		try connection.rekey(to: newKey)
+		do {
+			_ = try SQLiteConnection(url: url, rawKey: newKey, create: false)
+			return true
+		} catch SQLiteError.wrongKey {
+			opened = nil
+			opened = try SQLiteConnection(url: url, rawKey: oldKey, create: false)
+			return false
+		}
 	}
 
 	func note(id: UUID) throws -> Note? {

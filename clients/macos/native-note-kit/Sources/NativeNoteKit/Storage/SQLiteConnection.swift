@@ -13,14 +13,14 @@ nonisolated enum SQLiteError: Error, Equatable {
 nonisolated final class SQLiteConnection {
 	private let handle: OpaquePointer
 
-	init(url: URL, rawKey: Data) throws {
+	init(url: URL, rawKey: Data, create: Bool = true) throws {
 		guard rawKey.count == 32 else { throw SQLiteError.keyMustBe32Bytes(count: rawKey.count) }
 
 		var opened: OpaquePointer?
 		let code = sqlite3_open_v2(
 			url.path,
 			&opened,
-			SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX,
+			SQLITE_OPEN_READWRITE | (create ? SQLITE_OPEN_CREATE : 0) | SQLITE_OPEN_FULLMUTEX,
 			nil
 		)
 		guard let opened else {

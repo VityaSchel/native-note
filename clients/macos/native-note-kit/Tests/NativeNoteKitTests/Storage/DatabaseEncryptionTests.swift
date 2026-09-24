@@ -74,7 +74,7 @@ struct DatabaseEncryptionTests {
 
 		let notes = try await openStore(at: url)
 		try await notes.save(note)
-		try await notes.rekey(to: replacement)
+		#expect(try await notes.rekey(from: databaseKey, to: replacement))
 		await notes.close()
 
 		let reopened = try await openStore(at: url, key: replacement)
@@ -91,7 +91,7 @@ struct DatabaseEncryptionTests {
 		let notes = try await openStore(at: url)
 
 		await #expect(throws: SQLiteError.keyMustBe32Bytes(count: 16)) {
-			try await notes.rekey(to: Data(repeating: 0x43, count: 16))
+			_ = try await notes.rekey(from: databaseKey, to: Data(repeating: 0x43, count: 16))
 		}
 		#expect(try await notes.liveNotes().isEmpty)
 	}

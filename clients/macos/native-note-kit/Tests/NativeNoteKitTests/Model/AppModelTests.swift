@@ -80,20 +80,51 @@ struct AppModelTests {
 		#expect(model.failure == .unexpected("No unlock parameters were found beside the notes database."))
 	}
 
-	@Test func parametersBoundToAnotherMacReportTheRefusal() async throws {
+	@Test func parametersBoundToAnotherMacSaySo() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		var foreign = UnlockParameters.fast
 		foreign.enclaveKey = Data(repeating: 0x11, count: 8)
 		try AppLock.write(foreign, to: AppLock.currentFile(in: directory))
-		let refusal = try #require(#expect(throws: (any Error).self) { try MachineKey(representation: foreign.enclaveKey ?? Data()) })
+		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
 		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
 		model.start()
 
 		await model.unlock(password: workspacePassword)
 
 		#expect(model.phase == .locked)
-		#expect(model.failure == .unexpected(AppModel.Failure.reason(for: refusal)))
+		#expect(model.failure == .unexpected(AppModel.Failure.reason(for: Unlock.Failure.boundToAnotherMac)))
+	}
+
+	@Test func setUpFindingParametersFromElsewhereLocks() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(directory: directory, makeParameters: { .fast })
+		model.start()
+		try await Unlock.setUp(password: "other instance", in: directory, makeParameters: { .fast }).store.close()
+
+		await model.submit(password: "correct horse")
+		#expect(model.phase == .locked)
+		#expect(model.failure == .unexpected("Native Note is already set up."))
+
+		await model.submit(password: "other instance")
+		#expect(model.phase == .unlocked)
+	}
+
+	@Test func aDamagedParameterFileLocksRatherThanOfferingSetup() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		try Data("not a property list".utf8).write(to: AppLock.currentFile(in: directory))
+		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
+		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+
+		model.start()
+		#expect(model.phase == .locked)
+
+		await model.unlock(password: workspacePassword)
+		#expect(model.phase == .locked)
+		#expect(model.failure == .unexpected("The unlock parameters file is damaged."))
 	}
 
 	@Test func aDatabaseFromANewerVersionAsksForAnUpdate() async throws {

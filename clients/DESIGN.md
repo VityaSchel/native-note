@@ -67,7 +67,7 @@ machineId = HKDF-SHA256(hardwareOp(), info: "native-note/machine-id/v1", 32)
 2. **It never prompts.** Biometric or presence gating would break the password-only path.
 3. **It is deterministic and takes no secret input.** Anything derived from the password must not reach the hardware: ECDH is symmetric, so `devicePriv·(sG)` equals `s·devicePub`, the attacker derives `s` from their own password guess, and the device public key is recoverable from the stored key blob.
 
-Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alone carries those users.
+Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alone carries those users. A hardware key that cannot load, as on another device, is reported as notes bound to another device.
 
 #### Unlock parameters
 
@@ -77,12 +77,13 @@ Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alon
 
 `localDbKey` changes with the password, so the database is rekeyed:
 
-1. Write the new unlock parameters to a pending file, keeping the current one
-2. Run `PRAGMA rekey`
-3. Verify a fresh open with the new key
-4. Replace the current key file with the pending one
+1. Confirm the current password with a fresh open
+2. Write the new unlock parameters to a pending file, keeping the current one
+3. Run `PRAGMA rekey`
+4. Verify a fresh open with the new key; if it fails, reconnect the store with the old key, delete the pending file and keep the old password
+5. Replace the current key file with the pending one
 
-Startup tries all readable parameter files, so a crash between any steps does not leave the database unopenable.
+Unlock tries the pending file, then the current one, and keeps whichever opens the database as the only file, so a crash between any steps leaves it openable. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside a database left without parameter files rather than deleting it, moving its sidecars first so an interrupted set-aside finishes on the next setup.
 
 #### Unlocking with biometrics
 

@@ -29,7 +29,7 @@ let databaseKey = Data(repeating: 0x41, count: 32)
 
 func openStore(at url: URL, key: Data = databaseKey) async throws -> NoteStore {
 	try makeDirectory(for: url)
-	return try await NoteStore.open(url: url, key: key)
+	return try await NoteStore.create(url: url, key: key)
 }
 
 func sampleNote(body: String = "first line\nsecond line") -> Note {

@@ -7,6 +7,11 @@ import Testing
 struct AppModelFailureTests {
 	@Test(arguments: [
 		(Unlock.Failure.neverSetUp as any Error, "No unlock parameters were found beside the notes database."),
+		(Unlock.Failure.alreadySetUp, "Native Note is already set up."),
+		(Unlock.Failure.databaseMissing, "The notes database is missing."),
+		(Unlock.Failure.boundToAnotherMac, "These notes are bound to another Mac's Secure Enclave and cannot open here. Restore them from an export."),
+		(Unlock.Failure.passwordNotChanged, "Password not changed. Try again."),
+		(AppLock.Unreadable.unsupportedVersion(2), "The unlock parameters were written by a newer version of Native Note. Update the app to open them."),
 		(SQLiteError.closed, "The notes database is closed."),
 		(SQLiteError.newerSchema(found: 2, known: 1), "The notes database was written by a newer version of Native Note. Update the app to open it."),
 		(SQLiteError.cannotOpen(code: 14, message: "unable to open database file"), "The notes database could not be opened. unable to open database file"),

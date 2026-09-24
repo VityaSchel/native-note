@@ -19,6 +19,18 @@ extension AppModel {
 			switch error {
 			case Unlock.Failure.neverSetUp:
 				"No unlock parameters were found beside the notes database."
+			case Unlock.Failure.alreadySetUp:
+				"Native Note is already set up."
+			case Unlock.Failure.databaseMissing:
+				"The notes database is missing."
+			case Unlock.Failure.boundToAnotherMac:
+				"These notes are bound to another Mac's Secure Enclave and cannot open here. Restore them from an export."
+			case Unlock.Failure.passwordNotChanged:
+				"Password not changed. Try again."
+			case AppLock.Unreadable.unsupportedVersion:
+				"The unlock parameters were written by a newer version of Native Note. Update the app to open them."
+			case is DecodingError:
+				"The unlock parameters file is damaged."
 			case SQLiteError.closed:
 				"The notes database is closed."
 			case SQLiteError.newerSchema:

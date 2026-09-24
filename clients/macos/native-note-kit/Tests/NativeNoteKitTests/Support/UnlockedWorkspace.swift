@@ -14,6 +14,7 @@ func unlockedModel(alarm: Alarm) async throws -> (AppModel, URL) {
 func unlockedModel(_ make: (URL) -> AppModel) async throws -> (AppModel, URL) {
 	let directory = temporaryDirectory()
 	try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+	try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
 	let model = make(directory)
 	model.start()
 	await model.unlock(password: workspacePassword)
@@ -39,5 +40,5 @@ func connection(to directory: URL) async throws -> SQLiteConnection {
 }
 
 func observer(of directory: URL) async throws -> NoteStore {
-	try await Unlock.open(password: workspacePassword, in: directory)
+	try await Unlock.open(password: workspacePassword, in: directory).store
 }

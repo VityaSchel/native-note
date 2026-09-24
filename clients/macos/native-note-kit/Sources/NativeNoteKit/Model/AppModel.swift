@@ -67,17 +67,17 @@ import Observation
 	}
 
 	public func start() {
-		phase = AppLock.candidates(in: directory).isEmpty ? .needsSetup : .locked
+		phase = AppLock.parameterFiles(in: directory).isEmpty ? .needsSetup : .locked
 	}
 
 	func setUp(password: String) async {
 		await openLibrary {
-			try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters)
+			try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters).store
 		}
 	}
 
 	func unlock(password: String) async {
-		await openLibrary { try await Unlock.open(password: password, in: self.directory) }
+		await openLibrary { try await Unlock.open(password: password, in: self.directory).store }
 	}
 
 	public func submit(password: String) async {
@@ -223,6 +223,7 @@ import Observation
 			if !search.isEmpty { await runSearch() }
 			phase = .unlocked
 		} catch {
+			if case Unlock.Failure.alreadySetUp = error { phase = .locked }
 			failure = Failure(error)
 		}
 	}

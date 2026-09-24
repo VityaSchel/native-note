@@ -4,6 +4,17 @@ import Testing
 @testable import NativeNoteKit
 
 struct NoteStoreTests {
+	@Test func openingNeverCreatesAMissingDatabase() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		try makeDirectory(for: url)
+
+		await #expect(throws: SQLiteError.cannotOpen(code: 14, message: "unable to open database file")) {
+			_ = try await NoteStore.open(url: url, key: databaseKey)
+		}
+		#expect(!FileManager.default.fileExists(atPath: url.path))
+	}
+
 	@Test func roundTripsANoteThroughTheDatabase() async throws {
 		let url = temporaryDatabase()
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
