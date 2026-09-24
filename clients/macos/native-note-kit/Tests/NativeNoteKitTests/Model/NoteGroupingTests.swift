@@ -70,4 +70,16 @@ struct NoteGroupingTests {
 
 		#expect(Set(titles).count == titles.count, "duplicate section titles: \(titles)")
 	}
+
+	@Test func theSevenDayBucketEndsAtTheStartOfTheDayAWeekAgo() {
+		#expect(NoteGrouping.title(for: daysAgo(7), now: now, calendar: calendar) == "Previous 7 days")
+		#expect(NoteGrouping.title(for: daysAgo(8), now: now, calendar: calendar) == "August")
+	}
+
+	@Test func lastWeekAcrossNewYearStaysInThePreviousSevenDays() throws {
+		let newYear = try #require(calendar.date(from: DateComponents(year: 2027, month: 1, day: 2, hour: 12)))
+		let lastYear = try #require(calendar.date(from: DateComponents(year: 2026, month: 12, day: 30, hour: 12)))
+
+		#expect(NoteGrouping.title(for: lastYear, now: newYear, calendar: calendar) == "Previous 7 days")
+	}
 }

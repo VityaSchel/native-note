@@ -5,45 +5,23 @@ import Testing
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct SavePathTests {
-	private let password = "correct horse"
 	private let alarm = Alarm()
-	private let parameters = UnlockParameters.fast
-
-	private func unlockedModel() async throws -> (AppModel, URL) {
-		let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
-		try AppLock.write(parameters, to: AppLock.current(in: directory))
-		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
-		model.start()
-		await model.unlock(password: password)
-		try #require(model.phase == .unlocked)
-		return (model, directory)
-	}
-
-	private func rawKey() async throws -> Data {
-		try await Task.detached { [password, parameters] in
-			try Unlock.localDbKey(password: password, parameters: parameters)
-		}.value
-	}
-
-	private func observer(of directory: URL) async throws -> NoteStore {
-		try await Unlock.open(password: password, database: directory.appending(path: "notes.db"), in: directory)
-	}
 
 	@Test func lockingRightAfterTypingKeepsTheEdit() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
 
 		model.edit(id, "typed then locked")
 		await model.lock()
-		await model.unlock(password: password)
+		await model.unlock(password: workspacePassword)
 
 		#expect(model.notes.first { $0.id == id }?.body == "typed then locked")
 	}
 
 	@Test func lockingClosesTheDatabase() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		model.edit(try #require(model.selection), "typed then locked")
@@ -54,7 +32,7 @@ struct SavePathTests {
 	}
 
 	@Test func lockingWithEditsInTwoNotesSavesBoth() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let first = try #require(model.selection)
@@ -73,7 +51,7 @@ struct SavePathTests {
 	}
 
 	@Test func lockingWhileASaveIsInFlightKeepsTheNewerText() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -90,14 +68,11 @@ struct SavePathTests {
 	}
 
 	@Test func aStoreKeptOpenForAFailingSaveClosesOnceItLands() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
-		var blocker: SQLiteConnection? = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		var blocker: SQLiteConnection? = try await connection(to: directory)
 
 		try blocker?.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed then locked while busy")
@@ -111,7 +86,7 @@ struct SavePathTests {
 	}
 
 	@Test func leavingANoteSavesItAtOnce() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
@@ -131,7 +106,7 @@ struct SavePathTests {
 	}
 
 	@Test func continuousTypingSavesWithoutAPause() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
@@ -159,7 +134,7 @@ struct SavePathTests {
 	}
 
 	@Test func typingDuringASaveIsNeverReverted() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
@@ -177,7 +152,7 @@ struct SavePathTests {
 	}
 
 	@Test func creatingANoteKeepsUnsavedTextInTheOthers() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let first = try #require(model.selection)
@@ -191,7 +166,7 @@ struct SavePathTests {
 	}
 
 	@Test func editsLandInTheNoteTheEditorShows() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let shown = try #require(model.selection)
@@ -206,20 +181,17 @@ struct SavePathTests {
 	}
 
 	@Test func aFailedSaveIsRetried() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		let blocker = try await connection(to: directory)
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed while the database was busy")
 		#expect(await model.flushPendingSaves() == false)
-		#expect(model.failure != nil)
+		#expect(model.failure == .unsaved("database is locked"))
 		try blocker.execute("ROLLBACK")
 
 		#expect(await model.flushPendingSaves())
@@ -227,15 +199,12 @@ struct SavePathTests {
 	}
 
 	@Test func aFailedDeleteKeepsTheLatestEdit() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		let blocker = try await connection(to: directory)
 
 		model.edit(id, "typed just before delete")
 		try blocker.execute("BEGIN IMMEDIATE")
@@ -248,15 +217,12 @@ struct SavePathTests {
 	}
 
 	@Test func aFailingSaveIsReportedOnceWhileItRetries() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		let blocker = try await connection(to: directory)
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed while the database was busy")
@@ -279,14 +245,11 @@ struct SavePathTests {
 	}
 
 	@Test func theUnsavedAlertClearsOnceTheSaveLands() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
-		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		let blocker = try await connection(to: directory)
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed while the database was busy")
@@ -299,12 +262,9 @@ struct SavePathTests {
 	}
 
 	@Test func lockingClearsALibraryFailure() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		).execute("DROP TABLE note_fts")
+		try await connection(to: directory).execute("DROP TABLE note_fts")
 		model.search = "kayak"
 		await model.runSearch()
 		try #require(model.failure != nil)
@@ -315,15 +275,12 @@ struct SavePathTests {
 	}
 
 	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		let blocker = try await connection(to: directory)
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed then locked while busy")
@@ -339,23 +296,20 @@ struct SavePathTests {
 	}
 
 	@Test func unlockingWhileASaveStillFailsKeepsTheTypedText() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
 		model.edit(id, "saved before")
 		await model.flushPendingSaves()
-		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		)
+		let blocker = try await connection(to: directory)
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed then locked while busy")
 		await model.lock()
 		model.dismissFailure()
-		await model.unlock(password: password)
+		await model.unlock(password: workspacePassword)
 
 		#expect(model.phase == .unlocked)
 		#expect(model.notes.first { $0.id == id }?.body == "typed then locked while busy")
@@ -368,15 +322,12 @@ struct SavePathTests {
 	}
 
 	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		model.edit(try #require(model.selection), "kayak")
 		await model.flushPendingSaves()
-		try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		).execute("DROP TABLE note_fts")
+		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		model.search = "kayak"
 		await model.runSearch()
@@ -386,12 +337,9 @@ struct SavePathTests {
 	}
 
 	@Test func aFailingSearchIsReportedOnceWhileTheUserTypes() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
-			rawKey: try await rawKey()
-		).execute("DROP TABLE note_fts")
+		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		var reports = 0
 		for query in ["k", "ka", "kay", "kaya", "kayak"] {
@@ -410,7 +358,7 @@ struct SavePathTests {
 	}
 
 	@Test func deletingWithASavePendingLeavesAnEmptyTombstone() async throws {
-		let (model, directory) = try await unlockedModel()
+		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()

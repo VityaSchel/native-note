@@ -26,4 +26,16 @@ struct SchemaTests {
 			_ = try await NoteStore.open(url: url, key: databaseKey)
 		}
 	}
+
+	@Test func aFailedMigrationLeavesTheVersionUnchanged() throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		try makeDirectory(for: url)
+		let connection = try SQLiteConnection(url: url, rawKey: databaseKey)
+		try connection.execute("CREATE TABLE note_dirty (x)")
+
+		#expect(throws: SQLiteError.self) { try Schema.migrate(connection) }
+		#expect(try connection.scalar("PRAGMA user_version") == "0")
+		#expect(try connection.scalar("SELECT count(*) FROM sqlite_schema WHERE name = 'note'") == "0")
+	}
 }

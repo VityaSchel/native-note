@@ -126,6 +126,19 @@ struct SaveSchedulerTests {
 
 		#expect(await saves.values.isEmpty)
 	}
+
+	@Test func theDefaultSleepFiresTheSave() async {
+		let scheduler = SaveScheduler(delay: .milliseconds(10))
+		let saves = Log()
+
+		scheduler.schedule(UUID()) { await saves.append(1) }
+		for _ in 0 ..< 100 {
+			if await !saves.values.isEmpty { break }
+			try? await Task.sleep(for: .milliseconds(10))
+		}
+
+		#expect(await saves.values == [1])
+	}
 }
 
 private actor Log {

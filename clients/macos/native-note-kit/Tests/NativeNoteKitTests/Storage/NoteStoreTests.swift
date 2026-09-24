@@ -149,4 +149,24 @@ struct NoteStoreTests {
 
 		#expect(try await notes.note(id: note.id)?.updatedAt.epochMilliseconds == 1_760_000_009_000)
 	}
+
+	@Test func aMissingNoteReadsAsNil() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let notes = try await openStore(at: url)
+
+		#expect(try await notes.note(id: UUID()) == nil)
+	}
+
+	@Test func aRowWithAMalformedIdIsSkipped() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let notes = try await openStore(at: url)
+		try await notes.save(sampleNote())
+
+		try SQLiteConnection(url: url, rawKey: databaseKey)
+			.execute("INSERT INTO note (uuid, body, createdAt, updatedAt) VALUES (x'00', 'orphan', 0, 0)")
+
+		#expect(try await notes.liveNotes().map(\.body) == [sampleNote().body])
+	}
 }

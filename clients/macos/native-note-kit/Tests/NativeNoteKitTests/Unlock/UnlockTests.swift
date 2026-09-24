@@ -131,4 +131,24 @@ struct UnlockTests {
 		#expect(mode == 0o700)
 		_ = try await Unlock.open(password: "correct horse", database: place.database, in: place.directory)
 	}
+
+	@Test func survivesACrashAfterRekeyingBeforePromoting() async throws {
+		let place = workspace()
+		defer { try? FileManager.default.removeItem(at: place.directory) }
+		let parameters = try await seed("old password", in: place)
+		var pending = parameters
+		pending.localSalt = Data(repeating: 0x99, count: 16)
+		try AppLock.write(pending, to: AppLock.pendingRekey(in: place.directory))
+		let store = try await Unlock.open(password: "old password", database: place.database, in: place.directory)
+
+		try await store.rekey(to: try Unlock.localDbKey(password: "new password", parameters: pending))
+		await store.close()
+
+		let opened = try await Unlock.open(password: "new password", database: place.database, in: place.directory)
+		#expect(try await opened.liveNotes().map(\.body) == ["seeded"])
+		#expect(AppLock.candidates(in: place.directory).count == 2)
+		await #expect(throws: Unlock.Failure.wrongPassword) {
+			_ = try await Unlock.open(password: "old password", database: place.database, in: place.directory)
+		}
+	}
 }

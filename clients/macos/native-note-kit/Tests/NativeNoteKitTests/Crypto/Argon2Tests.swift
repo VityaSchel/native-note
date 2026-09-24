@@ -38,4 +38,10 @@ struct Argon2Tests {
 			)
 		}
 	}
+
+	@Test func calibrationKeepsTheFloorWhenTheClockDidNotAdvance() throws {
+		var readings = [1.0, 1.0].makeIterator()
+
+		#expect(try Argon2.calibrateMemory(target: 1.0) { readings.next() ?? 0 } == Argon2.floor)
+	}
 }

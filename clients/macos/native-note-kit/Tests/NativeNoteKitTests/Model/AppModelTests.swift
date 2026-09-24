@@ -34,7 +34,7 @@ struct AppModelTests {
 
 		await model.unlock(password: "wrong horse")
 		#expect(model.phase == .locked)
-		#expect(model.failure != nil)
+		#expect(model.failure == .wrongPassword)
 
 		await model.unlock(password: "correct horse")
 		#expect(model.phase == .unlocked)
