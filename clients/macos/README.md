@@ -11,6 +11,7 @@ Dependencies:
 
 - Crypto, storage, unlock and the model live in the local package `NativeNoteKit`, so they test without the app host
 - Editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage. We chose it over SwiftUI `TextEditor` because `TextEditor` cannot do reliable per-range styling, so the heading would need its own field and unified selection would break. Also the right base for the markdown editor later
+- The editor styles the title and writes the note from the text storage, so paste, undo and redo reach the note. Each note has its own undo history. Input-method text reaches the note on commit
 - Database writes off `@MainActor`, published state on it, so it doesn't jank on large notes
 - Argon2 and Secure Enclave calls run on `Unlock`'s serial queue, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock

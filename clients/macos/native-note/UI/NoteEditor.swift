@@ -17,8 +17,10 @@ struct NoteEditor: NSViewRepresentable {
 	}
 
 	static func makeScrollView(delegate: Coordinator) -> NSScrollView {
-		let textView = NSTextView(usingTextLayoutManager: true)
+		let textView = ComposingTextView(usingTextLayoutManager: true)
 		textView.delegate = delegate
+		textView.textStorage?.delegate = delegate
+		delegate.textView = textView
 		textView.isEditable = true
 		textView.isSelectable = true
 		textView.isRichText = false
@@ -42,22 +44,65 @@ struct NoteEditor: NSViewRepresentable {
 	}
 
 	static func show(_ text: String, in scrollView: NSScrollView) {
-		guard let textView = scrollView.documentView as? NSTextView, textView.string != text else { return }
+		guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage else { return }
+		guard textView.string != text else { return }
+		let delegate = storage.delegate
+		storage.delegate = nil
 		textView.string = text
-		Coordinator.style(textView, .wholeDocument)
+		let whole = NSRange(location: 0, length: storage.length)
+		storage.setAttributes(Coordinator.bodyAttributes, range: whole)
+		Coordinator.style(storage, in: whole)
+		storage.delegate = delegate
+		textView.undoManager?.removeAllActions()
 	}
 
-	@MainActor final class Coordinator: NSObject, NSTextViewDelegate {
+	@MainActor final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
 		private let text: Binding<String>
+		private let history = UndoManager()
+		fileprivate weak var textView: NSTextView?
+		private weak var editedStorage: NSTextStorage?
+		private var unpushed = false
 
 		init(text: Binding<String>) {
 			self.text = text
+			super.init()
+			for name in [NSNotification.Name.NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange] {
+				NotificationCenter.default.addObserver(self, selector: #selector(finishEdit), name: name, object: history)
+			}
+		}
+
+		func undoManager(for view: NSTextView) -> UndoManager? {
+			history
+		}
+
+		func textStorage(
+			_ textStorage: NSTextStorage,
+			willProcessEditing editedMask: NSTextStorageEditActions,
+			range editedRange: NSRange,
+			changeInLength delta: Int
+		) {
+			Self.style(textStorage, in: editedRange)
+			guard editedMask.contains(.editedCharacters) else { return }
+			editedStorage = textStorage
+			unpushed = true
+			pushText()
+		}
+
+		private func pushText() {
+			guard unpushed, let textView, !textView.hasMarkedText() else { return }
+			unpushed = false
+			text.wrappedValue = textView.string
 		}
 
 		func textDidChange(_ notification: Notification) {
-			guard let textView = notification.object as? NSTextView else { return }
-			Self.style(textView, .headingNeighborhood)
-			text.wrappedValue = textView.string
+			finishEdit()
+		}
+
+		@objc fileprivate func finishEdit() {
+			pushText()
+			guard let storage = editedStorage else { return }
+			editedStorage = nil
+			Self.style(storage, in: NSRange(location: 0, length: storage.length))
 		}
 
 		fileprivate static let bodyParagraphStyle: NSParagraphStyle = {
@@ -69,47 +114,47 @@ struct NoteEditor: NSViewRepresentable {
 
 		private static let bodyFont = NSFont.preferredFont(forTextStyle: .body)
 
-		fileprivate static let bodyAttributes: [NSAttributedString.Key: Any] = [
+		private static let bodyStyle: [NSAttributedString.Key: Any] = [
 			.font: bodyFont,
-			.foregroundColor: NSColor.textColor,
 			.paragraphStyle: bodyParagraphStyle,
 		]
 
-		private static let headingAttributes: [NSAttributedString.Key: Any] = {
+		fileprivate static let bodyAttributes = bodyStyle.merging([.foregroundColor: NSColor.textColor]) { $1 }
+
+		private static let headingStyle: [NSAttributedString.Key: Any] = {
 			let style = NSMutableParagraphStyle()
 			style.lineHeightMultiple = 1.15
 			style.paragraphSpacing = 14
 			return [
 				.font: NSFont.preferredFont(forTextStyle: .largeTitle).bold,
-				.foregroundColor: NSColor.textColor,
 				.paragraphStyle: style,
 			]
 		}()
 
-		fileprivate enum Scope {
-			case wholeDocument
-			case headingNeighborhood
-		}
-
-		fileprivate static func style(_ textView: NSTextView, _ scope: Scope) {
-			guard let storage = textView.textStorage else { return }
-			let string = storage.string as NSString
-			let heading = string.lineRange(for: NSRange(location: 0, length: 0))
-			let rest = NSRange(location: heading.upperBound, length: string.length - heading.upperBound)
-
+		fileprivate static func style(_ storage: NSTextStorage, in range: NSRange) {
+			let heading = storage.mutableString.lineRange(for: NSRange(location: 0, length: 0))
+			let body = NSRange(location: heading.upperBound, length: storage.length - heading.upperBound)
 			storage.beginEditing()
-			switch scope {
-			case .wholeDocument:
-				storage.setAttributes(bodyAttributes, range: rest)
-			case .headingNeighborhood:
-				storage.enumerateAttribute(.font, in: rest) { font, range, _ in
-					guard font as? NSFont != bodyFont else { return }
-					storage.setAttributes(bodyAttributes, range: range)
-				}
-			}
-			storage.setAttributes(headingAttributes, range: heading)
+			apply(headingStyle, to: NSIntersectionRange(range, heading), in: storage)
+			apply(bodyStyle, to: NSIntersectionRange(range, body), in: storage)
 			storage.endEditing()
 		}
+
+		private static func apply(_ style: [NSAttributedString.Key: Any], to range: NSRange, in storage: NSTextStorage) {
+			guard range.length > 0 else { return }
+			let font = style[.font] as? NSFont
+			storage.enumerateAttribute(.font, in: range) { value, run, _ in
+				guard value as? NSFont != font else { return }
+				storage.addAttributes(style, range: run)
+			}
+		}
+	}
+}
+
+private final class ComposingTextView: NSTextView {
+	override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+		super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+		(delegate as? NoteEditor.Coordinator)?.finishEdit()
 	}
 }
 
