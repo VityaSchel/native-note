@@ -99,7 +99,7 @@ struct AppDelegateTests {
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let delegate = AppDelegate(model: model)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
 
 		model.edit(id, "typed then switched apps")
 		delegate.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
@@ -114,7 +114,7 @@ struct AppDelegateTests {
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let delegate = AppDelegate(model: model)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
 		delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
 
 		model.edit(id, "typed then slept")

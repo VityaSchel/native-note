@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		return .terminateLater
 	}
 
-	static func askToQuitLosingEdits(_ reason: String) -> Bool {
+	private static func askToQuitLosingEdits(_ reason: String) -> Bool {
 		quitLosingEditsAlert(reason).runModal() == .alertSecondButtonReturn
 	}
 

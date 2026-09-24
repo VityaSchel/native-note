@@ -7,16 +7,7 @@ struct UnlockView: View {
 	let submit: (String) async -> Void
 	let dismissFailure: () -> Void
 
-	@State private var password = ""
-	@State private var confirmation = ""
-	@State private var mismatched = false
-	@State private var working = false
-
-	private var inlineMessage: String? {
-		if mismatched { return "The passwords do not match." }
-		if case .wrongPassword = failure { return "Wrong password." }
-		return nil
-	}
+	@State private var form = UnlockForm()
 
 	var body: some View {
 		VStack(spacing: 16) {
@@ -30,19 +21,17 @@ struct UnlockView: View {
 					.multilineTextAlignment(.center)
 			}
 
-			SecureField("Password", text: $password)
+			SecureField("Password", text: $form.password)
 				.textFieldStyle(.roundedBorder)
 				.onSubmit(send)
-				.onChange(of: password) { mismatched = false }
 
 			if isSetup {
-				SecureField("Confirm password", text: $confirmation)
+				SecureField("Confirm password", text: $form.confirmation)
 					.textFieldStyle(.roundedBorder)
 					.onSubmit(send)
-					.onChange(of: confirmation) { mismatched = false }
 			}
 
-			if let inlineMessage {
+			if let inlineMessage = form.inlineMessage(for: failure) {
 				Text(inlineMessage)
 					.font(.callout)
 					.foregroundStyle(.red)
@@ -50,9 +39,9 @@ struct UnlockView: View {
 
 			Button(isSetup ? "Create" : "Unlock", action: send)
 				.keyboardShortcut(.defaultAction)
-				.disabled(password.isEmpty || working)
+				.disabled(!form.canSubmit)
 
-			if working {
+			if form.working {
 				ProgressView().controlSize(.small)
 			}
 		}
@@ -62,19 +51,10 @@ struct UnlockView: View {
 	}
 
 	private func send() {
-		guard !password.isEmpty, !working else { return }
-		guard !isSetup || password == confirmation else {
-			mismatched = true
-			return
-		}
-
-		mismatched = false
-		working = true
+		guard let password = form.submit(confirming: isSetup) else { return }
 		Task {
 			await submit(password)
-			working = false
-			password = ""
-			confirmation = ""
+			form.finish()
 		}
 	}
 }

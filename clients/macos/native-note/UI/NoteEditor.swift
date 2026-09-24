@@ -9,8 +9,16 @@ struct NoteEditor: NSViewRepresentable {
 	}
 
 	func makeNSView(context: Context) -> NSScrollView {
+		Self.makeScrollView(delegate: context.coordinator)
+	}
+
+	func updateNSView(_ scrollView: NSScrollView, context: Context) {
+		Self.show(text, in: scrollView)
+	}
+
+	static func makeScrollView(delegate: Coordinator) -> NSScrollView {
 		let textView = NSTextView(usingTextLayoutManager: true)
-		textView.delegate = context.coordinator
+		textView.delegate = delegate
 		textView.isEditable = true
 		textView.isSelectable = true
 		textView.isRichText = false
@@ -33,10 +41,8 @@ struct NoteEditor: NSViewRepresentable {
 		return scrollView
 	}
 
-	func updateNSView(_ scrollView: NSScrollView, context: Context) {
-		guard let textView = scrollView.documentView as? NSTextView else { return }
-		guard textView.string != text else { return }
-
+	static func show(_ text: String, in scrollView: NSScrollView) {
+		guard let textView = scrollView.documentView as? NSTextView, textView.string != text else { return }
 		textView.string = text
 		Coordinator.style(textView, .wholeDocument)
 	}
@@ -54,15 +60,17 @@ struct NoteEditor: NSViewRepresentable {
 			text.wrappedValue = textView.string
 		}
 
-		static let bodyParagraphStyle: NSParagraphStyle = {
+		fileprivate static let bodyParagraphStyle: NSParagraphStyle = {
 			let style = NSMutableParagraphStyle()
 			style.lineHeightMultiple = 1.0
 			style.paragraphSpacing = 8
 			return style
 		}()
 
-		static let bodyAttributes: [NSAttributedString.Key: Any] = [
-			.font: NSFont.preferredFont(forTextStyle: .body),
+		private static let bodyFont = NSFont.preferredFont(forTextStyle: .body)
+
+		fileprivate static let bodyAttributes: [NSAttributedString.Key: Any] = [
+			.font: bodyFont,
 			.foregroundColor: NSColor.textColor,
 			.paragraphStyle: bodyParagraphStyle,
 		]
@@ -78,29 +86,29 @@ struct NoteEditor: NSViewRepresentable {
 			]
 		}()
 
-		enum Scope {
+		fileprivate enum Scope {
 			case wholeDocument
 			case headingNeighborhood
 		}
 
-		static func style(_ textView: NSTextView, _ scope: Scope) {
+		fileprivate static func style(_ textView: NSTextView, _ scope: Scope) {
 			guard let storage = textView.textStorage else { return }
 			let string = storage.string as NSString
 			let heading = string.lineRange(for: NSRange(location: 0, length: 0))
-			let reset = switch scope {
-			case .wholeDocument: NSRange(location: 0, length: string.length)
-			case .headingNeighborhood: NSRange(location: 0, length: min(string.length, lineAfter(heading, in: string)))
-			}
+			let rest = NSRange(location: heading.upperBound, length: string.length - heading.upperBound)
 
 			storage.beginEditing()
-			storage.setAttributes(bodyAttributes, range: reset)
-			storage.addAttributes(headingAttributes, range: heading)
+			switch scope {
+			case .wholeDocument:
+				storage.setAttributes(bodyAttributes, range: rest)
+			case .headingNeighborhood:
+				storage.enumerateAttribute(.font, in: rest) { font, range, _ in
+					guard font as? NSFont != bodyFont else { return }
+					storage.setAttributes(bodyAttributes, range: range)
+				}
+			}
+			storage.setAttributes(headingAttributes, range: heading)
 			storage.endEditing()
-		}
-
-		private static func lineAfter(_ heading: NSRange, in string: NSString) -> Int {
-			guard heading.upperBound < string.length else { return string.length }
-			return string.lineRange(for: NSRange(location: heading.upperBound, length: 0)).upperBound
 		}
 	}
 }
