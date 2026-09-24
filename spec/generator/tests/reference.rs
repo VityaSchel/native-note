@@ -1,6 +1,7 @@
 use native_note_vectors::codec::DecodeError;
 use native_note_vectors::content::{self, Content};
 use native_note_vectors::envelope::{self, PadError};
+use native_note_vectors::export::{self, ArgonParams};
 use native_note_vectors::frame::{self, Request, Response, Status, Write, WriteResult};
 use native_note_vectors::mnemonic::{self, MnemonicError};
 use native_note_vectors::server::Server;
@@ -318,4 +319,58 @@ fn hex_is_lowercase_and_rejects_malformed_input() {
 	for malformed in ["0", "0g", "AB", " 0", "+1"] {
 		assert_eq!(hex::decode(malformed), None, "{malformed:?}");
 	}
+}
+
+#[test]
+fn export_round_trips_under_its_own_header() {
+	let params = ArgonParams { m: 64, t: 1, p: 2 };
+	let salt: [u8; 16] = seq_array(0x30);
+	let nonce: [u8; 12] = seq_array(0x70);
+	let file = export::seal("passphrase", params, &salt, &nonce, b"zip").unwrap();
+
+	assert_eq!(ArgonParams::decode(&params.encode()), params);
+	assert_eq!(
+		&file[..export::HEADER_LEN],
+		export::header(params, &salt).as_slice()
+	);
+	assert_eq!(
+		export::open("passphrase", &file).as_deref(),
+		Ok(b"zip".as_slice())
+	);
+	assert!(export::open("Passphrase", &file).is_err());
+
+	for at in (0..export::MAGIC.len()).chain(export::HEADER_LEN - export::SALT_LEN..file.len()) {
+		let mut flipped = file.clone();
+		flipped[at] ^= 0x01;
+		assert!(export::open("passphrase", &flipped).is_err(), "byte {at}");
+	}
+}
+
+#[test]
+fn export_rejects_short_files_and_invalid_parameters() {
+	let params = ArgonParams { m: 64, t: 1, p: 2 };
+	let salt: [u8; 16] = seq_array(0x30);
+	let nonce: [u8; 12] = seq_array(0x70);
+	let file = export::seal("passphrase", params, &salt, &nonce, b"").unwrap();
+	assert_eq!(
+		file.len(),
+		export::HEADER_LEN + aead::NONCE_LEN + aead::TAG_LEN
+	);
+
+	for len in 0..file.len() {
+		assert!(
+			export::open("passphrase", &file[..len]).is_err(),
+			"length {len}"
+		);
+	}
+
+	assert!(export::export_key("passphrase", &salt[..7], params).is_err());
+
+	let no_passes = ArgonParams { t: 0, ..params };
+	assert!(export::seal("passphrase", no_passes, &salt, &nonce, b"zip").is_err());
+
+	let mut header_without_passes = file.clone();
+	header_without_passes[export::MAGIC.len()..export::MAGIC.len() + export::PARAMS_LEN]
+		.copy_from_slice(&no_passes.encode());
+	assert!(export::open("passphrase", &header_without_passes).is_err());
 }

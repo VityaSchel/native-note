@@ -1,0 +1,56 @@
+{
+	"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
+	"cases": [
+		{
+			"exportKey": "945a357403e2b5ef73ba3d411ca9943a3a8ee83f4ae77f42f2185bafa9d021ce",
+			"file": "4e4e4558504f525431000004000000000200000003303132333435363738393a3b3c3d3e3f707172737475767778797a7b0264dc5588a0ba5320a7260a0ab487d65bd2998c9ab28af29fea6eb2639e366ca4763f7ca6be",
+			"header": "4e4e4558504f525431000004000000000200000003303132333435363738393a3b3c3d3e3f",
+			"m": 1024,
+			"name": "export",
+			"nonce": "707172737475767778797a7b",
+			"opens": true,
+			"p": 3,
+			"passphrase": "correct horse ünïcode staple",
+			"salt": "303132333435363738393a3b3c3d3e3f",
+			"t": 2,
+			"zip": "504b0506000000000000000000000000000000000000"
+		},
+		{
+			"file": "4e4e4558504f525431000004000000000200000003303132333435363738393a3b3c3d3e3f707172737475767778797a7b0264dc5588a0ba5320a7260a0ab487d65bd2998c9ab28af29fea6eb2639e366ca4763f7ca6be",
+			"name": "rejectWrongPassphrase",
+			"opens": false,
+			"passphrase": "correct horse unicode staple"
+		},
+		{
+			"file": "4e4e4558504f525431000004000000000200000003313132333435363738393a3b3c3d3e3f707172737475767778797a7b0264dc5588a0ba5320a7260a0ab487d65bd2998c9ab28af29fea6eb2639e366ca4763f7ca6be",
+			"name": "rejectFlippedHeaderByte",
+			"opens": false,
+			"passphrase": "correct horse ünïcode staple"
+		},
+		{
+			"file": "4e4e4558504f525431000004000000000200000003303132333435363738393a3b3c3d3e3f707172737475767778797a7b0364dc5588a0ba5320a7260a0ab487d65bd2998c9ab28af29fea6eb2639e366ca4763f7ca6be",
+			"name": "rejectFlippedCiphertextByte",
+			"opens": false,
+			"passphrase": "correct horse ünïcode staple"
+		},
+		{
+			"file": "4e4e4558504f525431000004000000000200000003303132333435363738393a3b3c3d3e3f707172737475767778797a7b0264dc5588a0ba5320a7260a0ab487d65bd2998c9ab28af29fea6eb2639e366ca4763f7ca6",
+			"name": "rejectTruncated",
+			"opens": false,
+			"passphrase": "correct horse ünïcode staple"
+		},
+		{
+			"file": "4e4e4558504f525432000004000000000200000003303132333435363738393a3b3c3d3e3f707172737475767778797a7b0264dc5588a0ba5320a7260a0ab487d65bd2998c9ab28af29fea6eb2639e366ca4763f7ca6be",
+			"name": "rejectBadMagic",
+			"opens": false,
+			"passphrase": "correct horse ünïcode staple"
+		},
+		{
+			"file": "4e4e4558504f525431000004000000000b00000003303132333435363738393a3b3c3d3e3f707172737475767778797a7bae8257e1d80e536b5e547d0fcb980e95d2cce1b6889edebc75a48ca746b519bf83cb82512fac",
+			"name": "rejectParametersOutOfBounds",
+			"opens": false,
+			"passphrase": "correct horse ünïcode staple"
+		}
+	],
+	"description": "Passphrase-encrypted exports. The header carries the Argon2id parameters and salt and is the AAD. Low-cost parameters; exports use the Argon2 floor. A reader refuses m above 2 GiB or below 8p, t above 10, and p above 16."
+}

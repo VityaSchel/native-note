@@ -2,6 +2,7 @@ pub mod aead;
 pub mod codec;
 pub mod content;
 pub mod envelope;
+pub mod export;
 pub mod frame;
 pub mod hex;
 pub mod kdf;

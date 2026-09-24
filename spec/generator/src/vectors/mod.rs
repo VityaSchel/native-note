@@ -1,5 +1,6 @@
 mod content;
 mod credentials;
+mod export;
 mod frames;
 mod keys;
 mod padding;
@@ -12,6 +13,7 @@ use serde_json::{Serializer, Value, json};
 const API_KEY: u8 = 0x00;
 const BLINDED_ID: u8 = 0x10;
 pub const CONTENT_KEY: u8 = 0x20;
+const EXPORT_SALT: u8 = 0x30;
 const RECOVERY_KEY: u8 = 0x40;
 const WRITE_ID: u8 = 0x60;
 const DEVICE_A: u8 = 0x60;
@@ -60,6 +62,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
 		("mnemonic.json", credentials::mnemonic()),
 		("pairing.json", credentials::pairing()),
 		("sync.json", sync::scenario()),
+		("export.json", export::export()),
 	]
 }
 

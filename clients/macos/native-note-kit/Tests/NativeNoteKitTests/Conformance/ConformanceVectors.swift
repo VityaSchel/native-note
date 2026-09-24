@@ -28,6 +28,7 @@ enum Vectors {
 
 		func string(_ key: String) -> String? { fields[key] as? String }
 		func int(_ key: String) -> Int? { fields[key] as? Int }
+		func bool(_ key: String) -> Bool? { fields[key] as? Bool }
 		func bytes(_ key: String) -> Data? { string(key).flatMap(Hex.decode) }
 
 		func require(_ key: String) throws -> Data {

@@ -53,6 +53,7 @@ Every case whose name starts with `reject` is a negative test. Passing them matt
 | `mnemonic.json` | Wordlist identity, 24-word round-trip, bad checksum, wrong word count, unknown word                                                                                  |
 | `pairing.json`  | The 64-byte pairing credential and its length rejections                                                                                                             |
 | `sync.json`     | Six-step end-to-end scenario over the reference server semantics                                                                                                     |
+| `export.json`   | Passphrase-encrypted export at low-cost parameters, plus wrong passphrase, flipped salt and ciphertext bytes, truncated tag, unknown magic, out-of-bounds parameters |
 
 ## Notes on specific files
 
