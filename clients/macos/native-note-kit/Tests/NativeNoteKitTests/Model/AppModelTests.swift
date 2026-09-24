@@ -80,6 +80,22 @@ struct AppModelTests {
 		#expect(model.failure == .unexpected("No unlock parameters were found beside the notes database."))
 	}
 
+	@Test func parametersBoundToAnotherMacReportTheRefusal() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		var foreign = UnlockParameters.fast
+		foreign.enclaveKey = Data(repeating: 0x11, count: 8)
+		try AppLock.write(foreign, to: AppLock.currentFile(in: directory))
+		let refusal = try #require(#expect(throws: (any Error).self) { try MachineKey(representation: foreign.enclaveKey ?? Data()) })
+		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		model.start()
+
+		await model.unlock(password: workspacePassword)
+
+		#expect(model.phase == .locked)
+		#expect(model.failure == .unexpected(AppModel.Failure.reason(for: refusal)))
+	}
+
 	@Test func aDatabaseFromANewerVersionAsksForAnUpdate() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }

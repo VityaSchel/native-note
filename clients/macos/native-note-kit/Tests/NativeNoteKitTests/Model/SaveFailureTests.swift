@@ -100,8 +100,10 @@ struct SaveFailureTests {
 		try await poison(directory)
 
 		model.edit(poisoned, "poison")
+		#expect(await model.flushPendingSaves() == false)
 		model.edit(healthy, "fine")
 		await model.flushPendingSaves()
+		#expect(try await observer(of: directory).note(id: healthy)?.body == "fine")
 		#expect(model.failure == .unsaved("poisoned"))
 
 		model.edit(poisoned, "cured")

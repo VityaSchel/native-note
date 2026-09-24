@@ -18,6 +18,12 @@ struct AppModelFailureTests {
 		#expect(AppModel.Failure(error) == .unexpected(reason))
 	}
 
+	@Test func anyOtherErrorReadsAsItsDescription() {
+		let error = Argon2.Failure.rejected(code: -22, message: "Memory allocation error")
+
+		#expect(AppModel.Failure(error) == .unexpected(String(describing: error)))
+	}
+
 	@Test func aWrongKeyIsAWrongPassword() {
 		#expect(AppModel.Failure(Unlock.Failure.wrongPassword) == .wrongPassword)
 		#expect(AppModel.Failure(SQLiteError.wrongKey) == .wrongPassword)

@@ -5,9 +5,11 @@ import Testing
 
 struct UnlockParametersTests {
 	private static func encoded(_ parameters: UnlockParameters) throws -> Data {
-		let encoder = PropertyListEncoder()
-		encoder.outputFormat = .binary
-		return try encoder.encode(parameters)
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let file = AppLock.currentFile(in: directory)
+		try AppLock.write(parameters, to: file)
+		return try Data(contentsOf: file)
 	}
 
 	@Test func keepsByteFieldsAsRawDataInABinaryPlist() throws {
