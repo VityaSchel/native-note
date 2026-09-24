@@ -6,6 +6,11 @@ struct NoteListView: View {
 	@Binding var selection: UUID?
 	@Binding var search: String
 
+	var emptyState: (title: String, systemImage: String)? {
+		guard groups.isEmpty else { return nil }
+		return search.isEmpty ? ("No notes", "note.text") : ("No matches", "magnifyingglass")
+	}
+
 	var body: some View {
 		List(selection: $selection) {
 			ForEach(groups) { group in
@@ -22,11 +27,8 @@ struct NoteListView: View {
 		.listStyle(.inset)
 		.searchable(text: $search, placement: .automatic, prompt: "Search")
 		.overlay {
-			if groups.isEmpty {
-				ContentUnavailableView(
-					search.isEmpty ? "No notes" : "No matches",
-					systemImage: search.isEmpty ? "note.text" : "magnifyingglass"
-				)
+			if let emptyState {
+				ContentUnavailableView(emptyState.title, systemImage: emptyState.systemImage)
 			}
 		}
 	}

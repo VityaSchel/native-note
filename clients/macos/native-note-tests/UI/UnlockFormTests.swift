@@ -32,6 +32,8 @@ struct UnlockFormTests {
 
 		form.confirmation = "correct hose"
 		#expect(form.mismatched)
+		form.password = "correct horse"
+		#expect(form.mismatched)
 
 		form.confirmation = "correct horse"
 		#expect(!form.mismatched)

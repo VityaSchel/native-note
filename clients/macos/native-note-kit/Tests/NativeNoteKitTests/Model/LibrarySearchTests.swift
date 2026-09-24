@@ -17,11 +17,7 @@ struct LibrarySearchTests {
 				return try await store.search(text)
 			})
 		}
-		for body in bodies {
-			await model.createNote()
-			model.edit(try #require(model.selection), body)
-		}
-		await model.flushPendingSaves()
+		try await fill(model, with: bodies)
 		return (model, directory)
 	}
 

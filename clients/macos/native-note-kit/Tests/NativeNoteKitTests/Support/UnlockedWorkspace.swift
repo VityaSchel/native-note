@@ -21,6 +21,15 @@ func unlockedModel(_ make: (URL) -> AppModel) async throws -> (AppModel, URL) {
 	return (model, directory)
 }
 
+@MainActor
+func fill(_ model: AppModel, with bodies: [String]) async throws {
+	for body in bodies {
+		await model.createNote()
+		model.edit(try #require(model.selection), body)
+	}
+	await model.flushPendingSaves()
+}
+
 func workspaceKey() async throws -> Data {
 	try await Task.detached { try Unlock.localDbKey(password: workspacePassword, parameters: .fast) }.value
 }

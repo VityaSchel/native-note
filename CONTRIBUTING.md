@@ -68,7 +68,7 @@ xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 
 
 Read the `Test run with N tests` line, not `TEST SUCCEEDED`: `-only-testing` without the test's trailing `()` runs nothing and still succeeds.
 
-Tests never present windows, sheets, or alerts. Test view logic by calling it, as `FailureAlertTests` does with `AppModel.Failure.alert`.
+Tests never present windows, sheets, or alerts. Call view logic directly or host the view in `OffscreenWindow`.
 
 Coverage is off in the shared scheme. Measure the package with `swift test --enable-code-coverage`, and the hosted tests with the sandbox off, since a sandboxed host writes no coverage data:
 
