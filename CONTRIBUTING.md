@@ -61,8 +61,6 @@ Coverage is off in the shared scheme — enabling it there instruments Release b
 xcodebuild test -enableCodeCoverage YES -project native-note.xcodeproj -scheme native-note -destination 'platform=macOS'
 ```
 
-UI tests are skipped by default; they take over the login session. Run with `-only-testing:native-note-ui-tests`.
-
 Views below `ContentView` take plain data, not `AppModel`, so the Xcode canvas can render them without a database. Sample fixtures live behind `#if DEBUG` — and so must the `#Preview` blocks that use them, because previews are compiled in Release too.
 
 `spec/vectors` is a folder reference in the test target, not a path read at runtime.

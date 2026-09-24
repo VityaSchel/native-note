@@ -40,16 +40,6 @@
                ReferencedContainer = "container:native-note.xcodeproj">
             </BuildableReference>
          </TestableReference>
-         <TestableReference
-            skipped = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A7B544AA302899F600E267CC"
-               BuildableName = "native-note-ui-tests.xctest"
-               BlueprintName = "native-note-ui-tests"
-               ReferencedContainer = "container:native-note.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction

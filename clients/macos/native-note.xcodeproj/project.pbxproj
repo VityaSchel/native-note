@@ -20,19 +20,11 @@
 			remoteGlobalIDString = A7B54493302899EF00E267CC;
 			remoteInfo = "native-note";
 		};
-		A7B544AC302899F600E267CC /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = A7B5448C302899EE00E267CC /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = A7B54493302899EF00E267CC;
-			remoteInfo = "native-note";
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A7B54494302899EF00E267CC /* Native Note.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Native Note.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7B544A1302899F600E267CC /* native-note-tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "native-note-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		A7B544AB302899F600E267CC /* native-note-ui-tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "native-note-ui-tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A7B544CA302899F700E267CC /* vectors */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vectors; path = ../../spec/vectors; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -45,11 +37,6 @@
 		A7B544A4302899F600E267CC /* native-note-tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "native-note-tests";
-			sourceTree = "<group>";
-		};
-		A7B544AE302899F600E267CC /* native-note-ui-tests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "native-note-ui-tests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -71,13 +58,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A7B544A8302899F600E267CC /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -86,7 +66,6 @@
 			children = (
 				A7B54496302899EF00E267CC /* native-note */,
 				A7B544A4302899F600E267CC /* native-note-tests */,
-				A7B544AE302899F600E267CC /* native-note-ui-tests */,
 				A7B544CA302899F700E267CC /* vectors */,
 				A7B54495302899EF00E267CC /* Products */,
 			);
@@ -97,7 +76,6 @@
 			children = (
 				A7B54494302899EF00E267CC /* Native Note.app */,
 				A7B544A1302899F600E267CC /* native-note-tests.xctest */,
-				A7B544AB302899F600E267CC /* native-note-ui-tests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -152,29 +130,6 @@
 			productReference = A7B544A1302899F600E267CC /* native-note-tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		A7B544AA302899F600E267CC /* native-note-ui-tests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A7B544BB302899F700E267CC /* Build configuration list for PBXNativeTarget "native-note-ui-tests" */;
-			buildPhases = (
-				A7B544A7302899F600E267CC /* Sources */,
-				A7B544A8302899F600E267CC /* Frameworks */,
-				A7B544A9302899F600E267CC /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A7B544AD302899F600E267CC /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				A7B544AE302899F600E267CC /* native-note-ui-tests */,
-			);
-			name = "native-note-ui-tests";
-			packageProductDependencies = (
-			);
-			productName = "native-note-ui-tests";
-			productReference = A7B544AB302899F600E267CC /* native-note-ui-tests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -189,10 +144,6 @@
 						CreatedOnToolsVersion = 26.2;
 					};
 					A7B544A0302899F600E267CC = {
-						CreatedOnToolsVersion = 26.2;
-						TestTargetID = A7B54493302899EF00E267CC;
-					};
-					A7B544AA302899F600E267CC = {
 						CreatedOnToolsVersion = 26.2;
 						TestTargetID = A7B54493302899EF00E267CC;
 					};
@@ -218,7 +169,6 @@
 			targets = (
 				A7B54493302899EF00E267CC /* native-note */,
 				A7B544A0302899F600E267CC /* native-note-tests */,
-				A7B544AA302899F600E267CC /* native-note-ui-tests */,
 			);
 		};
 /* End PBXProject section */
@@ -239,13 +189,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A7B544A9302899F600E267CC /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -263,13 +206,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A7B544A7302899F600E267CC /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -277,11 +213,6 @@
 			isa = PBXTargetDependency;
 			target = A7B54493302899EF00E267CC /* native-note */;
 			targetProxy = A7B544A2302899F600E267CC /* PBXContainerItemProxy */;
-		};
-		A7B544AD302899F600E267CC /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = A7B54493302899EF00E267CC /* native-note */;
-			targetProxy = A7B544AC302899F600E267CC /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -339,7 +270,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -396,7 +327,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -433,7 +364,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote;
 				PRODUCT_MODULE_NAME = NativeNote;
@@ -477,7 +407,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote;
 				PRODUCT_MODULE_NAME = NativeNote;
@@ -499,7 +428,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote.tests;
 				PRODUCT_MODULE_NAME = NativeNoteTests;
@@ -520,7 +448,6 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote.tests;
 				PRODUCT_MODULE_NAME = NativeNoteTests;
@@ -531,46 +458,6 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Native Note.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Native Note";
-			};
-			name = Release;
-		};
-		A7B544BC302899F700E267CC /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote.uitests;
-				PRODUCT_MODULE_NAME = NativeNoteUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = "native-note";
-			};
-			name = Debug;
-		};
-		A7B544BD302899F700E267CC /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote.uitests;
-				PRODUCT_MODULE_NAME = NativeNoteUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TEST_TARGET_NAME = "native-note";
 			};
 			name = Release;
 		};
@@ -600,15 +487,6 @@
 			buildConfigurations = (
 				A7B544B9302899F700E267CC /* Debug */,
 				A7B544BA302899F700E267CC /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		A7B544BB302899F700E267CC /* Build configuration list for PBXNativeTarget "native-note-ui-tests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A7B544BC302899F700E267CC /* Debug */,
-				A7B544BD302899F700E267CC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
