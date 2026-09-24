@@ -9,18 +9,11 @@ struct ContentView: View {
 			switch model.phase {
 			case .loading:
 				ProgressView().onAppear { model.start() }
-			case .needsSetup:
+			case .needsSetup, .locked:
 				UnlockView(
-					isSetup: true,
+					isSetup: model.phase == .needsSetup,
 					failure: model.failure,
-					submit: { await model.setUp(password: $0) },
-					dismissFailure: model.dismissFailure
-				)
-			case .locked:
-				UnlockView(
-					isSetup: false,
-					failure: model.failure,
-					submit: { await model.unlock(password: $0) },
+					submit: model.submit(password:),
 					dismissFailure: model.dismissFailure
 				)
 			case .unlocked:

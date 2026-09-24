@@ -35,7 +35,6 @@ nonisolated enum Unlock {
 
 	@concurrent static func setUp(
 		password: String,
-		database: URL,
 		in directory: URL,
 		parameters makeParameters: @escaping @Sendable () throws -> UnlockParameters = createParameters
 	) async throws -> NoteStore {
@@ -48,19 +47,19 @@ nonisolated enum Unlock {
 			let parameters = try makeParameters()
 			return (parameters, try localDbKey(password: password, parameters: parameters))
 		}
-		let store = try await NoteStore.open(url: database, key: key)
-		try AppLock.write(parameters, to: AppLock.current(in: directory))
+		let store = try await NoteStore.open(url: AppLock.database(in: directory), key: key)
+		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
 		return store
 	}
 
-	@concurrent static func open(password: String, database: URL, in directory: URL) async throws -> NoteStore {
+	@concurrent static func open(password: String, in directory: URL) async throws -> NoteStore {
 		let candidates = AppLock.candidates(in: directory)
 		guard !candidates.isEmpty else { throw Failure.neverSetUp }
 
 		for parameters in candidates {
 			do {
 				let key = try await offThePool { try localDbKey(password: password, parameters: parameters) }
-				return try await NoteStore.open(url: database, key: key)
+				return try await NoteStore.open(url: AppLock.database(in: directory), key: key)
 			} catch SQLiteError.wrongKey {
 				continue
 			}
@@ -72,16 +71,15 @@ nonisolated enum Unlock {
 		to newPassword: String,
 		from parameters: UnlockParameters,
 		store: NoteStore,
-		database: URL,
 		in directory: URL
 	) async throws {
 		var next = parameters
 		next.localSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
 		let newKey = try await offThePool { [next] in try localDbKey(password: newPassword, parameters: next) }
 
-		try AppLock.write(next, to: AppLock.pendingRekey(in: directory))
+		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
 		try await store.rekey(to: newKey)
-		_ = try await NoteStore.open(url: database, key: newKey)
+		_ = try await NoteStore.open(url: AppLock.database(in: directory), key: newKey)
 		try AppLock.promoteRekey(in: directory)
 	}
 

@@ -8,7 +8,7 @@ let workspacePassword = "correct horse"
 @MainActor
 func unlockedModel(alarm: Alarm) async throws -> (AppModel, URL) {
 	let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
-	try AppLock.write(.fast, to: AppLock.current(in: directory))
+	try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 	let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
 	model.start()
 	await model.unlock(password: workspacePassword)
@@ -21,9 +21,9 @@ func workspaceKey() async throws -> Data {
 }
 
 func connection(to directory: URL) async throws -> SQLiteConnection {
-	try SQLiteConnection(url: directory.appending(path: "notes.db"), rawKey: try await workspaceKey())
+	try SQLiteConnection(url: AppLock.database(in: directory), rawKey: try await workspaceKey())
 }
 
 func observer(of directory: URL) async throws -> NoteStore {
-	try await Unlock.open(password: workspacePassword, database: directory.appending(path: "notes.db"), in: directory)
+	try await Unlock.open(password: workspacePassword, in: directory)
 }

@@ -16,7 +16,7 @@ struct AppDelegateTests {
 
 	private func unlockedModel() async throws -> (AppModel, URL) {
 		let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
-		try AppLock.write(parameters, to: AppLock.current(in: directory))
+		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
 		let model = AppModel(directory: directory, scheduler: SaveScheduler(delay: .seconds(3600)))
 		model.start()
 		await model.unlock(password: password)
@@ -31,7 +31,7 @@ struct AppDelegateTests {
 	}
 
 	private func observer(of directory: URL) async throws -> NoteStore {
-		try await Unlock.open(password: password, database: directory.appending(path: "notes.db"), in: directory)
+		try await Unlock.open(password: password, in: directory)
 	}
 
 
@@ -60,7 +60,7 @@ struct AppDelegateTests {
 		await model.createNote()
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
-			url: directory.appending(path: "notes.db"),
+			url: AppLock.database(in: directory),
 			rawKey: try await rawKey()
 		)
 		let prompt = QuitPrompt()

@@ -47,7 +47,7 @@ struct AppModelTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(
 			UnlockParameters(localSalt: Data(repeating: 1, count: 16), argon: Argon2.floor, enclaveKey: nil),
-			to: AppLock.current(in: directory)
+			to: AppLock.currentFile(in: directory)
 		)
 
 		let model = AppModel(directory: directory, makeParameters: { .fast })
@@ -92,5 +92,24 @@ struct AppModelTests {
 
 		#expect(model.notes.isEmpty)
 		#expect(model.selection == nil)
+	}
+
+	@Test func submitSetsUpOnFirstRunAndUnlocksAfterwards() async throws {
+		let directory = workspace()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(directory: directory, makeParameters: { .fast })
+		model.start()
+		#expect(model.phase == .needsSetup)
+
+		await model.submit(password: "correct horse")
+		#expect(model.phase == .unlocked)
+		await model.lock()
+
+		await model.submit(password: "wrong horse")
+		#expect(model.phase == .locked)
+		#expect(model.failure == .wrongPassword)
+
+		await model.submit(password: "correct horse")
+		#expect(model.phase == .unlocked)
 	}
 }

@@ -56,7 +56,7 @@ struct AppLockTests {
 	@Test func writesPrivatelyAndReadsBack() throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let url = AppLock.current(in: directory)
+		let url = AppLock.currentFile(in: directory)
 
 		try AppLock.write(UnlockParametersTests.sample, to: url)
 
@@ -72,7 +72,7 @@ struct AppLockTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		var future = UnlockParametersTests.sample
 		future.version = 2
-		let url = AppLock.current(in: directory)
+		let url = AppLock.currentFile(in: directory)
 
 		try AppLock.write(future, to: url)
 
@@ -86,10 +86,10 @@ struct AppLockTests {
 		var next = UnlockParametersTests.sample
 		next.localSalt = Data(repeating: 0x99, count: 16)
 
-		try AppLock.write(UnlockParametersTests.sample, to: AppLock.current(in: directory))
+		try AppLock.write(UnlockParametersTests.sample, to: AppLock.currentFile(in: directory))
 		#expect(AppLock.candidates(in: directory).map(\.localSalt) == [UnlockParametersTests.sample.localSalt])
 
-		try AppLock.write(next, to: AppLock.pendingRekey(in: directory))
+		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
 		#expect(
 			AppLock.candidates(in: directory).map(\.localSalt)
 				== [next.localSalt, UnlockParametersTests.sample.localSalt]
@@ -101,14 +101,14 @@ struct AppLockTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		var next = UnlockParametersTests.sample
 		next.localSalt = Data(repeating: 0x99, count: 16)
-		try AppLock.write(UnlockParametersTests.sample, to: AppLock.current(in: directory))
-		try AppLock.write(next, to: AppLock.pendingRekey(in: directory))
+		try AppLock.write(UnlockParametersTests.sample, to: AppLock.currentFile(in: directory))
+		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
 
 		try AppLock.promoteRekey(in: directory)
 
 		#expect(AppLock.candidates(in: directory).map(\.localSalt) == [next.localSalt])
-		#expect(!FileManager.default.fileExists(atPath: AppLock.pendingRekey(in: directory).path))
-		let mode = try FileManager.default.attributesOfItem(atPath: AppLock.current(in: directory).path)[.posixPermissions] as? NSNumber
+		#expect(!FileManager.default.fileExists(atPath: AppLock.pendingRekeyFile(in: directory).path))
+		let mode = try FileManager.default.attributesOfItem(atPath: AppLock.currentFile(in: directory).path)[.posixPermissions] as? NSNumber
 		#expect(mode?.int16Value == 0o600)
 	}
 

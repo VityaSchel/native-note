@@ -36,7 +36,6 @@ import Observation
 	}
 
 	private let directory: URL
-	private let database: URL
 	private struct FailingSave {
 		let note: Note
 		let reason: String
@@ -60,7 +59,6 @@ import Observation
 		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.createParameters
 	) {
 		self.directory = directory
-		database = directory.appending(path: "notes.db")
 		self.scheduler = scheduler
 		self.makeParameters = makeParameters
 	}
@@ -70,13 +68,21 @@ import Observation
 	}
 
 	public func setUp(password: String) async {
-		await attach {
-			try await Unlock.setUp(password: password, database: self.database, in: self.directory, parameters: self.makeParameters)
+		await openLibrary {
+			try await Unlock.setUp(password: password, in: self.directory, parameters: self.makeParameters)
 		}
 	}
 
 	public func unlock(password: String) async {
-		await attach { try await Unlock.open(password: password, database: self.database, in: self.directory) }
+		await openLibrary { try await Unlock.open(password: password, in: self.directory) }
+	}
+
+	public func submit(password: String) async {
+		if phase == .needsSetup {
+			await setUp(password: password)
+		} else {
+			await unlock(password: password)
+		}
 	}
 
 	public func lock() async {
@@ -186,7 +192,7 @@ import Observation
 		notes[index] = note
 	}
 
-	private func attach(_ open: @escaping () async throws -> NoteStore) async {
+	private func openLibrary(_ open: @escaping () async throws -> NoteStore) async {
 		failure = nil
 		do {
 			let opened = try await open()
