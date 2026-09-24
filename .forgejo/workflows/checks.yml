@@ -31,8 +31,6 @@ jobs:
       RUSTUP_HOME: /opt/rust/rustup
       CARGO_TERM_COLOR: never
       CARGO_TERM_PROGRESS_WHEN: never
-      RUSTUP_VERSION: "1.29.0"
-      RUSTUP_SHA256: "4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10"
     steps:
       - name: Verify CI environment
         run: |
@@ -62,27 +60,13 @@ jobs:
             || { echo "FATAL: head moved since the run was queued (want $want, got $(git rev-parse HEAD))"; exit 1; }
 
       - name: Install the pinned toolchain
-        run: |
-          command -v cc >/dev/null 2>&1 || {
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -y
-            apt-get install -y --no-install-recommends gcc libc6-dev
-          }
-
-          curl -fsSLo /tmp/rustup-init \
-            "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init"
-          echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum -c -
-          chmod +x /tmp/rustup-init
-          /tmp/rustup-init -q -y --no-modify-path --profile minimal --default-toolchain none
-          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
-
-          cd "$WORKSPACE"
-          "$CARGO_HOME/bin/rustup" --quiet show active-toolchain
+        run: cd "$WORKSPACE" && ./.forgejo/scripts/install-rust-toolchain.sh
 
       - name: Repository hygiene
         run: |
           cd "$WORKSPACE"
-          if git ls-files | grep -E '(^|/)\.env($|\.)|(^|/)\.DS_Store$|(^|/)target/|\.(pem|key|p12|mobileprovision)$'; then
+          tracked="$(git ls-files)"
+          if grep -E '(^|/)\.env($|\.)|(^|/)\.DS_Store$|(^|/)target/|\.(pem|key|p12|mobileprovision)$' <<<"$tracked"; then
             echo "FATAL: forbidden files are tracked"
             exit 1
           fi
@@ -114,10 +98,14 @@ jobs:
             ( cd "$project" && cargo test --locked )
           done
 
+      - name: Generator line coverage
+        run: cd "$WORKSPACE" && ./.forgejo/scripts/rust-coverage.sh
+
       - name: Vectors match the generator
         run: |
           cd "$WORKSPACE/spec/generator"
           cargo run --locked --bin gen-vectors
           cd "$WORKSPACE"
-          git diff --exit-code -- spec/vectors \
+          stale="$(git status --porcelain -- spec/vectors)"
+          test -z "$stale" \
             || { echo "FATAL: spec/vectors is stale — regenerate it in the same commit as the spec change"; exit 1; }

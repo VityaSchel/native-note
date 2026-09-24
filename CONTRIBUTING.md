@@ -26,11 +26,14 @@ Format and per-file contents: [spec/README.md](spec/README.md).
 cd spec/generator
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
-cargo test                    # verify the generator reproduces every vector
-cargo run --bin gen-vectors   # regenerate after an intentional protocol change
+cargo test                                # verify the generator reproduces every vector
+cargo run --bin gen-vectors               # regenerate after an intentional protocol change
+../../.forgejo/scripts/rust-coverage.sh   # line coverage of src/, excluding src/bin
 ```
 
 The generator is deterministic: salts, nonces, and keys are fixed. Regenerating without a protocol change must produce no diff.
+
+Every line of `src/` outside `src/bin` must run under test; the coverage script lists any that do not.
 
 Supply chain:
 

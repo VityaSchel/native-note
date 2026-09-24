@@ -6,7 +6,8 @@ cd "$(dirname "$0")/../.."
 errors=0
 
 anchors_of() {
-	grep -hE '^#{1,6} ' "$1" \
+	awk '/^(```|~~~)/ { fenced = !fenced; next } !fenced' "$1" \
+		| grep -E '^#{1,6} ' \
 		| sed 's/^#* //' \
 		| tr '[:upper:]' '[:lower:]' \
 		| sed 's/[^a-z0-9 _-]//g; s/ /-/g'
@@ -48,15 +49,14 @@ check_link() {
 	fi
 }
 
+docs="$(git ls-files '*.md')"
+[ -n "$docs" ] || { echo "::error::git listed no documentation files"; exit 1; }
+
 while IFS= read -r doc; do
 	while IFS= read -r link; do
 		check_link "$doc" "$link"
 	done < <(grep -oE '\]\([^) ]+\)' "$doc" | sed 's/^](//; s/)$//')
-done < <(find . -name '*.md' \
-	-not -path './.git/*' \
-	-not -path '*/target/*' \
-	-not -path '*/DerivedData/*' \
-	-not -path '*/.build/*' | sort)
+done <<<"$docs"
 
 if [ "$errors" -ne 0 ]; then
 	echo "::error::$errors broken documentation link(s)"
