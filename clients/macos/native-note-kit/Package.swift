@@ -1,7 +1,7 @@
 // swift-tools-version: 6.2
 import PackageDescription
 
-let approachableConcurrency: [SwiftSetting] = [
+let upcomingFeatures: [SwiftSetting] = [
 	.enableUpcomingFeature("NonisolatedNonsendingByDefault"),
 	.enableUpcomingFeature("InferIsolatedConformances"),
 	.enableUpcomingFeature("MemberImportVisibility"),
@@ -22,13 +22,13 @@ let package = Package(
 				.product(name: "SQLCipher", package: "SQLCipher.swift"),
 				.product(name: "argon2", package: "phc-winner-argon2"),
 			],
-			swiftSettings: [.defaultIsolation(MainActor.self)] + approachableConcurrency
+			swiftSettings: [.defaultIsolation(MainActor.self)] + upcomingFeatures
 		),
 		.testTarget(
 			name: "NativeNoteKitTests",
 			dependencies: ["NativeNoteKit"],
 			resources: [.copy("vectors")],
-			swiftSettings: approachableConcurrency
+			swiftSettings: upcomingFeatures
 		),
 	]
 )

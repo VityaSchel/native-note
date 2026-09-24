@@ -9,6 +9,11 @@ import Observation
 		case unlocked
 	}
 
+	private struct FailingSave {
+		let note: Note
+		let reason: String
+	}
+
 	public private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	public private(set) var failure: Failure?
@@ -36,11 +41,6 @@ import Observation
 	}
 
 	private let directory: URL
-	private struct FailingSave {
-		let note: Note
-		let reason: String
-	}
-
 	private let scheduler: SaveScheduler
 	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private var store: NoteStore?
@@ -56,7 +56,7 @@ import Observation
 	init(
 		directory: URL,
 		scheduler: SaveScheduler = SaveScheduler(),
-		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.createParameters
+		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters
 	) {
 		self.directory = directory
 		self.scheduler = scheduler
@@ -67,13 +67,13 @@ import Observation
 		phase = AppLock.candidates(in: directory).isEmpty ? .needsSetup : .locked
 	}
 
-	public func setUp(password: String) async {
+	func setUp(password: String) async {
 		await openLibrary {
-			try await Unlock.setUp(password: password, in: self.directory, parameters: self.makeParameters)
+			try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters)
 		}
 	}
 
-	public func unlock(password: String) async {
+	func unlock(password: String) async {
 		await openLibrary { try await Unlock.open(password: password, in: self.directory) }
 	}
 
@@ -150,6 +150,10 @@ import Observation
 			if !searchFailing { report(error) }
 			searchFailing = true
 		}
+	}
+
+	public func dismissFailure() {
+		failure = nil
 	}
 
 	private func scheduleSave(_ note: Note, to store: NoteStore) {
@@ -230,11 +234,6 @@ import Observation
 	private func report(_ error: Error) {
 		failure = Failure(error)
 	}
-
-	public func dismissFailure() {
-		failure = nil
-	}
-
 }
 
 #if DEBUG

@@ -1,4 +1,3 @@
-import NativeNoteKit
 import SwiftUI
 
 @main

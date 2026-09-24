@@ -7,23 +7,23 @@ nonisolated enum AppLock {
 
 	static let directory = URL.applicationSupportDirectory
 
-	static func database(in directory: URL = directory) -> URL {
+	static func databaseFile(in directory: URL) -> URL {
 		directory.appending(path: "notes.db")
 	}
 
-	static func currentFile(in directory: URL = directory) -> URL {
+	static func currentFile(in directory: URL) -> URL {
 		directory.appending(path: "app-lock.plist")
 	}
 
-	static func pendingRekeyFile(in directory: URL = directory) -> URL {
+	static func pendingRekeyFile(in directory: URL) -> URL {
 		directory.appending(path: "app-lock.next.plist")
 	}
 
-	static func candidates(in directory: URL = directory) -> [UnlockParameters] {
+	static func candidates(in directory: URL) -> [UnlockParameters] {
 		[pendingRekeyFile(in: directory), currentFile(in: directory)].compactMap { try? read(from: $0) }
 	}
 
-	static func promoteRekey(in directory: URL = directory) throws {
+	static func promoteRekey(in directory: URL) throws {
 		try Data(contentsOf: pendingRekeyFile(in: directory)).write(to: currentFile(in: directory), options: .atomic)
 		try FileManager.default.setAttributes(
 			[.posixPermissions: 0o600],

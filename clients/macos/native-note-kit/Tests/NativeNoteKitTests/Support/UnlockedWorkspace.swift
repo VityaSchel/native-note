@@ -21,7 +21,7 @@ func workspaceKey() async throws -> Data {
 }
 
 func connection(to directory: URL) async throws -> SQLiteConnection {
-	try SQLiteConnection(url: AppLock.database(in: directory), rawKey: try await workspaceKey())
+	try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: try await workspaceKey())
 }
 
 func observer(of directory: URL) async throws -> NoteStore {

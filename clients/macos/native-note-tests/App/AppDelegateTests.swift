@@ -60,7 +60,7 @@ struct AppDelegateTests {
 		await model.createNote()
 		let id = try #require(model.selection)
 		let blocker = try SQLiteConnection(
-			url: AppLock.database(in: directory),
+			url: AppLock.databaseFile(in: directory),
 			rawKey: try await rawKey()
 		)
 		let prompt = QuitPrompt()

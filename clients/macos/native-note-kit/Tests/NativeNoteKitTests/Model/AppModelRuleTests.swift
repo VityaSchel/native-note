@@ -19,7 +19,7 @@ struct AppModelRuleTests {
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		let created = Date(epochMilliseconds: 1_760_000_000_000)
 		let seeded = Note(id: UUID(), body: "from sync", createdAt: created, updatedAt: created, v: 3, seq: 7)
-		let seeding = try await NoteStore.open(url: AppLock.database(in: directory), key: try await workspaceKey())
+		let seeding = try await NoteStore.open(url: AppLock.databaseFile(in: directory), key: try await workspaceKey())
 		try await seeding.save(seeded)
 		await seeding.close()
 		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
@@ -197,7 +197,7 @@ struct AppModelRuleTests {
 		let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		try FileManager.default.createDirectory(at: AppLock.database(in: directory), withIntermediateDirectories: true)
+		try FileManager.default.createDirectory(at: AppLock.databaseFile(in: directory), withIntermediateDirectories: true)
 		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
 		model.start()
 

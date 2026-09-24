@@ -1,10 +1,10 @@
 import Foundation
 
 nonisolated public struct Note: Equatable, Identifiable, Sendable {
-	public var id: UUID
-	public var body: String
-	public var createdAt: Date
-	public var updatedAt: Date
+	public internal(set) var id: UUID
+	public internal(set) var body: String
+	var createdAt: Date
+	public internal(set) var updatedAt: Date
 	var deleted = false
 	var dirty = false
 	var v: UInt32 = 0

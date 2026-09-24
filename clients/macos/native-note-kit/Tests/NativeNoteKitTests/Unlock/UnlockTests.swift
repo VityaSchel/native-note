@@ -13,7 +13,7 @@ private func fastParameters() throws -> UnlockParameters {
 
 private func workspace() -> (directory: URL, database: URL) {
 	let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
-	return (directory, AppLock.database(in: directory))
+	return (directory, AppLock.databaseFile(in: directory))
 }
 
 private func seed(_ password: String, in place: (directory: URL, database: URL)) async throws -> UnlockParameters {
