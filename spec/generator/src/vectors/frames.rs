@@ -20,6 +20,7 @@ fn request_case(name: &str, request: Request) -> Value {
 	let encoded = frame::encode_request(&request);
 	json!({
 		"name": name,
+		"direction": "request",
 		"encoded": hx(&encoded),
 		"length": encoded.len(),
 		"roundTrips": frame::decode_request(&encoded).as_ref() == Ok(&request),
@@ -30,6 +31,7 @@ fn response_case(name: &str, response: Response) -> Value {
 	let encoded = frame::encode_response(&response);
 	json!({
 		"name": name,
+		"direction": "response",
 		"encoded": hx(&encoded),
 		"length": encoded.len(),
 		"roundTrips": frame::decode_response(&encoded).as_ref() == Ok(&response),
@@ -39,10 +41,22 @@ fn response_case(name: &str, response: Response) -> Value {
 fn reject_request(name: &str, bytes: Vec<u8>, expected: DecodeError) -> Value {
 	json!({
 		"name": name,
+		"direction": "request",
 		"encoded": hx(&bytes),
 		"decodes": frame::decode_request(&bytes).is_ok(),
 		"error": format!("{expected:?}"),
 		"matches": frame::decode_request(&bytes) == Err(expected),
+	})
+}
+
+fn reject_response(name: &str, bytes: Vec<u8>, expected: DecodeError) -> Value {
+	json!({
+		"name": name,
+		"direction": "response",
+		"encoded": hx(&bytes),
+		"decodes": frame::decode_response(&bytes).is_ok(),
+		"error": format!("{expected:?}"),
+		"matches": frame::decode_response(&bytes) == Err(expected),
 	})
 }
 
@@ -76,8 +90,12 @@ pub fn frames() -> Value {
 		next_seq: 1,
 		more: false,
 	};
+	let status_at = 1 + 4 + 16;
+	let mut unknown_status = frame::encode_response(&conflict);
+	unknown_status[status_at] = 0x06;
+
 	let mut seq_on_conflict = frame::encode_response(&conflict);
-	let seq_at = seq_on_conflict.len() - 1 - 8 - 1 - 8;
+	let seq_at = status_at + 1 + 4;
 	seq_on_conflict[seq_at..seq_at + 8].copy_from_slice(&9u64.to_be_bytes());
 
 	file(
@@ -124,7 +142,31 @@ pub fn frames() -> Value {
 				},
 			),
 			response_case(
-				"putRecovery",
+				"syncRefused",
+				Response::Sync {
+					results: [Status::TooLarge, Status::Exhausted, Status::Quota]
+						.into_iter()
+						.map(|status| WriteResult {
+							blinded_id: fixed(0x10),
+							status,
+							v: 1,
+							seq: 0,
+						})
+						.collect(),
+					changes: vec![],
+					next_seq: 1,
+					more: false,
+				},
+			),
+			response_case(
+				"getRecoveryResult",
+				Response::GetRecovery {
+					v: 2,
+					blob: seq_bytes(0xe0, 60),
+				},
+			),
+			response_case(
+				"putRecoveryResult",
 				Response::PutRecovery {
 					status: Status::Accepted,
 					v: 3,
@@ -142,14 +184,16 @@ pub fn frames() -> Value {
 			),
 			reject_request("rejectImpossibleCount", huge_count, DecodeError::Truncated),
 			reject_request("rejectTrailingBytes", trailing, DecodeError::TrailingBytes),
-			json!({
-				"name": "rejectSeqOnNonAcceptedResult",
-				"encoded": hx(&seq_on_conflict),
-				"decodes": frame::decode_response(&seq_on_conflict).is_ok(),
-				"error": "NotCanonical",
-				"matches": frame::decode_response(&seq_on_conflict)
-					== Err(DecodeError::NotCanonical),
-			}),
+			reject_response(
+				"rejectSeqOnNonAcceptedResult",
+				seq_on_conflict,
+				DecodeError::NotCanonical,
+			),
+			reject_response(
+				"rejectUnknownStatus",
+				unknown_status,
+				DecodeError::UnknownDiscriminant,
+			),
 		],
 	)
 }

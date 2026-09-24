@@ -4,6 +4,7 @@
 		{
 			"device": "A",
 			"explains": "First write of a new note. storedV is 0, so v = 1 is accepted.",
+			"name": "step1",
 			"outcome": {
 				"changes": 0,
 				"results": [
@@ -21,6 +22,7 @@
 		{
 			"device": "B",
 			"explains": "B was offline and also produced v = 1. storedV is already 1, so the write is rejected and the server's current v is returned with seq 0.",
+			"name": "step2",
 			"outcome": {
 				"changes": 0,
 				"results": [
@@ -38,6 +40,7 @@
 		{
 			"device": "B",
 			"explains": "B pulls to see what it conflicted with. A's version arrives in memory; B's own version is still only on disk.",
+			"name": "step3",
 			"outcome": {
 				"changes": 1,
 				"results": []
@@ -49,6 +52,7 @@
 		{
 			"device": "B",
 			"explains": "B resolves keep-mine: discard the in-memory server version and re-push at serverV + 1.",
+			"name": "step4",
 			"outcome": {
 				"changes": 0,
 				"results": [
@@ -66,6 +70,7 @@
 		{
 			"device": "A",
 			"explains": "A pulls from the seq it last saw and converges on B's version.",
+			"name": "step5",
 			"outcome": {
 				"changes": 1,
 				"results": []
@@ -77,6 +82,7 @@
 		{
 			"device": "A",
 			"explains": "Deletion is an ordinary write at v + 1 carrying a sealed tombstone, so a forged delete fails to decrypt.",
+			"name": "step6",
 			"outcome": {
 				"changes": 0,
 				"results": [

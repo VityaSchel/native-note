@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -45,6 +46,42 @@ fn generation_is_deterministic() {
 			vectors::render(b),
 			"{name} is not deterministic"
 		);
+	}
+}
+
+#[test]
+fn every_case_satisfies_its_own_assertions() {
+	for (file, doc) in vectors::all() {
+		for case in doc["cases"].as_array().unwrap() {
+			let name = case["name"].as_str().unwrap_or_default();
+			let negative = name.starts_with("reject");
+			for field in ["roundTrips", "matches"] {
+				if let Some(value) = case.get(field) {
+					assert_eq!(value, true, "{file} {name}: {field}");
+				}
+			}
+			for field in ["decodes", "opens", "unpads", "splits"] {
+				if let Some(value) = case.get(field) {
+					assert_eq!(value, !negative, "{file} {name}: {field}");
+				}
+			}
+			if let Some(value) = case.get("opensUnderWrongVersion") {
+				assert_eq!(value, false, "{file} {name}: opensUnderWrongVersion");
+			}
+		}
+	}
+}
+
+#[test]
+fn case_names_are_present_and_unique() {
+	for (file, doc) in vectors::all() {
+		let mut seen = HashSet::new();
+		for case in doc["cases"].as_array().unwrap() {
+			let name = case["name"]
+				.as_str()
+				.unwrap_or_else(|| panic!("{file} has an unnamed case"));
+			assert!(seen.insert(name), "{file} repeats {name}");
+		}
 	}
 }
 

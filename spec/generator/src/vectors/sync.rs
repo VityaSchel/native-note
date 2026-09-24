@@ -61,6 +61,7 @@ fn step(n: u32, device: &str, explains: &str, request: Request, response: Respon
 	};
 
 	json!({
+		"name": format!("step{n}"),
 		"step": n,
 		"device": device,
 		"explains": explains,
