@@ -16,8 +16,6 @@ nonisolated enum Unlock {
 		let parameters: UnlockParameters
 	}
 
-	private static let blockingWork = DispatchQueue(label: "dev.hloth.nativenote.unlock", qos: .userInitiated)
-
 	static func localDbKey(password: String, parameters: UnlockParameters) throws -> Data {
 		let argonOut = try Argon2.hash(
 			password: Data(password.utf8),
@@ -59,7 +57,7 @@ nonisolated enum Unlock {
 		)
 		let database = AppLock.databaseFile(in: directory)
 		try AppLock.setAside(database)
-		let (parameters, key) = try await offThePool {
+		let (parameters, key) = try await BlockingWork.run {
 			let parameters = try makeParameters()
 			return (parameters, try localDbKey(password: password, parameters: parameters))
 		}
@@ -85,7 +83,7 @@ nonisolated enum Unlock {
 				continue
 			}
 			do {
-				let key = try await offThePool { try localDbKey(password: password, parameters: parameters) }
+				let key = try await BlockingWork.run { try localDbKey(password: password, parameters: parameters) }
 				let store = try await NoteStore.open(url: database, key: key)
 				try AppLock.keep(file, in: directory)
 				return Unlocked(store: store, parameters: parameters)
@@ -104,7 +102,7 @@ nonisolated enum Unlock {
 		in directory: URL
 	) async throws {
 		let database = AppLock.databaseFile(in: directory)
-		let oldKey = try await offThePool { try localDbKey(password: oldPassword, parameters: parameters) }
+		let oldKey = try await BlockingWork.run { try localDbKey(password: oldPassword, parameters: parameters) }
 		do {
 			_ = try await NoteStore.open(url: database, key: oldKey)
 		} catch SQLiteError.wrongKey {
@@ -113,7 +111,7 @@ nonisolated enum Unlock {
 
 		var next = parameters
 		next.localSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
-		let newKey = try await offThePool { [next] in try localDbKey(password: newPassword, parameters: next) }
+		let newKey = try await BlockingWork.run { [next] in try localDbKey(password: newPassword, parameters: next) }
 
 		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
 		guard try await store.rekey(from: oldKey, to: newKey) else {
@@ -121,11 +119,5 @@ nonisolated enum Unlock {
 			throw Failure.passwordNotChanged
 		}
 		try AppLock.promoteRekey(in: directory)
-	}
-
-	private static func offThePool<T: Sendable>(_ work: @escaping @Sendable () throws -> T) async throws -> T {
-		try await withCheckedThrowingContinuation { continuation in
-			blockingWork.async { continuation.resume(with: Result(catching: work)) }
-		}
 	}
 }

@@ -22,5 +22,6 @@ struct FailureAlertTests {
 
 	@Test func aWrongPasswordShowsNoAlert() {
 		#expect(AppModel.Failure.wrongPassword.alert == nil)
+		#expect(AppModel.Failure.wrongExportPassphrase.alert == nil)
 	}
 }

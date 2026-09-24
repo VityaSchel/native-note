@@ -17,6 +17,14 @@ struct AppModelFailureTests {
 		(SQLiteError.cannotOpen(code: 14, message: "unable to open database file"), "The notes database could not be opened. unable to open database file"),
 		(SQLiteError.cannotExecute(code: 5, message: "database is locked", sql: "UPDATE note SET body = 'secret'"), "database is locked"),
 		(SQLiteError.keyMustBe32Bytes(count: 16), "The unlock key was 16 bytes rather than 32."),
+		(ExportEnvelope.Failure.parametersOutOfBounds, "The export asks for more memory or time than Native Note allows."),
+		(ExportEnvelope.Failure.notAnExport, "This file is not a Native Note export, or it is damaged."),
+		(ZipArchive.Failure.notAZip, "This file is not a Native Note export, or it is damaged."),
+		(NoteMarkdown.Failure.noFrontMatter, "This file is not a Native Note export, or it is damaged."),
+		(LibraryArchive.Failure.notText("a.md"), "This file is not a Native Note export, or it is damaged."),
+		(LibraryArchive.Failure.tooLarge, "The file is too large to be a Native Note export."),
+		(ZipArchive.Failure.tooLarge, "The library is too large to export as one zip."),
+		(CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: "/tmp/gone.zip"]), "The file “gone.zip” couldn’t be opened because there is no such file."),
 	])
 	func everyStorageAndUnlockErrorReadsAsASentence(error: any Error, reason: String) {
 		#expect(AppModel.Failure.reason(for: error) == reason)
@@ -27,6 +35,10 @@ struct AppModelFailureTests {
 		let error = Argon2.Failure.rejected(code: -22, message: "Memory allocation error")
 
 		#expect(AppModel.Failure(error) == .unexpected(String(describing: error)))
+	}
+
+	@Test func aRefusedExportPassphraseIsItsOwnFailure() {
+		#expect(AppModel.Failure(ExportEnvelope.Failure.wrongPassphraseOrDamaged) == .wrongExportPassphrase)
 	}
 
 	@Test func aWrongKeyIsAWrongPassword() {

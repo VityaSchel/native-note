@@ -126,7 +126,7 @@ struct PreviewRenderTests {
 
 	@Test func libraryShell() {
 		render(
-			ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes))),
+			ContentView(exchange: LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes)))),
 			width: 980,
 			height: 560
 		)
@@ -136,10 +136,20 @@ struct PreviewRenderTests {
 		let model = AppModel.previewing(NoteGroup.samples.flatMap(\.notes))
 		model.selection = nil
 
-		render(ContentView(model: model), width: 980, height: 560)
+		render(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
+	}
+
+	@Test func exchangeSheets() {
+		let notes = NoteGroup.samples.flatMap(\.notes)
+		var theirs = notes[0]
+		theirs.body = "Shopping\nonly bread"
+		render(ExportSheet(export: { _ in }, cancel: {}))
+		render(ImportPassphraseSheet(refused: true, working: false, submit: { _ in }, cancel: {}))
+		render(ImportPassphraseSheet(refused: false, working: true, submit: { _ in }, cancel: {}))
+		render(ConflictSheet(conflicts: [NoteConflict(mine: notes[0], theirs: theirs)], resolve: { _, _ in }), width: 560, height: 420)
 	}
 
 	@Test func firstRunShell() {
-		render(ContentView(model: .previewingFirstRun))
+		render(ContentView(exchange: LibraryExchange(model: .previewingFirstRun)))
 	}
 }

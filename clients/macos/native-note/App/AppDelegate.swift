@@ -3,10 +3,12 @@ import NativeNoteKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 	let model: AppModel
+	let exchange: LibraryExchange
 	private let confirmQuitLosingEdits: @MainActor (String) -> Bool
 
 	init(model: AppModel, confirmQuitLosingEdits: @escaping @MainActor (String) -> Bool = AppDelegate.askToQuitLosingEdits) {
 		self.model = model
+		exchange = LibraryExchange(model: model)
 		self.confirmQuitLosingEdits = confirmQuitLosingEdits
 	}
 

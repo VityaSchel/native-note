@@ -170,3 +170,9 @@ file        = header ‖ nonce ‖ ciphertext ‖ tag
 ```
 
 The parameters travel in the header because the recipient has only the passphrase.
+
+Exports use the Argon2id floor, so any device can open them. A reader refuses more than 2 GiB, 10 passes or 16 lanes before hashing.
+
+The zip holds one uncompressed markdown file per live note, named from its title. Each file starts with front matter `id`, `created`, `updated` (ISO 8601 UTC with milliseconds) and `v`, then the body byte for byte.
+
+Import reads only this format, one import at a time, and waits until earlier conflicts are resolved. It refuses files over 512 MiB unread. A note already in the library is skipped when identical and otherwise raises the [conflict](#conflicts) choice; keep theirs saves the export's text as a new edit. A note deleted here stays deleted.

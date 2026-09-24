@@ -2,7 +2,13 @@ import NativeNoteKit
 import SwiftUI
 
 struct ContentView: View {
+	@Bindable var exchange: LibraryExchange
 	@Bindable var model: AppModel
+
+	init(exchange: LibraryExchange) {
+		self.exchange = exchange
+		model = exchange.model
+	}
 
 	var body: some View {
 		Group {
@@ -34,6 +40,9 @@ struct ContentView: View {
 			NoteListView(groups: model.groups, selection: $model.selection, search: $model.search)
 				.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
 				.onChange(of: model.search) { Task { await model.runSearch() } }
+				.alert(exchange.lastImport?.message ?? "", isPresented: $exchange.showsSummary) {
+					Button("OK") {}
+				}
 		} detail: {
 			if let note = model.selectedNote {
 				NoteEditor(text: Binding(get: { note.body }, set: { model.edit(note.id, $0) }))
@@ -61,21 +70,38 @@ struct ContentView: View {
 			}
 		}
 		.failureAlert(model.failure, dismiss: model.dismissFailure)
+		.sheet(item: $exchange.presentedSheet) { sheet in
+			switch sheet {
+			case .export:
+				ExportSheet(export: exchange.chooseExport(passphrase:)) { exchange.dismiss(.export) }
+			case .passphrase:
+				ImportPassphraseSheet(refused: exchange.passphraseRefused, working: exchange.isImporting) { passphrase in
+					Task { await exchange.importPending(passphrase: passphrase) }
+				} cancel: {
+					exchange.dismiss(.passphrase)
+				}
+			case .conflicts:
+				ConflictSheet(conflicts: model.conflicts) { conflict, choice in
+					Task { await model.resolve(conflict, choice) }
+				}
+				.interactiveDismissDisabled()
+			}
+		}
 	}
 }
 
 #if DEBUG
 	#Preview("Library") {
-		ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes)))
+		ContentView(exchange: LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes))))
 			.frame(width: 980, height: 560)
 	}
 
 	#Preview("Library, edits not saved") {
-		ContentView(model: .previewing(NoteGroup.samples.flatMap(\.notes), failure: .unsaved("disk I/O error")))
+		ContentView(exchange: LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes), failure: .unsaved("disk I/O error"))))
 			.frame(width: 980, height: 560)
 	}
 
 	#Preview("First run") {
-		ContentView(model: .previewingFirstRun)
+		ContentView(exchange: LibraryExchange(model: .previewingFirstRun))
 	}
 #endif

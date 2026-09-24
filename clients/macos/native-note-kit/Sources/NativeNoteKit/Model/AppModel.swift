@@ -17,6 +17,8 @@ import Observation
 	public private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	public private(set) var failure: Failure?
+	public private(set) var conflicts: [NoteConflict] = []
+	public private(set) var isImporting = false
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -44,6 +46,7 @@ import Observation
 	private let scheduler: SaveScheduler
 	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
+	private let exportParameters: Argon2.Parameters
 	private var store: NoteStore?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
@@ -58,12 +61,14 @@ import Observation
 		directory: URL,
 		scheduler: SaveScheduler = SaveScheduler(),
 		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters,
-		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search
+		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search,
+		exportParameters: Argon2.Parameters = Argon2.floor
 	) {
 		self.directory = directory
 		self.scheduler = scheduler
 		self.makeParameters = makeParameters
 		self.searchNotes = searchNotes
+		self.exportParameters = exportParameters
 	}
 
 	public func start() {
@@ -97,6 +102,7 @@ import Observation
 		failure = nil
 		failingSaves = [:]
 		searchFailing = false
+		conflicts = []
 		await scheduler.flushAll()
 		guard let closing else { return }
 		if unsavedReason == nil { await closing.close() } else { retiring = closing }
@@ -157,6 +163,98 @@ import Observation
 
 	public func dismissFailure() {
 		failure = nil
+	}
+
+	public static func isEncryptedExport(at url: URL) -> Bool {
+		let head = try? FileHandle(forReadingFrom: url).read(upToCount: 64)
+		return head.map(ExportEnvelope.isEncrypted) ?? false
+	}
+
+	@discardableResult
+	public func exportLibrary(to url: URL, passphrase: String?) async -> Bool {
+		let notes = notes
+		let parameters = exportParameters
+		do {
+			try await BlockingWork.run {
+				let archive = try LibraryArchive.archive(notes)
+				let file = try passphrase.map { try ExportEnvelope.seal(archive, passphrase: $0, parameters: parameters) } ?? archive
+				try file.write(to: url, options: .atomic)
+			}
+			return true
+		} catch {
+			report(error)
+			return false
+		}
+	}
+
+	@discardableResult
+	public func importLibrary(from url: URL, passphrase: String?) async -> ImportSummary? {
+		guard let store, !isImporting, conflicts.isEmpty else { return nil }
+		isImporting = true
+		defer { isImporting = false }
+		let incoming: [Note]
+		do {
+			incoming = try await BlockingWork.run {
+				guard try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0 <= LibraryArchive.maximumSize else {
+					throw LibraryArchive.Failure.tooLarge
+				}
+				let file = try Data(contentsOf: url, options: .mappedIfSafe)
+				return try LibraryArchive.notes(in: passphrase.map { try ExportEnvelope.open(file, passphrase: $0) } ?? file)
+			}
+		} catch {
+			report(error)
+			return nil
+		}
+
+		var summary = ImportSummary()
+		func stopped(at index: Int) -> ImportSummary {
+			summary.notImported = incoming.count - index
+			return summary
+		}
+		for (index, theirs) in incoming.enumerated() {
+			guard store === self.store else { return stopped(at: index) }
+			if let mine = notes.first(where: { $0.id == theirs.id }) {
+				if mine.body == theirs.body {
+					summary.unchanged += 1
+				} else {
+					conflicts.append(NoteConflict(mine: mine, theirs: theirs))
+					summary.conflicting += 1
+				}
+				continue
+			}
+			let deletedHere: Bool
+			do {
+				deletedHere = try await store.note(id: theirs.id) != nil
+			} catch {
+				guard store === self.store else { return stopped(at: index) }
+				report(error)
+				return nil
+			}
+			if deletedHere {
+				summary.deletedHere += 1
+				continue
+			}
+			guard await write({ try await $0.save(theirs) }) else {
+				guard store === self.store else { return stopped(at: index) }
+				return nil
+			}
+			summary.added += 1
+			if store === self.store { notes.append(theirs) }
+		}
+		return summary
+	}
+
+	public func resolve(_ conflict: NoteConflict, _ choice: NoteConflict.Choice) async {
+		conflicts.removeAll { $0.id == conflict.id }
+		guard choice == .keepTheirs, var kept = notes.first(where: { $0.id == conflict.id }) else { return }
+		await scheduler.discard(kept.id)
+		kept.body = conflict.theirs.body
+		kept.updatedAt = Date()
+		kept.dirty = true
+		replaceInMemory(kept)
+		guard let store else { return }
+		scheduleSave(kept, to: store)
+		_ = await scheduler.flush(kept.id)
 	}
 
 	nonisolated private static func search(_ store: NoteStore, for text: String) async throws -> [Note] {

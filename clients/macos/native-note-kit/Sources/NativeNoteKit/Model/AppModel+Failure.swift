@@ -3,6 +3,7 @@ import Foundation
 extension AppModel {
 	public enum Failure: Equatable {
 		case wrongPassword
+		case wrongExportPassphrase
 		case unsaved(String)
 		case unexpected(String)
 
@@ -10,6 +11,8 @@ extension AppModel {
 			switch error {
 			case Unlock.Failure.wrongPassword, SQLiteError.wrongKey:
 				self = .wrongPassword
+			case ExportEnvelope.Failure.wrongPassphraseOrDamaged:
+				self = .wrongExportPassphrase
 			default:
 				self = .unexpected(Self.reason(for: error))
 			}
@@ -31,6 +34,14 @@ extension AppModel {
 				"The unlock parameters were written by a newer version of Native Note. Update the app to open them."
 			case is DecodingError:
 				"The unlock parameters file is damaged."
+			case LibraryArchive.Failure.tooLarge:
+				"The file is too large to be a Native Note export."
+			case ZipArchive.Failure.tooLarge:
+				"The library is too large to export as one zip."
+			case ExportEnvelope.Failure.parametersOutOfBounds:
+				"The export asks for more memory or time than Native Note allows."
+			case ExportEnvelope.Failure.notAnExport, is ZipArchive.Failure, is NoteMarkdown.Failure, is LibraryArchive.Failure:
+				"This file is not a Native Note export, or it is damaged."
 			case SQLiteError.closed:
 				"The notes database is closed."
 			case SQLiteError.newerSchema:
@@ -41,6 +52,8 @@ extension AppModel {
 				message
 			case let SQLiteError.keyMustBe32Bytes(count):
 				"The unlock key was \(count) bytes rather than 32."
+			case let error as CocoaError:
+				error.localizedDescription
 			default:
 				String(describing: error)
 			}

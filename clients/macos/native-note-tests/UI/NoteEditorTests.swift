@@ -497,7 +497,7 @@ private final class Library {
 	private let offscreen: OffscreenWindow<ContentView>
 
 	init(_ model: AppModel) {
-		offscreen = OffscreenWindow(ContentView(model: model), width: 980, height: 560)
+		offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
 		settle()
 	}
 

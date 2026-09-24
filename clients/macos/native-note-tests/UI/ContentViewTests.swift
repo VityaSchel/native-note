@@ -11,7 +11,7 @@ struct ContentViewTests {
 	private func library(_ bodies: [String]) async throws -> (AppModel, URL, OffscreenWindow<ContentView>) {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: bodies)
-		return (model, directory, OffscreenWindow(ContentView(model: model), width: 980, height: 560))
+		return (model, directory, OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560))
 	}
 
 	@Test func aSearchFiltersTheList() async throws {

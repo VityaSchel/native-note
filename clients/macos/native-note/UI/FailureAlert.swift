@@ -14,7 +14,7 @@ extension AppModel.Failure {
 			("Your latest edits could not be saved.", "Native Note will keep trying to save them until you quit.\n\n\(reason)")
 		case let .unexpected(message):
 			("Native Note could not continue.", message)
-		case .wrongPassword:
+		case .wrongPassword, .wrongExportPassphrase:
 			nil
 		}
 	}

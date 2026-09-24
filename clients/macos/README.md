@@ -13,7 +13,7 @@ Dependencies:
 - Editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage. We chose it over SwiftUI `TextEditor` because `TextEditor` cannot do reliable per-range styling, so the heading would need its own field and unified selection would break. Also the right base for the markdown editor later
 - The editor styles the title and writes the note from the text storage, so paste, undo and redo reach the note. Each note has its own undo history. Input-method text reaches the note on commit
 - Database writes off `@MainActor`, published state on it, so it doesn't jank on large notes
-- Argon2 and Secure Enclave calls run on `Unlock`'s serial queue, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
+- Argon2 and Secure Enclave calls run on one serial queue, `BlockingWork`, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
 - `AppModel` is owned by the `AppDelegate`, not the `App`, so `applicationShouldTerminate` can hold quit until pending saves land
 - No `try!` outside tests, so it doesn't crash on any Keychain ACL or directory failure
@@ -39,7 +39,7 @@ Biometric unlock (planned) keeps `localDbKey` in the Keychain under `kSecAccessC
 | --------------------------------------------------- | ---------- |
 | `com.apple.security.app-sandbox`                    | on         |
 | `com.apple.security.network.client`                 | sync       |
-| `com.apple.security.files.user-selected.read-write` | zip export |
+| `com.apple.security.files.user-selected.read-write` | export and import |
 
 `com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Release builds must be signed for distribution so that it is dropped.
 
