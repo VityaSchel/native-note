@@ -51,10 +51,6 @@ actor NoteStore {
 		try statement.step()
 	}
 
-	func checkpoint() throws {
-		try connection.checkpoint()
-	}
-
 	func rekey(to newKey: Data) throws {
 		try connection.rekey(to: newKey)
 	}

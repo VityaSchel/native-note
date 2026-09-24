@@ -65,11 +65,11 @@ struct NoteStoreTests {
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote())
-		#expect(FileManager.default.fileExists(atPath: url.path + "-wal"))
+		#expect(FileManager.default.fileExists(atPath: walFile(of: url).path))
 
 		await notes.close()
 
-		#expect(!FileManager.default.fileExists(atPath: url.path + "-wal"))
+		#expect(!FileManager.default.fileExists(atPath: walFile(of: url).path))
 		await #expect(throws: SQLiteError.closed) { try await notes.liveNotes() }
 	}
 

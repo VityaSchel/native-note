@@ -194,7 +194,7 @@ struct SaveFailureTests {
 		blocker = nil
 		#expect(await model.flushPendingSaves())
 
-		#expect(!FileManager.default.fileExists(atPath: directory.appending(path: "notes.db-wal").path))
+		#expect(!FileManager.default.fileExists(atPath: walFile(of: AppLock.databaseFile(in: directory)).path))
 		#expect(try await observer(of: directory).note(id: id)?.body == "typed then locked while busy")
 	}
 

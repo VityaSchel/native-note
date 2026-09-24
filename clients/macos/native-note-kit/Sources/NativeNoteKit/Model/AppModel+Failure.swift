@@ -19,8 +19,6 @@ extension AppModel {
 			switch error {
 			case Unlock.Failure.neverSetUp:
 				"No unlock parameters were found beside the notes database."
-			case SQLiteError.checkpointBlocked:
-				"The notes database is busy. Try again."
 			case SQLiteError.closed:
 				"The notes database is closed."
 			case SQLiteError.newerSchema:

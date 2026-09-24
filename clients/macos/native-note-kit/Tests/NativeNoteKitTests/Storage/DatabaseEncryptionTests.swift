@@ -22,17 +22,17 @@ struct DatabaseEncryptionTests {
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote(body: canary))
 
-		let sidecars = [url, url.appendingPathExtension("wal"), url.appendingPathExtension("shm")]
+		let sidecars = [url, walFile(of: url), shmFile(of: url)]
 		for file in sidecars {
 			guard let bytes = try? Data(contentsOf: file) else { continue }
 			#expect(!bytes.starts(with: Data("SQLite format 3".utf8)), "\(file.lastPathComponent) header")
 			#expect(bytes.range(of: Data(canary.utf8)) == nil, "\(file.lastPathComponent) body")
 		}
 
-		try await notes.checkpoint()
-		let checkpointed = try Data(contentsOf: url)
-		#expect(checkpointed.count > 0)
-		#expect(checkpointed.range(of: Data(canary.utf8)) == nil)
+		await notes.close()
+		let closed = try Data(contentsOf: url)
+		#expect(closed.count > 0)
+		#expect(closed.range(of: Data(canary.utf8)) == nil)
 	}
 
 	@Test func refusesAKeyThatIsNotThirtyTwoBytes() async throws {
@@ -75,7 +75,7 @@ struct DatabaseEncryptionTests {
 		let notes = try await openStore(at: url)
 		try await notes.save(note)
 		try await notes.rekey(to: replacement)
-		try await notes.checkpoint()
+		await notes.close()
 
 		let reopened = try await openStore(at: url, key: replacement)
 		#expect(try await reopened.note(id: note.id)?.body == note.body)

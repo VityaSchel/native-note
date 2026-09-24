@@ -28,7 +28,7 @@ struct SavePathTests {
 
 		await model.lock()
 
-		#expect(!FileManager.default.fileExists(atPath: directory.appending(path: "notes.db-wal").path))
+		#expect(!FileManager.default.fileExists(atPath: walFile(of: AppLock.databaseFile(in: directory)).path))
 	}
 
 	@Test func lockingWithEditsInTwoNotesSavesBoth() async throws {

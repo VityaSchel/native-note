@@ -60,21 +60,6 @@ struct SQLiteConnectionTests {
 		try holder.execute("ROLLBACK")
 	}
 
-	@Test func aCheckpointBlockedByAReaderSaysSo() async throws {
-		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-		let notes = try await openStore(at: url)
-		try await notes.save(sampleNote())
-		let reader = try SQLiteConnection(url: url, rawKey: databaseKey)
-		try reader.execute("BEGIN")
-		_ = try reader.scalar("SELECT count(*) FROM note")
-
-		try await notes.save(sampleNote(body: "second"))
-
-		await #expect(throws: SQLiteError.checkpointBlocked) { try await notes.checkpoint() }
-		try reader.execute("COMMIT")
-	}
-
 	@Test func scalarWithoutARowIsNil() throws {
 		let url = temporaryDatabase()
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

@@ -10,6 +10,14 @@ func temporaryDatabase() -> URL {
 	AppLock.databaseFile(in: temporaryDirectory())
 }
 
+func walFile(of database: URL) -> URL {
+	URL(fileURLWithPath: database.path + "-wal")
+}
+
+func shmFile(of database: URL) -> URL {
+	URL(fileURLWithPath: database.path + "-shm")
+}
+
 func makeDirectory(for url: URL) throws {
 	try FileManager.default.createDirectory(
 		at: url.deletingLastPathComponent(),

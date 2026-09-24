@@ -6,7 +6,6 @@ nonisolated enum SQLiteError: Error, Equatable {
 	case cannotExecute(code: Int32, message: String, sql: String)
 	case keyMustBe32Bytes(count: Int)
 	case wrongKey
-	case checkpointBlocked
 	case newerSchema(found: Int, known: Int)
 	case closed
 }
@@ -78,11 +77,6 @@ nonisolated final class SQLiteConnection {
 	func rekey(to newKey: Data) throws {
 		guard newKey.count == 32 else { throw SQLiteError.keyMustBe32Bytes(count: newKey.count) }
 		try Self.applyRawKey("rekey", newKey, on: handle)
-	}
-
-	func checkpoint() throws {
-		let statement = try prepare("PRAGMA wal_checkpoint(TRUNCATE)")
-		guard try statement.step(), statement.int(0) == 0 else { throw SQLiteError.checkpointBlocked }
 	}
 
 	private static func applyRawKey(_ pragma: String, _ rawKey: Data, on handle: OpaquePointer) throws {
