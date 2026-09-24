@@ -6,9 +6,17 @@ import Testing
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct LibrarySearchTests {
 	private let alarm = Alarm()
+	private let held = Alarm()
 
-	private func library(_ bodies: [String]) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
+	private func library(_ bodies: [String], holdingSearches: Bool = false) async throws -> (AppModel, URL) {
+		let (model, directory) = try await unlockedModel { [alarm, held] directory in
+			let scheduler = SaveScheduler(sleep: alarm.sleep)
+			guard holdingSearches else { return AppModel(directory: directory, scheduler: scheduler) }
+			return AppModel(directory: directory, scheduler: scheduler, searchNotes: { store, text in
+				try await held.sleep(for: .zero)
+				return try await store.search(text)
+			})
+		}
 		for body in bodies {
 			await model.createNote()
 			model.edit(try #require(model.selection), body)
@@ -66,16 +74,34 @@ struct LibrarySearchTests {
 	}
 
 	@Test func clearingTheSearchWhileOneRunsShowsEveryNote() async throws {
-		let (model, directory) = try await library(["kayak", "canoe"])
+		let (model, directory) = try await library(["kayak", "canoe"], holdingSearches: true)
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		model.search = "kayak"
 		let typing = Task { await model.runSearch() }
-		await Task.yield()
+		await settle { await held.sleeping == 1 }
 		model.search = ""
 		await model.runSearch()
+		await held.ring()
 		await typing.value
 
+		#expect(model.groups.flatMap(\.notes).count == 2)
+	}
+
+	@Test func clearingTheSearchWhileAFailingOneRunsReportsNothing() async throws {
+		let (model, directory) = try await library(["kayak", "canoe"], holdingSearches: true)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try await connection(to: directory).execute("DROP TABLE note_fts")
+
+		model.search = "kayak"
+		let typing = Task { await model.runSearch() }
+		await settle { await held.sleeping == 1 }
+		model.search = ""
+		await model.runSearch()
+		await held.ring()
+		await typing.value
+
+		#expect(model.failure == nil)
 		#expect(model.groups.flatMap(\.notes).count == 2)
 	}
 
@@ -140,14 +166,15 @@ struct LibrarySearchTests {
 	}
 
 	@Test func aSearchThatFailsAfterLockIsNotReported() async throws {
-		let (model, directory) = try await library(["kayak"])
+		let (model, directory) = try await library(["kayak"], holdingSearches: true)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		model.search = "kayak"
 		let searching = Task { await model.runSearch() }
-		await Task.yield()
+		await settle { await held.sleeping == 1 }
 		await model.lock()
+		await held.ring()
 		await searching.value
 
 		#expect(model.failure == nil)

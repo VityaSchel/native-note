@@ -188,7 +188,7 @@ struct NoteStoreTests {
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote(body: "reply to e-mail\ndon't forget the c++ notes"))
 
-		for term in ["don't", "e-mail", "c++", "\"", "-", "(", "*", "a,b", "AND", "OR", "NOT", "", "   ", "\u{0D4E}\"", "kayak \u{0D4E}\""] {
+		for term in ["don't", "e-mail", "c++", "\"", "-", "(", "*", "a,b", "AND", "OR", "NOT", "", "   ", "\u{0D4E}\"", "kayak \u{0D4E}\"", "\u{0D4E}\"\u{0301}", "\u{0D4E}\"\u{FE0F}", "kayak \u{0D4E}\"\u{0301}"] {
 			await #expect(throws: Never.self, "search(\(term)) must not throw") {
 				_ = try await notes.search(term)
 			}

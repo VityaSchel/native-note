@@ -7,9 +7,14 @@ let workspacePassword = "correct horse"
 
 @MainActor
 func unlockedModel(alarm: Alarm) async throws -> (AppModel, URL) {
+	try await unlockedModel { AppModel(directory: $0, scheduler: SaveScheduler(sleep: alarm.sleep)) }
+}
+
+@MainActor
+func unlockedModel(_ make: (URL) -> AppModel) async throws -> (AppModel, URL) {
 	let directory = temporaryDirectory()
 	try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-	let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+	let model = make(directory)
 	model.start()
 	await model.unlock(password: workspacePassword)
 	try #require(model.phase == .unlocked)

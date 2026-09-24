@@ -43,6 +43,7 @@ import Observation
 	private let directory: URL
 	private let scheduler: SaveScheduler
 	private let makeParameters: @Sendable () throws -> UnlockParameters
+	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
 	private var store: NoteStore?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
@@ -56,11 +57,13 @@ import Observation
 	init(
 		directory: URL,
 		scheduler: SaveScheduler = SaveScheduler(),
-		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters
+		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters,
+		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search
 	) {
 		self.directory = directory
 		self.scheduler = scheduler
 		self.makeParameters = makeParameters
+		self.searchNotes = searchNotes
 	}
 
 	public func start() {
@@ -140,7 +143,7 @@ import Observation
 			return
 		}
 		do {
-			let found = try await store.search(text).map(\.id)
+			let found = try await searchNotes(store, text).map(\.id)
 			guard text == search, store === self.store else { return }
 			matches = found
 			searchFailing = false
@@ -154,6 +157,10 @@ import Observation
 
 	public func dismissFailure() {
 		failure = nil
+	}
+
+	nonisolated private static func search(_ store: NoteStore, for text: String) async throws -> [Note] {
+		try await store.search(text)
 	}
 
 	private func scheduleSave(_ note: Note, to store: NoteStore) {
