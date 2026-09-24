@@ -9,12 +9,14 @@ Dependencies:
 
 ## Implementation details
 
+- Crypto, storage, unlock and the model live in the local package `NativeNoteKit`, so they test without the app host
 - Editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage. We chose it over SwiftUI `TextEditor` because `TextEditor` cannot do reliable per-range styling, so the heading would need its own field and unified selection would break. Also the right base for the markdown editor later
 - Database writes off `@MainActor`, published state on it, so it doesn't jank on large notes
 - Argon2 and Secure Enclave calls run on `Unlock`'s serial queue, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
 - `AppModel` is owned by the `AppDelegate`, not the `App`, so `applicationShouldTerminate` can hold quit until pending saves land
 - No `try!` outside tests, so it doesn't crash on any Keychain ACL or directory failure
+- The test host runs with `.prohibited` activation, so tests never take focus or show in the Dock
 
 Primitives:
 
@@ -28,9 +30,7 @@ SQLCipher uses the **CommonCrypto** backend, not a bundled OpenSSL — `PRAGMA c
 
 Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee.
 
-Optional biometric unlock stores Local DB key in the Keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`. `BiometryCurrentSet` is invalidated by the OS when the enrolled biometric set changes, so adding a fingerprint cannot silently extend access.
-
-The unlock screen shows a "Unlock with Touch ID" button beside the password field's submit. Pressing it reads the Keychain item, which triggers the system biometric prompt.
+Biometric unlock (planned) keeps `localDbKey` in the Keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics), so a new fingerprint cannot unlock it.
 
 ### Entitlements
 
@@ -54,7 +54,7 @@ Unlock parameters are stored in a binary plist because they're part of the datab
 
 ### Unlock parameters
 
-`localSalt` and `argonParams` per [ARCHITECTURE.md](../DESIGN.md#unlock-parameters), stored in `app-lock.plist`, mode `0600`, the absolute path is `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`.
+`localSalt` and `argonParams` per [clients/DESIGN.md](../DESIGN.md#unlock-parameters), stored in `app-lock.plist`, mode `0600`, the absolute path is `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`.
 
 ```
 version     1
@@ -74,5 +74,5 @@ enclaveKey = SecureEnclave.P256.KeyAgreement.PrivateKey    # device-bound, non-e
 hardwareOp() = ECDH(enclaveKey, publicKey(enclaveKey))     # d²G, runs on the chip
 ```
 
-`app-lock.plist` stores the key blob, and that blob contains `dG` in the clear. Recovering `d²G` from `dG` is the computational Diffie-Hellman problem, so the result is unreachable without the chip. `enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`
+`app-lock.plist` stores the key blob, and that blob contains `dG` in the clear. Recovering `d²G` from `dG` is the computational Diffie-Hellman problem, so the result is unreachable without the chip. `enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`.
 

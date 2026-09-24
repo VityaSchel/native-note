@@ -38,7 +38,7 @@ CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 
 `content=note` is an external-content index: without the three triggers it is populated once and never updated again.
 
-Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
+Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
 
 ### Local DB encryption
 
@@ -55,7 +55,7 @@ localDbKey = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-
 #### `hardwareBinding`
 
 
-Hardware binding adds protection against a stolen disk image, but unlike Argon2id does not add per-guess cost. One operation on the device's secure hardware, independent of the password. 
+Hardware binding adds protection against a stolen disk image, but unlike Argon2id does not add per-guess cost. One operation on the device's secure hardware, independent of the password.
 
 ```
 machineId = HKDF-SHA256(hardwareOp(), info: "native-note/machine-id/v1", 32)

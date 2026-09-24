@@ -30,13 +30,14 @@ cargo test                    # verify the generator reproduces every vector
 cargo run --bin gen-vectors   # regenerate after an intentional protocol change
 ```
 
-The generator is deterministic, salts, nonces, and keys are fixed. Regenerating without a protocol change must produce no diff.
+The generator is deterministic: salts, nonces, and keys are fixed. Regenerating without a protocol change must produce no diff.
 
 Supply chain:
 
 ```sh
+cargo install --locked cargo-deny@0.20.2 cargo-audit@0.22.2   # versions pinned in audit.yml
 cargo deny --config ../../deny.toml check
-cargo audit
+cargo audit --deny warnings
 ```
 
 ### Server
@@ -117,6 +118,6 @@ The bundle ID is `dev.hloth.nativenote` rather than `dev.hloth.native-note` beca
 
 Read [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) before touching crypto, key storage, or the request path.
 
-Never log secrets or plaintext. Key material must be wrapped in a type whose `Debug` prints `[redacted]`, never held in a bare byte array.
+Never log secrets or plaintext. In the Rust server, wrap key material in a type whose `Debug` prints `[redacted]`; the generator's published fixture keys stay bare. In Swift, key material reaches no log or error; its one string form is the raw-key literal in `SQLiteConnection.applyRawKey`.
 
 Report vulnerabilities per [SECURITY.md](SECURITY.md) rather than in a public issue.

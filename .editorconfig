@@ -17,17 +17,6 @@ indent_style = space
 indent_size = 2
 trim_trailing_whitespace = false
 
-[*.json]
-indent_style = tab
-indent_size = 4
-
-[*.{toml,swift,rs}]
-indent_style = tab
-indent_size = 4
-
-[{Makefile,*.mk}]
-indent_style = tab
-
 [clients/macos/**/*.{json,resolved,pbxproj,xcscheme,xcworkspacedata,plist,xcsettings}]
 indent_style = unset
 indent_size = unset
