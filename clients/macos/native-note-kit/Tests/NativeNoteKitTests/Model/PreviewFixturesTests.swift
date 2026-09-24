@@ -1,11 +1,10 @@
 import Foundation
 import Testing
 
-@testable import NativeNote
 @testable import NativeNoteKit
 
 @MainActor
-struct PreviewFixtureTests {
+struct PreviewFixturesTests {
 	@Test func sampleGroupsCoverTheRowStatesTheCanvasShouldShow() {
 		let notes = NoteGroup.samples.flatMap(\.notes)
 
@@ -45,5 +44,14 @@ struct PreviewFixtureTests {
 		#expect(model.notes == notes)
 		#expect(model.selection == notes.first?.id)
 		#expect(model.failure == nil)
+	}
+
+	@Test func previewEditsStayInMemory() throws {
+		let model = AppModel.previewing(NoteGroup.samples.flatMap(\.notes))
+		let id = try #require(model.selection)
+
+		model.edit(id, "changed in the canvas")
+
+		#expect(model.selectedNote?.body == "changed in the canvas")
 	}
 }

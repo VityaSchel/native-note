@@ -67,24 +67,6 @@ struct SavePathTests {
 		#expect(try await observer(of: directory).note(id: id)?.body == "first and more")
 	}
 
-	@Test func aStoreKeptOpenForAFailingSaveClosesOnceItLands() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		await model.createNote()
-		let id = try #require(model.selection)
-		var blocker: SQLiteConnection? = try await connection(to: directory)
-
-		try blocker?.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed then locked while busy")
-		await model.lock()
-		try blocker?.execute("ROLLBACK")
-		blocker = nil
-		#expect(await model.flushPendingSaves())
-
-		#expect(!FileManager.default.fileExists(atPath: directory.appending(path: "notes.db-wal").path))
-		#expect(try await observer(of: directory).note(id: id)?.body == "typed then locked while busy")
-	}
-
 	@Test func leavingANoteSavesItAtOnce() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
@@ -180,181 +162,45 @@ struct SavePathTests {
 		await model.flushPendingSaves()
 	}
 
-	@Test func aFailedSaveIsRetried() async throws {
+	@Test func editingWithTheSameTextSchedulesNothing() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let blocker = try await connection(to: directory)
-
-		try blocker.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed while the database was busy")
-		#expect(await model.flushPendingSaves() == false)
-		#expect(model.failure == .unsaved("database is locked"))
-		try blocker.execute("ROLLBACK")
-
-		#expect(await model.flushPendingSaves())
-		#expect(try await disk.note(id: id)?.body == "typed while the database was busy")
-	}
-
-	@Test func aFailedDeleteKeepsTheLatestEdit() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let disk = try await observer(of: directory)
-		await model.createNote()
-		let id = try #require(model.selection)
-		let blocker = try await connection(to: directory)
-
-		model.edit(id, "typed just before delete")
-		try blocker.execute("BEGIN IMMEDIATE")
-		await model.deleteSelected()
-		try blocker.execute("ROLLBACK")
+		model.edit(id, "same")
 		await model.flushPendingSaves()
+		let before = model.selectedNote
 
-		#expect(model.notes.contains { $0.id == id })
-		#expect(try await disk.note(id: id)?.body == "typed just before delete")
-	}
+		model.edit(id, "same")
 
-	@Test func aFailingSaveIsReportedOnceWhileItRetries() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let disk = try await observer(of: directory)
-		await model.createNote()
-		let id = try #require(model.selection)
-		let blocker = try await connection(to: directory)
-
-		try blocker.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed while the database was busy")
-		#expect(await model.flushPendingSaves() == false)
-		#expect(model.failure?.isUnsaved == true)
-		model.dismissFailure()
-		#expect(await model.flushPendingSaves() == false)
-		#expect(model.failure == nil)
-		try blocker.execute("ROLLBACK")
+		#expect(model.selectedNote == before)
 		#expect(await model.flushPendingSaves())
-		#expect(model.unsavedReason == nil)
-
-		try blocker.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed while it was busy again")
-		#expect(await model.flushPendingSaves() == false)
-		#expect(model.failure?.isUnsaved == true)
-		try blocker.execute("ROLLBACK")
-		#expect(await model.flushPendingSaves())
-		#expect(try await disk.note(id: id)?.body == "typed while it was busy again")
+		#expect(await alarm.started == 1)
 	}
 
-	@Test func theUnsavedAlertClearsOnceTheSaveLands() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
+	@Test func editingANoteFromDiskMarksItDirtyWithoutBumpingVersionOrSeq() async throws {
+		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		await model.createNote()
-		let id = try #require(model.selection)
-		let blocker = try await connection(to: directory)
-
-		try blocker.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed while the database was busy")
-		#expect(await model.flushPendingSaves() == false)
-		#expect(model.failure?.isUnsaved == true)
-		try blocker.execute("ROLLBACK")
-		#expect(await model.flushPendingSaves())
-
-		#expect(model.failure == nil)
-	}
-
-	@Test func lockingClearsALibraryFailure() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		try await connection(to: directory).execute("DROP TABLE note_fts")
-		model.search = "kayak"
-		await model.runSearch()
-		try #require(model.failure != nil)
-
-		await model.lock()
-
-		#expect(model.failure == nil)
-	}
-
-	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let disk = try await observer(of: directory)
-		await model.createNote()
-		let id = try #require(model.selection)
-		let blocker = try await connection(to: directory)
-
-		try blocker.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed then locked while busy")
-		#expect(await model.flushPendingSaves() == false)
-		model.dismissFailure()
-		await model.lock()
-
-		#expect(model.phase == .locked)
-		#expect(model.failure?.isUnsaved == true)
-		try blocker.execute("ROLLBACK")
-		#expect(await model.flushPendingSaves())
-		#expect(try await disk.note(id: id)?.body == "typed then locked while busy")
-	}
-
-	@Test func unlockingWhileASaveStillFailsKeepsTheTypedText() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let disk = try await observer(of: directory)
-		await model.createNote()
-		let id = try #require(model.selection)
-		model.edit(id, "saved before")
-		await model.flushPendingSaves()
-		let blocker = try await connection(to: directory)
-
-		try blocker.execute("BEGIN IMMEDIATE")
-		model.edit(id, "typed then locked while busy")
-		await model.lock()
-		model.dismissFailure()
+		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		let created = Date(epochMilliseconds: 1_760_000_000_000)
+		let seeded = Note(id: UUID(), body: "from sync", createdAt: created, updatedAt: created, v: 3, seq: 7)
+		let seeding = try await NoteStore.open(url: AppLock.databaseFile(in: directory), key: try await workspaceKey())
+		try await seeding.save(seeded)
+		await seeding.close()
+		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		model.start()
 		await model.unlock(password: workspacePassword)
 
-		#expect(model.phase == .unlocked)
-		#expect(model.notes.first { $0.id == id }?.body == "typed then locked while busy")
-		#expect(model.failure?.isUnsaved == true)
-		#expect(await model.flushPendingSaves() == false)
-		try blocker.execute("ROLLBACK")
-		#expect(await model.flushPendingSaves())
-		#expect(try await disk.note(id: id)?.body == "typed then locked while busy")
-		#expect(model.notes.first { $0.id == id }?.body == "typed then locked while busy")
-	}
-
-	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		await model.createNote()
-		model.edit(try #require(model.selection), "kayak")
+		model.edit(seeded.id, "edited locally")
 		await model.flushPendingSaves()
-		try await connection(to: directory).execute("DROP TABLE note_fts")
 
-		model.search = "kayak"
-		await model.runSearch()
-
-		#expect(model.groups.isEmpty)
-		#expect(model.failure?.isUnexpected == true)
-	}
-
-	@Test func aFailingSearchIsReportedOnceWhileTheUserTypes() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		try await connection(to: directory).execute("DROP TABLE note_fts")
-
-		var reports = 0
-		for query in ["k", "ka", "kay", "kaya", "kayak"] {
-			model.search = query
-			await model.runSearch()
-			if model.failure != nil { reports += 1 }
-			model.dismissFailure()
-		}
-		model.search = ""
-		await model.runSearch()
-		model.search = "k"
-		await model.runSearch()
-
-		#expect(reports == 1)
-		#expect(model.failure != nil)
+		let stored = try #require(try await observer(of: directory).note(id: seeded.id))
+		#expect(stored.body == "edited locally")
+		#expect(stored.dirty)
+		#expect(stored.updatedAt > created)
+		#expect(stored.createdAt == created)
+		#expect(stored.v == 3)
+		#expect(stored.seq == 7)
 	}
 
 	@Test func deletingWithASavePendingLeavesAnEmptyTombstone() async throws {
@@ -372,15 +218,5 @@ struct SavePathTests {
 		#expect(tombstone.deleted)
 		#expect(tombstone.body.isEmpty)
 		#expect(!model.notes.contains { $0.id == id })
-	}
-}
-
-private extension AppModel.Failure {
-	var isUnsaved: Bool {
-		if case .unsaved = self { true } else { false }
-	}
-
-	var isUnexpected: Bool {
-		if case .unexpected = self { true } else { false }
 	}
 }

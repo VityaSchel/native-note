@@ -7,7 +7,7 @@ let workspacePassword = "correct horse"
 
 @MainActor
 func unlockedModel(alarm: Alarm) async throws -> (AppModel, URL) {
-	let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)
+	let directory = temporaryDirectory()
 	try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 	let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
 	model.start()

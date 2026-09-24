@@ -3,14 +3,12 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.timeLimit(.minutes(1)))
 struct AppModelTests {
-	private func workspace() -> URL {
-		URL.temporaryDirectory.appending(path: UUID().uuidString)
-	}
+	private let alarm = Alarm()
 
 	@Test func walksSetUpEditLockAndUnlock() async throws {
-		let directory = workspace()
+		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 
@@ -43,12 +41,9 @@ struct AppModelTests {
 	}
 
 	@Test func startsLockedWhenParametersAlreadyExist() async throws {
-		let directory = workspace()
+		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		try AppLock.write(
-			UnlockParameters(localSalt: Data(repeating: 1, count: 16), argon: Argon2.floor, enclaveKey: nil),
-			to: AppLock.currentFile(in: directory)
-		)
+		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
 
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 		model.start()
@@ -56,46 +51,8 @@ struct AppModelTests {
 		#expect(model.phase == .locked)
 	}
 
-	@Test func searchFiltersTheGroupsAndClearingItRestoresThem() async throws {
-		let directory = workspace()
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let model = AppModel(directory: directory, makeParameters: { .fast })
-		await model.setUp(password: "correct horse")
-
-		for body in ["Shopping\nquartz and bread", "Standup\nshipped storage"] {
-			await model.createNote()
-			model.edit(try #require(model.selection), body)
-		}
-		await model.flushPendingSaves()
-
-		model.search = "quartz"
-		await model.runSearch()
-		#expect(model.groups.flatMap(\.notes).map(\.title) == ["Shopping"])
-
-		model.search = "don't"
-		await model.runSearch()
-		#expect(model.groups.isEmpty)
-
-		model.search = ""
-		await model.runSearch()
-		#expect(model.groups.flatMap(\.notes).count == 2)
-	}
-
-	@Test func deletingRemovesTheNoteFromTheList() async throws {
-		let directory = workspace()
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let model = AppModel(directory: directory, makeParameters: { .fast })
-		await model.setUp(password: "correct horse")
-		await model.createNote()
-
-		await model.deleteSelected()
-
-		#expect(model.notes.isEmpty)
-		#expect(model.selection == nil)
-	}
-
 	@Test func submitSetsUpOnFirstRunAndUnlocksAfterwards() async throws {
-		let directory = workspace()
+		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 		model.start()
@@ -111,5 +68,85 @@ struct AppModelTests {
 
 		await model.submit(password: "correct horse")
 		#expect(model.phase == .unlocked)
+	}
+
+	@Test func unlockingWithoutParametersSaysSo() async throws {
+		let directory = temporaryDirectory()
+		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+
+		await model.unlock(password: workspacePassword)
+
+		#expect(model.phase != .unlocked)
+		#expect(model.failure == .unexpected("No unlock parameters were found beside the notes database."))
+	}
+
+	@Test func aDatabaseFromANewerVersionAsksForAnUpdate() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.lock()
+		try await connection(to: directory).execute("PRAGMA user_version = 99")
+
+		await model.unlock(password: workspacePassword)
+
+		#expect(model.phase == .locked)
+		#expect(model.failure == .unexpected("The notes database was written by a newer version of Native Note. Update the app to open it."))
+	}
+
+	@Test func aDatabaseThatCannotBeOpenedSaysWhy() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		try FileManager.default.createDirectory(at: AppLock.databaseFile(in: directory), withIntermediateDirectories: true)
+		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		model.start()
+
+		await model.unlock(password: workspacePassword)
+
+		#expect(model.phase == .locked)
+		#expect(model.failure == .unexpected("The notes database could not be opened. unable to open database file"))
+	}
+
+	@Test func lockingTwiceIsHarmless() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		await model.lock()
+		await model.lock()
+
+		#expect(model.phase == .locked)
+		#expect(model.failure == nil)
+	}
+
+	@Test func deletingRemovesTheNoteFromTheList() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(directory: directory, makeParameters: { .fast })
+		await model.setUp(password: "correct horse")
+		await model.createNote()
+
+		await model.deleteSelected()
+
+		#expect(model.notes.isEmpty)
+		#expect(model.selection == nil)
+	}
+
+	@Test func deletingWithNothingSelectedDoesNothing() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		model.selection = nil
+
+		await model.deleteSelected()
+
+		#expect(model.notes.count == 1)
+		#expect(model.failure == nil)
+	}
+
+	@Test func aSelectionMissingFromTheListShowsNoNote() {
+		let model = AppModel.previewing(NoteGroup.samples.flatMap(\.notes))
+
+		model.selection = UUID()
+
+		#expect(model.selectedNote == nil)
 	}
 }

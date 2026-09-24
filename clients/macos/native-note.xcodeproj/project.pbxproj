@@ -36,6 +36,12 @@
 			path = "native-note-tests";
 			sourceTree = "<group>";
 		};
+		A7B544E0302899F700E267CC /* Package Test Support */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			name = "Package Test Support";
+			path = "native-note-kit/Tests/NativeNoteKitTests/Support";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +68,7 @@
 			children = (
 				A7B54496302899EF00E267CC /* native-note */,
 				A7B544A4302899F600E267CC /* native-note-tests */,
+				A7B544E0302899F700E267CC /* Package Test Support */,
 				A7B54495302899EF00E267CC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -116,6 +123,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A7B544A4302899F600E267CC /* native-note-tests */,
+				A7B544E0302899F700E267CC /* Package Test Support */,
 			);
 			name = "native-note-tests";
 			packageProductDependencies = (

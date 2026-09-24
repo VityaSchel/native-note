@@ -2,10 +2,12 @@ import Foundation
 
 @testable import NativeNoteKit
 
+func temporaryDirectory() -> URL {
+	URL.temporaryDirectory.appending(path: UUID().uuidString)
+}
+
 func temporaryDatabase() -> URL {
-	URL.temporaryDirectory
-		.appending(path: UUID().uuidString)
-		.appending(path: "notes.db")
+	AppLock.databaseFile(in: temporaryDirectory())
 }
 
 func makeDirectory(for url: URL) throws {
