@@ -25,7 +25,10 @@ import Observation
 	}
 
 	public var groups: [NoteGroup] {
-		NoteGrouping.groups(for: visibleNotes, now: .now)
+		guard let matches else { return NoteGrouping.groups(for: notes, now: .now) }
+		let notesByID = Dictionary(uniqueKeysWithValues: notes.map { ($0.id, $0) })
+		let ranked = matches.compactMap { notesByID[$0] }
+		return ranked.isEmpty ? [] : [NoteGroup(title: "Results", notes: ranked)]
 	}
 
 	public var selectedNote: Note? {
@@ -131,20 +134,16 @@ import Observation
 			return
 		}
 		do {
-			matches = try await store.search(text).map(\.id)
+			let found = try await store.search(text).map(\.id)
+			guard text == search, store === self.store else { return }
+			matches = found
 			searchFailing = false
 		} catch {
-			guard store === self.store else { return }
+			guard text == search, store === self.store else { return }
 			matches = []
 			if !searchFailing { report(error) }
 			searchFailing = true
 		}
-	}
-
-	private var visibleNotes: [Note] {
-		guard let matches else { return notes }
-		let ranking = Dictionary(uniqueKeysWithValues: matches.enumerated().map { ($0.element, $0.offset) })
-		return notes.filter { ranking[$0.id] != nil }.sorted { ranking[$0.id]! < ranking[$1.id]! }
 	}
 
 	private func scheduleSave(_ note: Note, to store: NoteStore) {
@@ -204,6 +203,7 @@ import Observation
 				await old.close()
 			}
 			if let unsavedReason { failure = .unsaved(unsavedReason) }
+			if !search.isEmpty { await runSearch() }
 			phase = .unlocked
 		} catch {
 			failure = Failure(error)

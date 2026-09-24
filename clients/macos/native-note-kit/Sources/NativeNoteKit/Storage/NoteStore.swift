@@ -82,9 +82,10 @@ actor NoteStore {
 	}
 
 	private static func matchExpression(forUserText text: String) -> String? {
-		let quotableTokens = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
-		guard !quotableTokens.isEmpty else { return nil }
-		return quotableTokens.map { "\"\($0)\"" }.joined(separator: " ")
+		let tokens = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+		guard let last = tokens.last else { return nil }
+		let phrases = tokens.map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }.joined(separator: " ")
+		return last.count >= 2 ? phrases + "*" : phrases
 	}
 
 	func search(_ text: String) throws -> [Note] {

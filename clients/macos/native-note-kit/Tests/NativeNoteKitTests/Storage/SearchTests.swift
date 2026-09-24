@@ -22,7 +22,7 @@ struct SearchTests {
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote(body: "reply to e-mail\ndon't forget the c++ notes"))
 
-		for term in ["don't", "e-mail", "c++", "\"", "-", "(", "*", "a,b", "AND", "OR", "NOT", "", "   "] {
+		for term in ["don't", "e-mail", "c++", "\"", "-", "(", "*", "a,b", "AND", "OR", "NOT", "", "   ", "\u{0D4E}\"", "kayak \u{0D4E}\""] {
 			await #expect(throws: Never.self, "search(\(term)) must not throw") {
 				_ = try await notes.search(term)
 			}
@@ -49,5 +49,16 @@ struct SearchTests {
 
 		try await notes.markDeleted(id: note.id, at: Date())
 		#expect(try await notes.search("canoe").isEmpty)
+	}
+
+	@Test func matchesAPrefixOfTheLastWordOnly() async throws {
+		let url = temporaryDatabase()
+		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let notes = try await openStore(at: url)
+		try await notes.save(sampleNote(body: "kayak trip"))
+
+		#expect(try await notes.search("kay").count == 1)
+		#expect(try await notes.search("kayak tr").count == 1)
+		#expect(try await notes.search("kay trip").isEmpty)
 	}
 }
