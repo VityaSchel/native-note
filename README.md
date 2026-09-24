@@ -1,25 +1,30 @@
 # Native Note
 
-A self-hosted end-to-end encrypted personal note-taking app running natively on your macOS (Android, iOS, Windows, Linux in future). The optional sync server is just a single Rust binary.
+A personal note-taking app for macOS, self-hosted and end-to-end encrypted. Android, iOS, Windows and Linux come later. An optional sync server will ship as a single Rust binary.
+
+> [!NOTE]
+> Work in progress. The macOS app works without a server; sync, biometric unlock and releases are *planned*.
 
 ## Features
 
-- 🍃 Native — built with SwiftUI for macOS
-- 🪶 Lightweight — server built with Rust (🚀🚀🚀) is a single binary executable
-- 🪨 Rock-solid — prioritizes security and reliability
-- 📏 Straightforward — no learning curve or overengineering, feels like Apple's Notes app
-- 🔐 Secure — locally encrypted with key bound to Secure Enclave, optionally unlockable via pinned biometrics set, human code audit
-- ☁️ Syncable — optionally host your own sync & backup server for multiple devices, content 100% end-to-end encrypted
+- 🍃 Native: a SwiftUI app for macOS
+- 📏 Straightforward: feels like Apple's Notes app — no learning curve and no overengineering
+- 🪨 Rock-solid: prioritizes security and reliability
+- 🔐 Secure: notes stay encrypted under a key bound to the Secure Enclave, optionally unlock with a pinned biometrics set (*planned*), human code audit
+- 🪶 Lightweight: the optional sync server is a single Rust executable binary (🚀🚀🚀) (*planned*)
+- ☁️ Syncable: self-host a sync & backup server to use the app across several devices, with every note end-to-end encrypted (*planned*)
 
 100% free, no ads, no data collection, no telemetry, ever.
 
 ## Download
 
-Get started by downloading the app for your platform:
+No release yet. Build the macOS app from source per [CONTRIBUTING.md](CONTRIBUTING.md#macos-client).
+
+<!-- Get started by downloading the app for your platform: -->
 
 <!-- - Windows: [exe](https://git.hloth.dev/hloth/native-note/releases) -->
 <!-- - Linux: [deb](https://git.hloth.dev/hloth/native-note/releases) / [rpm](https://git.hloth.dev/hloth/native-note/releases) / [AppImage](https://git.hloth.dev/hloth/native-note/releases) -->
-- macOS: <!--[App Store](https://apps.apple.com/) / -->[dmg](https://git.hloth.dev/hloth/native-note/releases)
+<!-- - macOS: [App Store](https://apps.apple.com/) / [dmg](https://git.hloth.dev/hloth/native-note/releases) -->
 <!-- - Android: [Play Store](https://play.google.com/store/apps/details?id=dev.hloth.nativenote) / [apk](https://git.hloth.dev/hloth/native-note/releases) -->
 <!-- - iOS: [App Store](https://apps.apple.com/) / [AltStore]() -->
 
