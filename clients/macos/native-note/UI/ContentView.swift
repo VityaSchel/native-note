@@ -1,3 +1,4 @@
+import NativeNoteKit
 import SwiftUI
 
 struct ContentView: View {
@@ -82,6 +83,6 @@ struct ContentView: View {
 	}
 
 	#Preview("First run") {
-		ContentView(model: AppModel(directory: URL(fileURLWithPath: "/dev/null")))
+		ContentView(model: .previewingFirstRun)
 	}
 #endif

@@ -1,10 +1,10 @@
 import Foundation
 
-nonisolated struct NoteGroup: Identifiable, Equatable {
-	let title: String
-	let notes: [Note]
+nonisolated public struct NoteGroup: Identifiable, Equatable {
+	public let title: String
+	public let notes: [Note]
 
-	var id: String { title }
+	public var id: String { title }
 }
 
 nonisolated enum NoteGrouping {

@@ -1,6 +1,7 @@
 import Testing
 
 @testable import NativeNote
+@testable import NativeNoteKit
 
 @MainActor
 struct FailureAlertTests {

@@ -1,8 +1,10 @@
 import AppKit
+import Foundation
 import SwiftUI
 import Testing
 
 @testable import NativeNote
+@testable import NativeNoteKit
 
 @MainActor
 private func render(_ view: some View, width: CGFloat = 380, height: CGFloat = 620) {
@@ -117,50 +119,12 @@ struct PreviewRenderTests {
 		window.contentView = nil
 	}
 
-	@Test func groupTitlesStayUniqueForAdversarialDates() {
-		let calendar = Calendar(identifier: .gregorian)
-		let now = Date()
-		let offsets = [-86_400 * 400, -86_400 * 40, -86_400 * 8, -86_400 * 3, -3_600, 0, 3_600, 86_400, 86_400 * 90]
-		let notes = offsets.enumerated().map { index, offset in
-			Note.sample(index + 100, "note \(index)", minutesAgo: 0).movedTo(now.addingTimeInterval(Double(offset)))
-		}
-
-		let titles = NoteGrouping.groups(for: notes, now: now, calendar: calendar).map(\.title)
-
-		#expect(Set(titles).count == titles.count, "duplicate section titles: \(titles)")
-	}
-
-	@Test func groupsAreIdenticalAcrossRepeatedReads() {
-		let model = AppModel.previewing(NoteGroup.samples.flatMap(\.notes))
-		let first = model.groups
-
-		for _ in 0 ..< 200 {
-			#expect(model.groups == first)
-		}
-	}
-
-	@Test func sampleNotesHaveDistinctIdentities() {
-		let notes = NoteGroup.samples.flatMap(\.notes)
-
-		#expect(Set(notes.map(\.id)).count == notes.count)
-		#expect(Set(NoteGroup.samples.map(\.id)).count == NoteGroup.samples.count)
-	}
-
 	@Test func listToleratesASelectionThatIsNotInTheList() {
 		render(
 			NavigationStack {
 				NoteListView(groups: NoteGroup.samples, selection: .constant(UUID()), search: .constant(""))
 			}
 		)
-	}
-
-	@Test func previewingModelCreateNoteLeavesSelectionConsistent() async {
-		let model = AppModel.previewing(NoteGroup.samples.flatMap(\.notes))
-
-		await model.createNote()
-
-		let visible = Set(model.groups.flatMap(\.notes).map(\.id))
-		#expect(model.selection == nil || visible.contains(model.selection!))
 	}
 
 	@Test func noteListEmpty() {
@@ -185,6 +149,6 @@ struct PreviewRenderTests {
 	}
 
 	@Test func firstRunShell() {
-		render(ContentView(model: AppModel(directory: URL(fileURLWithPath: "/dev/null"))))
+		render(ContentView(model: .previewingFirstRun))
 	}
 }

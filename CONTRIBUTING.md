@@ -46,28 +46,39 @@ to gain CI: both workflows already run over `server/` as soon as a `server/Cargo
 
 ### macOS client
 
-Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer. Requires macOS 26.0. Swift Package Manager resolves SQLCipher and Argon2 on first open, so the first build needs network access.
+Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer on macOS 26.0. `xcodebuild` needs Xcode selected, not the Command Line Tools (`sudo xcode-select -s /Applications/Xcode.app`). The first build fetches SQLCipher and Argon2.
+
+Package tests run without the app host:
+
+```sh
+cd clients/macos/native-note-kit
+swift test
+```
+
+App and view tests run hosted:
 
 ```sh
 cd clients/macos
 xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 'platform=macOS'
 ```
 
-Both packages stay on the app target; tests reach them through the app module. A second consumer makes Xcode build Argon2 as a dynamic package framework, which then fails to link under coverage with an undefined `___llvm_profile_runtime`.
+Read the `Test run with N tests` line, not `TEST SUCCEEDED`: `-only-testing` without the test's trailing `()` runs nothing and still succeeds.
 
-Coverage is off in the shared scheme — enabling it there instruments Release builds too. Per run:
+Tests never present windows, sheets, or alerts. Test view logic by calling it, as `FailureAlertTests` does with `AppModel.Failure.alert`.
+
+Coverage is off in the shared scheme. Measure the package with `swift test --enable-code-coverage`, and the hosted tests with the sandbox off, since a sandboxed host writes no coverage data:
 
 ```sh
-xcodebuild test -enableCodeCoverage YES -project native-note.xcodeproj -scheme native-note -destination 'platform=macOS'
+rm -rf build/coverage.xcresult
+xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 'platform=macOS' -enableCodeCoverage YES -resultBundlePath build/coverage.xcresult ENABLE_APP_SANDBOX=NO
+xcrun xccov view --report --only-targets build/coverage.xcresult
 ```
 
 Views below `ContentView` take plain data, not `AppModel`, so the Xcode canvas can render them without a database. Sample fixtures live behind `#if DEBUG` — and so must the `#Preview` blocks that use them, because previews are compiled in Release too.
 
-`spec/vectors` is a folder reference in the test target, not a path read at runtime.
+Package tests read `spec/vectors` from their bundle, copied in through the `Tests/NativeNoteKitTests/vectors` symlink.
 
-**Verified locally only.** CI has no macOS runner, so a green CI run says nothing about the client —
-run the Xcode tests before opening a pull request that touches it. Anyone reproducing a macOS build
-is a macOS user by definition, so a macOS-only host costs no reach.
+**Verified locally only.** CI has no macOS runner, so run both test commands before a pull request that touches the client.
 
 ## Rules
 
@@ -81,12 +92,12 @@ is a macOS user by definition, so a macOS-only host costs no reach.
 
 ## Naming
 
-| Context                                | Form                                              | Examples                                    |
-| -------------------------------------- | ------------------------------------------------- | ------------------------------------------- |
-| Human-readable                         | `Native Note`                                     | window title, README, release notes         |
-| Paths, URLs, identifiers               | `native-note`                                     | directories, repo, crates, Xcode targets    |
-| PascalCase languages, mainly Swift     | `NativeNote`                                      | type names and the files holding them       |
-| Where a hyphen is not allowed          | `nativenote` or `native_note`, decided per case   | bundle IDs, Swift module names              |
+| Context                            | Form                                            | Examples                                                                          |
+| ---------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| Human-readable                     | `Native Note`                                   | window title, README, release notes                                               |
+| Paths, URLs, identifiers           | `native-note`                                   | directories, repo, crates, Xcode targets                                          |
+| PascalCase languages, mainly Swift | `NativeNote`                                    | type names, the files holding them, Swift modules (`NativeNote`, `NativeNoteKit`) |
+| Where a hyphen is not allowed      | `nativenote` or `native_note`, decided per case | bundle IDs, Rust crate names in code                                              |
 
 Never `nativeNote`. Never `NativeNote` outside a PascalCase language context — it is a type name, not a path.
 

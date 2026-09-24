@@ -1,11 +1,7 @@
 import Foundation
 import Testing
 
-@testable import NativeNote
-
-private final class BundleMarker {}
-
-enum Hex {
+private enum Hex {
 	static func decode(_ string: String) -> Data? {
 		guard string.count.isMultiple(of: 2) else { return nil }
 		var bytes = Data(capacity: string.count / 2)
@@ -41,8 +37,7 @@ enum Vectors {
 
 	static var bundledVectorsDirectory: URL {
 		get throws {
-			let resources = try #require(Bundle(for: BundleMarker.self).resourceURL)
-			return resources.appending(path: "vectors")
+			try #require(Bundle.module.url(forResource: "vectors", withExtension: nil))
 		}
 	}
 

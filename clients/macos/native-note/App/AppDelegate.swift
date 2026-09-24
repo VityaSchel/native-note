@@ -1,4 +1,5 @@
 import AppKit
+import NativeNoteKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 	let model: AppModel

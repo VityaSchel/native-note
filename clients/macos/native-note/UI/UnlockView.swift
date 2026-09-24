@@ -1,3 +1,4 @@
+import NativeNoteKit
 import SwiftUI
 
 struct UnlockView: View {

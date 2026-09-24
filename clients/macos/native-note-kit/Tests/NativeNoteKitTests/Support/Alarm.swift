@@ -1,6 +1,6 @@
 import Foundation
 
-@testable import NativeNote
+@testable import NativeNoteKit
 
 actor Alarm {
 	private struct Sleeper {
@@ -49,11 +49,4 @@ actor Alarm {
 func ring(_ alarm: Alarm, whenSleeping count: Int = 1) async {
 	await settle { await alarm.sleeping >= count }
 	await alarm.ring()
-}
-
-func settle(until done: () async throws -> Bool) async rethrows {
-	for _ in 0 ..< 10_000 {
-		if try await done() { return }
-		await Task.yield()
-	}
 }

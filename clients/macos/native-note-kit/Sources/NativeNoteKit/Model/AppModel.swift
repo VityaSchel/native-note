@@ -1,40 +1,40 @@
 import Foundation
 import Observation
 
-@Observable final class AppModel {
-	enum Phase: Equatable {
+@Observable public final class AppModel {
+	public enum Phase: Equatable {
 		case loading
 		case needsSetup
 		case locked
 		case unlocked
 	}
 
-	enum Failure: Equatable {
+	public enum Failure: Equatable {
 		case wrongPassword
 		case unsaved(String)
 		case unexpected(String)
 	}
 
-	private(set) var phase: Phase = .loading
+	public private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
-	private(set) var failure: Failure?
-	var selection: UUID? {
+	public private(set) var failure: Failure?
+	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
 			Task { await scheduler.flush(previous) }
 		}
 	}
-	var search = ""
+	public var search = ""
 
-	var unsavedReason: String? {
+	public var unsavedReason: String? {
 		failingSaves.values.first?.reason
 	}
 
-	var groups: [NoteGroup] {
+	public var groups: [NoteGroup] {
 		NoteGrouping.groups(for: visibleNotes, now: .now)
 	}
 
-	var selectedNote: Note? {
+	public var selectedNote: Note? {
 		selection.flatMap { id in notes.first { $0.id == id } }
 	}
 
@@ -52,25 +52,29 @@ import Observation
 	private var searchFailing = false
 	private var matches: [UUID]?
 
-	init(directory: URL = AppLock.directory, scheduler: SaveScheduler = SaveScheduler()) {
+	public convenience init() {
+		self.init(directory: AppLock.directory)
+	}
+
+	init(directory: URL, scheduler: SaveScheduler = SaveScheduler()) {
 		self.directory = directory
 		database = directory.appending(path: "notes.db")
 		self.scheduler = scheduler
 	}
 
-	func start() {
+	public func start() {
 		phase = AppLock.candidates(in: directory).isEmpty ? .needsSetup : .locked
 	}
 
-	func setUp(password: String) async {
+	public func setUp(password: String) async {
 		await attach { try await Unlock.setUp(password: password, database: self.database, in: self.directory) }
 	}
 
-	func unlock(password: String) async {
+	public func unlock(password: String) async {
 		await attach { try await Unlock.open(password: password, database: self.database, in: self.directory) }
 	}
 
-	func lock() async {
+	public func lock() async {
 		let closing = store
 		phase = .locked
 		selection = nil
@@ -85,11 +89,11 @@ import Observation
 	}
 
 	@discardableResult
-	func flushPendingSaves() async -> Bool {
+	public func flushPendingSaves() async -> Bool {
 		await scheduler.flushAll()
 	}
 
-	func createNote() async {
+	public func createNote() async {
 		let now = Date()
 		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: true)
 		guard await write({ try await $0.save(note) }) else { return }
@@ -97,7 +101,7 @@ import Observation
 		selection = note.id
 	}
 
-	func edit(_ id: UUID, _ body: String) {
+	public func edit(_ id: UUID, _ body: String) {
 		guard var edited = notes.first(where: { $0.id == id }), edited.body != body else { return }
 		edited.body = body
 		edited.updatedAt = Date()
@@ -108,7 +112,7 @@ import Observation
 		scheduleSave(edited, to: store)
 	}
 
-	func deleteSelected() async {
+	public func deleteSelected() async {
 		guard let id = selection else { return }
 		selection = nil
 		guard await write({ try await $0.markDeleted(id: id, at: Date()) }) else { return }
@@ -116,7 +120,7 @@ import Observation
 		notes.removeAll { $0.id == id }
 	}
 
-	func runSearch() async {
+	public func runSearch() async {
 		guard let store else { return }
 		let text = search
 		guard !text.isEmpty else {
@@ -219,7 +223,7 @@ import Observation
 		failure = Self.failure(from: error)
 	}
 
-	func dismissFailure() {
+	public func dismissFailure() {
 		failure = nil
 	}
 
@@ -256,7 +260,11 @@ import Observation
 
 #if DEBUG
 	extension AppModel {
-		static func previewing(_ notes: [Note], failure: Failure? = nil) -> AppModel {
+		public static var previewingFirstRun: AppModel {
+			AppModel(directory: URL(fileURLWithPath: "/dev/null"))
+		}
+
+		public static func previewing(_ notes: [Note], failure: Failure? = nil) -> AppModel {
 			let model = AppModel(directory: URL(fileURLWithPath: "/dev/null"))
 			model.notes = notes
 			model.phase = .unlocked

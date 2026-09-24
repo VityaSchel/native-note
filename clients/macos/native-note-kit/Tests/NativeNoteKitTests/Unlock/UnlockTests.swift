@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import NativeNote
+@testable import NativeNoteKit
 
 private func fastParameters() throws -> UnlockParameters {
 	UnlockParameters(
@@ -28,7 +28,7 @@ private func seed(_ password: String, in place: (directory: URL, database: URL))
 }
 
 @Suite(.serialized)
-struct UnlockFlowTests {
+struct UnlockTests {
 	@Test func opensWithTheRightPasswordAndRefusesTheWrong() async throws {
 		let place = workspace()
 		defer { try? FileManager.default.removeItem(at: place.directory) }
