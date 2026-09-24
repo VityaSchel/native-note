@@ -1,18 +1,20 @@
 use serde_json::{Value, json};
 
-use super::{API_KEY, NONCE, RESPONSE_NONCE, file};
+use super::{
+	API_KEY, BLINDED_ID, BLOB, NONCE, PAYLOAD, RESPONSE_NONCE, WRITE_ID, file, seq_array, seq_bytes,
+};
 use crate::codec::DecodeError;
 use crate::frame::{self, Request, Response, Status, Write, WriteResult};
 use crate::hex::encode as hx;
-use crate::{envelope, fixed, kdf, seq_bytes};
+use crate::{envelope, kdf};
 
-pub fn sample_write(v: u32) -> Write {
+fn sample_write(v: u32) -> Write {
 	Write {
-		blinded_id: fixed(0x10),
+		blinded_id: seq_array(BLINDED_ID),
 		v,
-		write_id: fixed(0x60),
+		write_id: seq_array(WRITE_ID),
 		deleted: false,
-		payload: seq_bytes(0xd0, 24),
+		payload: seq_bytes(PAYLOAD, 24),
 	}
 }
 
@@ -81,7 +83,7 @@ pub fn frames() -> Value {
 
 	let conflict = Response::Sync {
 		results: vec![WriteResult {
-			blinded_id: fixed(0x10),
+			blinded_id: seq_array(BLINDED_ID),
 			status: Status::Conflict,
 			v: 1,
 			seq: 0,
@@ -114,14 +116,14 @@ pub fn frames() -> Value {
 				"putRecovery",
 				Request::PutRecovery {
 					v: 2,
-					blob: seq_bytes(0xe0, 60),
+					blob: seq_bytes(BLOB, 60),
 				},
 			),
 			response_case(
 				"syncAccepted",
 				Response::Sync {
 					results: vec![WriteResult {
-						blinded_id: fixed(0x10),
+						blinded_id: seq_array(BLINDED_ID),
 						status: Status::Accepted,
 						v: 1,
 						seq: 1,
@@ -147,9 +149,13 @@ pub fn frames() -> Value {
 					results: [Status::TooLarge, Status::Exhausted, Status::Quota]
 						.into_iter()
 						.map(|status| WriteResult {
-							blinded_id: fixed(0x10),
+							blinded_id: seq_array(BLINDED_ID),
 							status,
-							v: 1,
+							v: if status == Status::Exhausted {
+								u32::MAX
+							} else {
+								1
+							},
 							seq: 0,
 						})
 						.collect(),
@@ -162,7 +168,7 @@ pub fn frames() -> Value {
 				"getRecoveryResult",
 				Response::GetRecovery {
 					v: 2,
-					blob: seq_bytes(0xe0, 60),
+					blob: seq_bytes(BLOB, 60),
 				},
 			),
 			response_case(
@@ -201,8 +207,8 @@ pub fn frames() -> Value {
 pub fn envelope() -> Value {
 	let api_key = seq_bytes(API_KEY, 32);
 	let key = kdf::envelope_key(&api_key);
-	let req_nonce: [u8; 12] = fixed(NONCE);
-	let resp_nonce: [u8; 12] = fixed(RESPONSE_NONCE);
+	let req_nonce: [u8; 12] = seq_array(NONCE);
+	let resp_nonce: [u8; 12] = seq_array(RESPONSE_NONCE);
 
 	let request_inner = frame::encode_request(&Request::Sync {
 		since: 0,

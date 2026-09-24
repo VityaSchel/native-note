@@ -28,11 +28,10 @@ pub fn seal(key: &[u8], nonce: &[u8; NONCE_LEN], plaintext: &[u8], aad: &[u8]) -
 }
 
 pub fn open(key: &[u8], sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>, OpenError> {
-	if sealed.len() < NONCE_LEN + TAG_LEN {
+	let (nonce, body) = sealed.split_first_chunk::<NONCE_LEN>().ok_or(OpenError)?;
+	if body.len() < TAG_LEN {
 		return Err(OpenError);
 	}
-	let (nonce, body) = sealed.split_at(NONCE_LEN);
-	let nonce: &[u8; NONCE_LEN] = nonce.try_into().map_err(|_| OpenError)?;
 	cipher(key)
 		.decrypt(nonce.into(), Payload { msg: body, aad })
 		.map_err(|_| OpenError)

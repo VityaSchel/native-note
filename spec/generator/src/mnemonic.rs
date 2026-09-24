@@ -2,7 +2,6 @@ use sha2::{Digest, Sha256};
 
 const WORDLIST: &str = include_str!("../../wordlists/english.txt");
 
-/// A substituted wordlist would silently decode mnemonics to different entropy.
 pub const WORDLIST_SHA256: &str =
 	"2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda";
 

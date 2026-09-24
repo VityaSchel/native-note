@@ -1,13 +1,12 @@
 use argon2::{Algorithm, Argon2, Params, Version};
 use serde_json::{Value, json};
 
-use super::{API_KEY, CONTENT_KEY, LOCAL_SALT, UUID, file, uuid_bytes};
+use super::{
+	API_KEY, ARGON_OUT, CONTENT_KEY, LOCAL_SALT, MACHINE_ID, SHARED_SECRET, UUID, WRITE_ID, file,
+	seq_bytes, uuid_bytes,
+};
 use crate::hex::encode as hx;
-use crate::{kdf, note, seq_bytes};
-
-const ARGON_OUT: u8 = 0xa0;
-const MACHINE_ID: u8 = 0xc0;
-const SHARED_SECRET: u8 = 0xd0;
+use crate::{kdf, note};
 
 fn hkdf_case(name: &str, ikm: &[u8], salt: Option<&[u8]>, info: &str, len: usize) -> Value {
 	json!({
@@ -23,7 +22,7 @@ fn hkdf_case(name: &str, ikm: &[u8], salt: Option<&[u8]>, info: &str, len: usize
 pub fn hkdf() -> Value {
 	let api_key = seq_bytes(API_KEY, 32);
 	let content_key = seq_bytes(CONTENT_KEY, 32);
-	let write_id = seq_bytes(0x60, 16);
+	let write_id = seq_bytes(WRITE_ID, 16);
 	let local_salt = seq_bytes(LOCAL_SALT, 16);
 	let argon_out = seq_bytes(ARGON_OUT, 32);
 	let machine_id = seq_bytes(MACHINE_ID, 32);
@@ -31,14 +30,20 @@ pub fn hkdf() -> Value {
 	file(
 		"HKDF-SHA256 derivations for every info label in the protocol.",
 		vec![
-			hkdf_case("envelopeKey", &api_key, None, kdf::ENVELOPE, 32),
-			hkdf_case("blindingKey", &content_key, None, kdf::ID_BLIND, 32),
-			hkdf_case("noteKey", &content_key, Some(&write_id), kdf::NOTE, 32),
+			hkdf_case("envelopeKey", &api_key, None, kdf::label::ENVELOPE, 32),
+			hkdf_case("blindingKey", &content_key, None, kdf::label::ID_BLIND, 32),
+			hkdf_case(
+				"noteKey",
+				&content_key,
+				Some(&write_id),
+				kdf::label::NOTE,
+				32,
+			),
 			hkdf_case(
 				"machineId",
 				&seq_bytes(SHARED_SECRET, 32),
 				None,
-				kdf::MACHINE_ID,
+				kdf::label::MACHINE_ID,
 				32,
 			),
 			json!({
@@ -46,7 +51,7 @@ pub fn hkdf() -> Value {
 				"argonOut": hx(&argon_out),
 				"machineId": hx(&machine_id),
 				"salt": hx(&local_salt),
-				"info": kdf::LOCALDB,
+				"info": kdf::label::LOCAL_DB,
 				"length": 32,
 				"okm": hx(&kdf::local_db_key(&argon_out, &machine_id, &local_salt)),
 			}),

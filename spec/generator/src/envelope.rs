@@ -12,14 +12,8 @@ pub enum PadError {
 }
 
 pub fn bucket_for(len: usize) -> Option<usize> {
-	let mut b = MIN_BUCKET;
-	while b < len {
-		b = b.checked_mul(2)?;
-		if b > MAX_BUCKET {
-			return None;
-		}
-	}
-	(b <= MAX_BUCKET).then_some(b)
+	let bucket = len.max(MIN_BUCKET).checked_next_power_of_two()?;
+	(bucket <= MAX_BUCKET).then_some(bucket)
 }
 
 pub fn pad(inner: &[u8]) -> Result<Vec<u8>, PadError> {
@@ -32,15 +26,19 @@ pub fn pad(inner: &[u8]) -> Result<Vec<u8>, PadError> {
 }
 
 pub fn unpad(padded: &[u8]) -> Result<Vec<u8>, PadError> {
-	if padded.len() < LEN_PREFIX || bucket_for(padded.len()) != Some(padded.len()) {
+	if bucket_for(padded.len()) != Some(padded.len()) {
 		return Err(PadError::Malformed);
 	}
-	let len = u32::from_be_bytes(padded[..LEN_PREFIX].try_into().unwrap()) as usize;
-	let end = LEN_PREFIX.checked_add(len).ok_or(PadError::Malformed)?;
-	if end > padded.len() || padded[end..].iter().any(|&b| b != 0) {
+	let (len, rest) = padded
+		.split_first_chunk::<LEN_PREFIX>()
+		.ok_or(PadError::Malformed)?;
+	let (inner, fill) = rest
+		.split_at_checked(u32::from_be_bytes(*len) as usize)
+		.ok_or(PadError::Malformed)?;
+	if fill.iter().any(|&b| b != 0) {
 		return Err(PadError::Malformed);
 	}
-	Ok(padded[LEN_PREFIX..end].to_vec())
+	Ok(inner.to_vec())
 }
 
 pub fn seal_request(

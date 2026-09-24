@@ -25,11 +25,13 @@ pub fn padding() -> Value {
 
 	cases.push(json!({
 		"name": "rejectNonBucketLength",
+		"padded": hx(&[0u8; 128]),
 		"paddedLength": 128,
 		"unpads": envelope::unpad(&[0u8; 128]).is_ok(),
 	}));
 	cases.push(json!({
 		"name": "rejectNonZeroFill",
+		"padded": hx(&dirty),
 		"unpads": envelope::unpad(&dirty).is_ok(),
 	}));
 

@@ -9,21 +9,37 @@ use serde::Serialize;
 use serde_json::ser::PrettyFormatter;
 use serde_json::{Serializer, Value, json};
 
-pub const API_KEY: u8 = 0x00;
+const API_KEY: u8 = 0x00;
+const BLINDED_ID: u8 = 0x10;
 pub const CONTENT_KEY: u8 = 0x20;
-pub const RECOVERY_KEY: u8 = 0x40;
-pub const WRITE_ID: u8 = 0x60;
-pub const NONCE: u8 = 0x70;
-pub const LOCAL_SALT: u8 = 0x80;
-pub const RESPONSE_NONCE: u8 = 0x90;
-pub const UUID: &str = "0b8f1d2e-3a4b-4c5d-8e9f-001122334455";
+const RECOVERY_KEY: u8 = 0x40;
+const WRITE_ID: u8 = 0x60;
+const DEVICE_A: u8 = 0x60;
+const NONCE: u8 = 0x70;
+const LOCAL_SALT: u8 = 0x80;
+const RESPONSE_NONCE: u8 = 0x90;
+const ARGON_OUT: u8 = 0xa0;
+const DEVICE_B: u8 = 0xb0;
+const MACHINE_ID: u8 = 0xc0;
+const SHARED_SECRET: u8 = 0xd0;
+const PAYLOAD: u8 = 0xd0;
+const BLOB: u8 = 0xe0;
+const UUID: &str = "0b8f1d2e-3a4b-4c5d-8e9f-001122334455";
 
-pub fn uuid_bytes() -> [u8; 16] {
+pub fn seq_bytes(start: u8, len: usize) -> Vec<u8> {
+	(0..len).map(|i| start.wrapping_add(i as u8)).collect()
+}
+
+pub fn seq_array<const N: usize>(start: u8) -> [u8; N] {
+	std::array::from_fn(|i| start.wrapping_add(i as u8))
+}
+
+fn uuid_bytes() -> [u8; 16] {
 	let hex: String = UUID.chars().filter(|c| *c != '-').collect();
 	crate::hex::decode(&hex).unwrap().try_into().unwrap()
 }
 
-pub fn file(description: &str, cases: Vec<Value>) -> Value {
+fn file(description: &str, cases: Vec<Value>) -> Value {
 	json!({
 		"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
 		"description": description,

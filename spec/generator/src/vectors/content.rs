@@ -1,13 +1,14 @@
 use serde_json::{Value, json};
 
-use super::{CONTENT_KEY, NONCE, WRITE_ID, file, uuid_bytes};
+use super::{CONTENT_KEY, NONCE, WRITE_ID, file, seq_array, seq_bytes, uuid_bytes};
+use crate::codec::DecodeError;
 use crate::content::{self, Content};
 use crate::hex::encode as hx;
-use crate::{codec::DecodeError, fixed, kdf, note, seq_bytes};
+use crate::{kdf, note};
 
-pub const CREATED_AT: i64 = 1_786_183_200_000;
-pub const UPDATED_AT: i64 = 1_786_183_500_000;
-pub const DELETED_AT: i64 = 1_786_186_800_000;
+const CREATED_AT: i64 = 1_786_183_200_000;
+const UPDATED_AT: i64 = 1_786_183_500_000;
+const DELETED_AT: i64 = 1_786_186_800_000;
 
 pub fn sample_note(body: &str) -> Content {
 	Content::Note {
@@ -110,8 +111,8 @@ pub fn content() -> Value {
 fn note_case(name: &str, v: u32, value: Content) -> Value {
 	let content_key = seq_bytes(CONTENT_KEY, 32);
 	let blinded = note::blinded_id(&kdf::blinding_key(&content_key), &uuid_bytes());
-	let write_id: [u8; 16] = fixed(WRITE_ID);
-	let nonce: [u8; 12] = fixed(NONCE);
+	let write_id: [u8; 16] = seq_array(WRITE_ID);
+	let nonce: [u8; 12] = seq_array(NONCE);
 	let plaintext = content::encode(&value);
 	let payload = note::seal(&content_key, &write_id, &nonce, &blinded, v, &plaintext);
 

@@ -4,13 +4,15 @@ use crate::kdf;
 pub const BLINDED_ID_LEN: usize = 16;
 pub const WRITE_ID_LEN: usize = 16;
 
-pub fn blinded_id(blinding_key: &[u8], uuid: &[u8; 16]) -> [u8; BLINDED_ID_LEN] {
+pub type BlindedId = [u8; BLINDED_ID_LEN];
+
+pub fn blinded_id(blinding_key: &[u8], uuid: &[u8; 16]) -> BlindedId {
 	kdf::hmac_sha256(blinding_key, uuid)[..BLINDED_ID_LEN]
 		.try_into()
 		.unwrap()
 }
 
-pub fn aad(blinded_id: &[u8; BLINDED_ID_LEN], v: u32, write_id: &[u8; WRITE_ID_LEN]) -> Vec<u8> {
+pub fn aad(blinded_id: &BlindedId, v: u32, write_id: &[u8; WRITE_ID_LEN]) -> Vec<u8> {
 	let mut out = Vec::with_capacity(BLINDED_ID_LEN + 4 + WRITE_ID_LEN);
 	out.extend_from_slice(blinded_id);
 	out.extend_from_slice(&v.to_be_bytes());
@@ -22,7 +24,7 @@ pub fn seal(
 	content_key: &[u8],
 	write_id: &[u8; WRITE_ID_LEN],
 	nonce: &[u8; NONCE_LEN],
-	blinded_id: &[u8; BLINDED_ID_LEN],
+	blinded_id: &BlindedId,
 	v: u32,
 	content: &[u8],
 ) -> Vec<u8> {
@@ -33,7 +35,7 @@ pub fn seal(
 pub fn open(
 	content_key: &[u8],
 	write_id: &[u8; WRITE_ID_LEN],
-	blinded_id: &[u8; BLINDED_ID_LEN],
+	blinded_id: &BlindedId,
 	v: u32,
 	payload: &[u8],
 ) -> Result<Vec<u8>, OpenError> {

@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::frame::{Status, Write, WriteResult};
-
-pub type BlindedId = [u8; 16];
+use crate::note::BlindedId;
 
 struct Record {
 	seq: u64,
@@ -67,5 +66,38 @@ impl Server {
 		let mut pending: Vec<&Record> = self.notes.values().filter(|r| r.seq > since).collect();
 		pending.sort_by_key(|r| r.seq);
 		pending.into_iter().map(|r| r.write.clone()).collect()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_note_at_the_last_version_accepts_no_further_writes() {
+		let write = |v| Write {
+			blinded_id: [7; 16],
+			v,
+			write_id: [1; 16],
+			deleted: false,
+			payload: vec![],
+		};
+		let mut server = Server::new(1024);
+		server.seq = 1;
+		server.notes.insert(
+			[7; 16],
+			Record {
+				seq: 1,
+				write: write(u32::MAX),
+			},
+		);
+
+		for v in [0, 1, u32::MAX] {
+			let result = server.apply(&write(v));
+			assert_eq!(result.status, Status::Exhausted, "v {v}");
+			assert_eq!(result.v, u32::MAX, "v {v}");
+			assert_eq!(result.seq, 0, "v {v}");
+		}
+		assert_eq!(server.seq(), 1);
 	}
 }

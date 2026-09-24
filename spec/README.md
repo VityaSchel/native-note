@@ -42,7 +42,7 @@ Every case whose name starts with `reject` is a negative test. Passing them matt
 
 | File            | Covers                                                                                                                                                               |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hkdf.json`     | Every `info` label in the protocol, with `ikm`, `salt`, `length` and expected `okm`                                                                                  |
+| `hkdf.json`     | Every `info` label in the protocol, with `ikm`, `salt`, `length` and expected `okm`. For `localDbKey`, concatenate `argonOut` and `machineId` into `ikm`             |
 | `blinding.json` | `blindingKey` from the Content key, then `blindedId` for a UUID and for one a single bit apart                                                                       |
 | `content.json`  | Note and tombstone encoding, plus unknown version, unknown kind, trailing bytes, truncation, invalid UTF-8                                                           |
 | `note.json`     | Sealed note payloads. `plaintext` is the encoded content; `aad` is the binding                                                                                       |

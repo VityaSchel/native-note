@@ -1,12 +1,13 @@
 use serde_json::{Value, json};
 
 use super::content::{sample_note, sample_tombstone};
-use super::{CONTENT_KEY, file, uuid_bytes};
+use super::{CONTENT_KEY, DEVICE_A, DEVICE_B, file, seq_array, seq_bytes, uuid_bytes};
 use crate::content::Content;
-use crate::frame::{self, Request, Response, Status, Write};
+use crate::frame::{self, Request, Response, Write, WriteResult};
 use crate::hex::encode as hx;
+use crate::note::{self, BlindedId};
 use crate::server::Server;
-use crate::{content, fixed, kdf, note, seq_bytes};
+use crate::{content, kdf};
 
 const NOTE_MAX: usize = 1024 * 1024;
 
@@ -16,9 +17,9 @@ struct Device {
 }
 
 impl Device {
-	fn write(&self, blinded: [u8; 16], v: u32, value: &Content) -> Write {
-		let write_id: [u8; 16] = fixed(self.seed.wrapping_add(v as u8));
-		let nonce: [u8; 12] = fixed(self.seed.wrapping_add(0x30).wrapping_add(v as u8));
+	fn write(&self, blinded: BlindedId, v: u32, value: &Content) -> Write {
+		let write_id: [u8; 16] = seq_array(self.seed.wrapping_add(v as u8));
+		let nonce: [u8; 12] = seq_array(self.seed.wrapping_add(0x30).wrapping_add(v as u8));
 		let plaintext = content::encode(value);
 		Write {
 			blinded_id: blinded,
@@ -37,27 +38,26 @@ impl Device {
 	}
 }
 
-fn status_name(status: Status) -> &'static str {
-	match status {
-		Status::Accepted => "accepted",
-		Status::Conflict => "conflict",
-		Status::TooLarge => "too_large",
-		Status::Exhausted => "exhausted",
-		Status::Quota => "quota",
-	}
-}
-
-fn step(n: u32, device: &str, explains: &str, request: Request, response: Response) -> Value {
-	let summary = match &response {
-		Response::Sync {
-			results, changes, ..
-		} => json!({
-			"results": results.iter().map(|r| json!({
-				"status": status_name(r.status), "v": r.v, "seq": r.seq,
-			})).collect::<Vec<_>>(),
-			"changes": changes.len(),
-		}),
-		_ => Value::Null,
+fn step(
+	n: u32,
+	device: &str,
+	explains: &str,
+	request: Request,
+	results: Vec<WriteResult>,
+	changes: Vec<Write>,
+	server: &Server,
+) -> Value {
+	let outcome = json!({
+		"results": results.iter().map(|r| json!({
+			"status": r.status.name(), "v": r.v, "seq": r.seq,
+		})).collect::<Vec<_>>(),
+		"changes": changes.len(),
+	});
+	let response = Response::Sync {
+		results,
+		changes,
+		next_seq: server.seq(),
+		more: false,
 	};
 
 	json!({
@@ -67,21 +67,8 @@ fn step(n: u32, device: &str, explains: &str, request: Request, response: Respon
 		"explains": explains,
 		"request": hx(&frame::encode_request(&request)),
 		"response": hx(&frame::encode_response(&response)),
-		"outcome": summary,
+		"outcome": outcome,
 	})
-}
-
-fn sync_response(
-	results: Vec<frame::WriteResult>,
-	changes: Vec<Write>,
-	server: &Server,
-) -> Response {
-	Response::Sync {
-		results,
-		changes,
-		next_seq: server.seq(),
-		more: false,
-	}
 }
 
 pub fn scenario() -> Value {
@@ -89,11 +76,11 @@ pub fn scenario() -> Value {
 	let blinded = note::blinded_id(&kdf::blinding_key(&content_key), &uuid_bytes());
 	let a = Device {
 		content_key: content_key.clone(),
-		seed: 0x60,
+		seed: DEVICE_A,
 	};
 	let b = Device {
 		content_key,
-		seed: 0xb0,
+		seed: DEVICE_B,
 	};
 
 	let mut server = Server::new(NOTE_MAX);
@@ -109,7 +96,9 @@ pub fn scenario() -> Value {
 			since: 0,
 			writes: vec![w],
 		},
-		sync_response(vec![result], vec![], &server),
+		vec![result],
+		vec![],
+		&server,
 	));
 
 	let w = b.write(blinded, 1, &sample_note("written by B"));
@@ -119,7 +108,9 @@ pub fn scenario() -> Value {
 		"B",
 		"B was offline and also produced v = 1. storedV is already 1, so the write is rejected and the server's current v is returned with seq 0.",
 		Request::Sync { since: 0, writes: vec![w] },
-		sync_response(vec![result], vec![], &server),
+		vec![result],
+		vec![],
+		&server,
 	));
 
 	steps.push(step(
@@ -127,7 +118,9 @@ pub fn scenario() -> Value {
 		"B",
 		"B pulls to see what it conflicted with. A's version arrives in memory; B's own version is still only on disk.",
 		Request::Sync { since: 0, writes: vec![] },
-		sync_response(vec![], server.changes_since(0), &server),
+		vec![],
+		server.changes_since(0),
+		&server,
 	));
 
 	let w = b.write(blinded, 2, &sample_note("written by B"));
@@ -140,7 +133,9 @@ pub fn scenario() -> Value {
 			since: 1,
 			writes: vec![w],
 		},
-		sync_response(vec![result], vec![], &server),
+		vec![result],
+		vec![],
+		&server,
 	));
 
 	steps.push(step(
@@ -151,7 +146,9 @@ pub fn scenario() -> Value {
 			since: 1,
 			writes: vec![],
 		},
-		sync_response(vec![], server.changes_since(1), &server),
+		vec![],
+		server.changes_since(1),
+		&server,
 	));
 
 	let w = a.write(blinded, 3, &sample_tombstone());
@@ -161,7 +158,9 @@ pub fn scenario() -> Value {
 		"A",
 		"Deletion is an ordinary write at v + 1 carrying a sealed tombstone, so a forged delete fails to decrypt.",
 		Request::Sync { since: 2, writes: vec![w] },
-		sync_response(vec![result], vec![], &server),
+		vec![result],
+		vec![],
+		&server,
 	));
 
 	file(

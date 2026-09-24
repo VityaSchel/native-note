@@ -16,7 +16,7 @@ impl<'a> Reader<'a> {
 		Self { input, pos: 0 }
 	}
 
-	pub fn remaining(&self) -> usize {
+	fn remaining(&self) -> usize {
 		self.input.len() - self.pos
 	}
 

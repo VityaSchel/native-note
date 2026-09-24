@@ -1,4 +1,5 @@
 use crate::codec::{DecodeError, Reader, Writer};
+use crate::note::BlindedId;
 
 const ACTION_SYNC: u8 = 0x01;
 const ACTION_GET_RECOVERY: u8 = 0x02;
@@ -20,6 +21,16 @@ pub enum Status {
 }
 
 impl Status {
+	pub fn name(self) -> &'static str {
+		match self {
+			Status::Accepted => "accepted",
+			Status::Conflict => "conflict",
+			Status::TooLarge => "too_large",
+			Status::Exhausted => "exhausted",
+			Status::Quota => "quota",
+		}
+	}
+
 	fn code(self) -> u8 {
 		match self {
 			Status::Accepted => STATUS_ACCEPTED,
@@ -44,7 +55,7 @@ impl Status {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Write {
-	pub blinded_id: [u8; 16],
+	pub blinded_id: BlindedId,
 	pub v: u32,
 	pub write_id: [u8; 16],
 	pub deleted: bool,
@@ -53,7 +64,7 @@ pub struct Write {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteResult {
-	pub blinded_id: [u8; 16],
+	pub blinded_id: BlindedId,
 	pub status: Status,
 	pub v: u32,
 	pub seq: u64,
