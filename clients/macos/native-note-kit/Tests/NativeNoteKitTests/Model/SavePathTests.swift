@@ -7,11 +7,7 @@ import Testing
 struct SavePathTests {
 	private let password = "correct horse"
 	private let alarm = Alarm()
-	private let parameters = UnlockParameters(
-		localSalt: Data(repeating: 0x80, count: 16),
-		argon: Argon2.Parameters(m: 1024, t: 1, p: 1),
-		enclaveKey: nil
-	)
+	private let parameters = UnlockParameters.fast
 
 	private func unlockedModel() async throws -> (AppModel, URL) {
 		let directory = URL.temporaryDirectory.appending(path: UUID().uuidString)

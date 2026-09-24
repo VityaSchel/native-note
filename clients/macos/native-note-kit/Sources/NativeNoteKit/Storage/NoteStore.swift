@@ -27,7 +27,7 @@ actor NoteStore {
 	}
 
 	func save(_ note: Note) throws {
-		let statement = try Statement(
+		let statement = try connection.prepare(
 			"""
 			INSERT INTO note (\(Self.columns)) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
 			ON CONFLICT(uuid) DO UPDATE SET
@@ -38,8 +38,7 @@ actor NoteStore {
 				v = excluded.v,
 				seq = excluded.seq
 			WHERE note.deleted = 0
-			""",
-			on: connection.handle
+			"""
 		)
 		statement.bind(1, note.id.bytes)
 		statement.bind(2, note.body)
@@ -61,9 +60,8 @@ actor NoteStore {
 	}
 
 	func note(id: UUID) throws -> Note? {
-		let statement = try Statement(
-			"SELECT \(Self.columns) FROM note WHERE uuid = ?1",
-			on: connection.handle
+		let statement = try connection.prepare(
+			"SELECT \(Self.columns) FROM note WHERE uuid = ?1"
 		)
 		statement.bind(1, id.bytes)
 		return try statement.step() ? Self.note(from: statement) : nil
@@ -71,20 +69,19 @@ actor NoteStore {
 
 	func liveNotes() throws -> [Note] {
 		try collect(
-			try Statement(
-				"SELECT \(Self.columns) FROM note WHERE deleted = 0 ORDER BY updatedAt DESC",
-				on: connection.handle
+			try connection.prepare(
+				"SELECT \(Self.columns) FROM note WHERE deleted = 0 ORDER BY updatedAt DESC"
 			)
 		)
 	}
 
 	func pendingPushes() throws -> [Note] {
 		try collect(
-			try Statement("SELECT \(Self.columns) FROM note WHERE dirty = 1", on: connection.handle)
+			try connection.prepare("SELECT \(Self.columns) FROM note WHERE dirty = 1")
 		)
 	}
 
-	static func matchExpression(forUserText text: String) -> String? {
+	private static func matchExpression(forUserText text: String) -> String? {
 		let quotableTokens = text.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
 		guard !quotableTokens.isEmpty else { return nil }
 		return quotableTokens.map { "\"\($0)\"" }.joined(separator: " ")
@@ -92,30 +89,28 @@ actor NoteStore {
 
 	func search(_ text: String) throws -> [Note] {
 		guard let expression = Self.matchExpression(forUserText: text) else { return [] }
-		let statement = try Statement(
+		let statement = try connection.prepare(
 			"""
 			SELECT \(Self.columns.split(separator: ", ").map { "note.\($0)" }.joined(separator: ", "))
 			FROM note JOIN note_fts ON note_fts.rowid = note.rowid
 			WHERE note_fts MATCH ?1 AND note.deleted = 0
 			ORDER BY rank
-			""",
-			on: connection.handle
+			"""
 		)
 		statement.bind(1, expression)
 		return try collect(statement)
 	}
 
 	func markDeleted(id: UUID, at moment: Date) throws {
-		let statement = try Statement(
-			"UPDATE note SET deleted = 1, dirty = 1, body = '', updatedAt = ?2 WHERE uuid = ?1",
-			on: connection.handle
+		let statement = try connection.prepare(
+			"UPDATE note SET deleted = 1, dirty = 1, body = '', updatedAt = ?2 WHERE uuid = ?1"
 		)
 		statement.bind(1, id.bytes)
 		statement.bind(2, moment.epochMilliseconds)
 		try statement.step()
 	}
 
-	private func collect(_ statement: Statement) throws -> [Note] {
+	private func collect(_ statement: SQLiteStatement) throws -> [Note] {
 		var notes: [Note] = []
 		while try statement.step() {
 			if let note = Self.note(from: statement) { notes.append(note) }
@@ -123,7 +118,7 @@ actor NoteStore {
 		return notes
 	}
 
-	private static func note(from statement: Statement) -> Note? {
+	private static func note(from statement: SQLiteStatement) -> Note? {
 		guard let id = UUID(bytes: statement.data(0)) else { return nil }
 		return Note(
 			id: id,

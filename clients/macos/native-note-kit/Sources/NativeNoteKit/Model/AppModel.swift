@@ -9,12 +9,6 @@ import Observation
 		case unlocked
 	}
 
-	public enum Failure: Equatable {
-		case wrongPassword
-		case unsaved(String)
-		case unexpected(String)
-	}
-
 	public private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	public private(set) var failure: Failure?
@@ -46,6 +40,7 @@ import Observation
 	}
 
 	private let scheduler: SaveScheduler
+	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private var store: NoteStore?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
@@ -56,10 +51,15 @@ import Observation
 		self.init(directory: AppLock.directory)
 	}
 
-	init(directory: URL, scheduler: SaveScheduler = SaveScheduler()) {
+	init(
+		directory: URL,
+		scheduler: SaveScheduler = SaveScheduler(),
+		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.createParameters
+	) {
 		self.directory = directory
 		database = directory.appending(path: "notes.db")
 		self.scheduler = scheduler
+		self.makeParameters = makeParameters
 	}
 
 	public func start() {
@@ -67,7 +67,9 @@ import Observation
 	}
 
 	public func setUp(password: String) async {
-		await attach { try await Unlock.setUp(password: password, database: self.database, in: self.directory) }
+		await attach {
+			try await Unlock.setUp(password: password, database: self.database, in: self.directory, parameters: self.makeParameters)
+		}
 	}
 
 	public func unlock(password: String) async {
@@ -168,7 +170,7 @@ import Observation
 	}
 
 	private func saveFailed(_ failed: Note, to store: NoteStore, after error: Error) {
-		let reason = Self.reason(for: error)
+		let reason = Failure.reason(for: error)
 		if failingSaves.isEmpty { failure = .unsaved(reason) }
 		let latest = Self.newer(notes.first { $0.id == failed.id }, failed)
 		failingSaves[failed.id] = FailingSave(note: latest, reason: reason)
@@ -204,7 +206,7 @@ import Observation
 			if let unsavedReason { failure = .unsaved(unsavedReason) }
 			phase = .unlocked
 		} catch {
-			failure = Self.failure(from: error)
+			failure = Failure(error)
 		}
 	}
 
@@ -220,42 +222,13 @@ import Observation
 	}
 
 	private func report(_ error: Error) {
-		failure = Self.failure(from: error)
+		failure = Failure(error)
 	}
 
 	public func dismissFailure() {
 		failure = nil
 	}
 
-	private static func failure(from error: Error) -> Failure {
-		switch error {
-		case Unlock.Failure.wrongPassword, SQLiteError.wrongKey:
-			.wrongPassword
-		default:
-			.unexpected(reason(for: error))
-		}
-	}
-
-	private static func reason(for error: Error) -> String {
-		switch error {
-		case Unlock.Failure.neverSetUp:
-			"No unlock parameters were found beside the notes database."
-		case SQLiteError.checkpointBlocked:
-			"The notes database is busy. Try again."
-		case SQLiteError.closed:
-			"The notes database is closed."
-		case SQLiteError.newerSchema:
-			"The notes database was written by a newer version of Native Note. Update the app to open it."
-		case let SQLiteError.cannotOpen(_, message):
-			"The notes database could not be opened. \(message)"
-		case let SQLiteError.cannotExecute(_, message, _):
-			message
-		case let SQLiteError.keyMustBe32Bytes(count):
-			"The unlock key was \(count) bytes rather than 32."
-		default:
-			String(describing: error)
-		}
-	}
 }
 
 #if DEBUG

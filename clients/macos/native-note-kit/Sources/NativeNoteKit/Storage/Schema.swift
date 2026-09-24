@@ -1,5 +1,4 @@
 import Foundation
-import SQLCipher
 
 nonisolated enum Schema {
 	static let migrations = [version1]

@@ -112,4 +112,23 @@ struct UnlockTests {
 		let opened = try await Unlock.open(password: "old password", database: place.database, in: place.directory)
 		#expect(try await opened.liveNotes().map(\.body) == ["seeded"])
 	}
+
+	@Test func setUpPersistsCalibratedParametersBoundToThisMac() async throws {
+		let place = workspace()
+		defer { try? FileManager.default.removeItem(at: place.directory) }
+
+		_ = try await Unlock.setUp(password: "correct horse", database: place.database, in: place.directory)
+
+		let candidates = AppLock.candidates(in: place.directory)
+		let stored = try #require(candidates.first)
+		#expect(candidates.count == 1)
+		#expect(stored.localSalt.count == 16)
+		#expect(stored.argon.t == Argon2.floor.t)
+		#expect(stored.argon.p == Argon2.floor.p)
+		#expect(stored.argon.m >= Argon2.floor.m)
+		#expect((stored.enclaveKey != nil) == MachineKey.isAvailable)
+		let mode = try FileManager.default.attributesOfItem(atPath: place.directory.path)[.posixPermissions] as? Int
+		#expect(mode == 0o700)
+		_ = try await Unlock.open(password: "correct horse", database: place.database, in: place.directory)
+	}
 }

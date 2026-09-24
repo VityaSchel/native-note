@@ -1,12 +1,6 @@
 import CryptoKit
 import Foundation
 
-nonisolated enum MachineBinding {
-	static func machineId(key: MachineKey) throws -> Data {
-		KeyDerivation.derive(ikm: try key.agreeWithItself(), info: KeyDerivation.machineId)
-	}
-}
-
 nonisolated struct MachineKey {
 	static var isAvailable: Bool { SecureEnclave.isAvailable }
 
@@ -22,7 +16,11 @@ nonisolated struct MachineKey {
 
 	var representation: Data { key.dataRepresentation }
 
-	fileprivate func agreeWithItself() throws -> Data {
+	func machineId() throws -> Data {
+		KeyDerivation.derive(ikm: try agreeWithItself(), info: KeyDerivation.machineId)
+	}
+
+	private func agreeWithItself() throws -> Data {
 		try key.sharedSecretFromKeyAgreement(with: key.publicKey).withUnsafeBytes { Data($0) }
 	}
 }

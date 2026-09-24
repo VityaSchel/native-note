@@ -16,7 +16,7 @@ nonisolated enum Unlock {
 			parameters: parameters.argon
 		)
 		let machineId = try parameters.enclaveKey.map {
-			try MachineBinding.machineId(key: MachineKey(representation: $0))
+			try MachineKey(representation: $0).machineId()
 		}
 		return KeyDerivation.localDbKey(
 			argonOut: argonOut,
@@ -33,14 +33,19 @@ nonisolated enum Unlock {
 		)
 	}
 
-	@concurrent static func setUp(password: String, database: URL, in directory: URL) async throws -> NoteStore {
+	@concurrent static func setUp(
+		password: String,
+		database: URL,
+		in directory: URL,
+		parameters makeParameters: @escaping @Sendable () throws -> UnlockParameters = createParameters
+	) async throws -> NoteStore {
 		try FileManager.default.createDirectory(
 			at: directory,
 			withIntermediateDirectories: true,
 			attributes: [.posixPermissions: 0o700]
 		)
 		let (parameters, key) = try await offThePool {
-			let parameters = try createParameters()
+			let parameters = try makeParameters()
 			return (parameters, try localDbKey(password: password, parameters: parameters))
 		}
 		let store = try await NoteStore.open(url: database, key: key)

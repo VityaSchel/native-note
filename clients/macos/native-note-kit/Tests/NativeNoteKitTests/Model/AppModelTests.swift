@@ -12,7 +12,7 @@ struct AppModelTests {
 	@Test func walksSetUpEditLockAndUnlock() async throws {
 		let directory = workspace()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let model = AppModel(directory: directory)
+		let model = AppModel(directory: directory, makeParameters: { .fast })
 
 		model.start()
 		#expect(model.phase == .needsSetup)
@@ -50,7 +50,7 @@ struct AppModelTests {
 			to: AppLock.current(in: directory)
 		)
 
-		let model = AppModel(directory: directory)
+		let model = AppModel(directory: directory, makeParameters: { .fast })
 		model.start()
 
 		#expect(model.phase == .locked)
@@ -59,7 +59,7 @@ struct AppModelTests {
 	@Test func searchFiltersTheGroupsAndClearingItRestoresThem() async throws {
 		let directory = workspace()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let model = AppModel(directory: directory)
+		let model = AppModel(directory: directory, makeParameters: { .fast })
 		await model.setUp(password: "correct horse")
 
 		for body in ["Shopping\nquartz and bread", "Standup\nshipped storage"] {
@@ -84,7 +84,7 @@ struct AppModelTests {
 	@Test func deletingRemovesTheNoteFromTheList() async throws {
 		let directory = workspace()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let model = AppModel(directory: directory)
+		let model = AppModel(directory: directory, makeParameters: { .fast })
 		await model.setUp(password: "correct horse")
 		await model.createNote()
 
