@@ -67,17 +67,23 @@ struct UnlockTests {
 		let parameters = try await seed("old password", in: directory)
 		let opened = try await Unlock.open(password: "old password", in: directory)
 
+		let recalibrated = Argon2.Parameters(m: 2048, t: 1, p: 1)
+
 		try await Unlock.changePassword(
 			from: "old password",
 			to: "new password",
 			parameters: parameters,
 			store: opened.store,
-			in: directory
+			in: directory,
+			calibrate: { recalibrated }
 		)
 
 		let reopened = try await Unlock.open(password: "new password", in: directory)
 		#expect(try await reopened.store.liveNotes().map(\.body) == ["seeded"])
 		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		let current = try AppLock.read(from: AppLock.currentFile(in: directory))
+		#expect(current.argon == recalibrated)
+		#expect(current.enclaveKey == parameters.enclaveKey)
 
 		await #expect(throws: Unlock.Failure.wrongPassword) {
 			_ = try await Unlock.open(password: "old password", in: directory)
@@ -220,6 +226,19 @@ struct UnlockTests {
 		_ = try await Unlock.open(password: "old password", in: directory)
 	}
 
+	@Test func changingThePasswordNeverLowersTheMemoryCost() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let opened = try await Unlock.open(password: "old password", in: directory)
+		let weaker = Argon2.Parameters(m: parameters.argon.m / 2, t: parameters.argon.t, p: parameters.argon.p)
+
+		try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, calibrate: { weaker })
+
+		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)).argon == parameters.argon)
+		_ = try await Unlock.open(password: "new password", in: directory)
+	}
+
 	@Test func changingThePasswordRefusesAWrongCurrentPassword() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
@@ -227,7 +246,7 @@ struct UnlockTests {
 		let opened = try await Unlock.open(password: "old password", in: directory)
 
 		await #expect(throws: Unlock.Failure.wrongPassword) {
-			try await Unlock.changePassword(from: "guess", to: "new password", parameters: parameters, store: opened.store, in: directory)
+			try await Unlock.changePassword(from: "guess", to: "new password", parameters: parameters, store: opened.store, in: directory, calibrate: { UnlockParameters.fast.argon })
 		}
 		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 		_ = try await Unlock.open(password: "old password", in: directory)
@@ -245,7 +264,7 @@ struct UnlockTests {
 		try writer.execute("BEGIN IMMEDIATE")
 
 		await #expect(throws: Unlock.Failure.passwordNotChanged) {
-			try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory)
+			try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, calibrate: { UnlockParameters.fast.argon })
 		}
 		try writer.execute("ROLLBACK")
 		try await opened.store.save(sampleNote(body: "typed after"))

@@ -134,7 +134,11 @@ struct LibraryEndToEndTests {
 	@Test func changingThePasswordKeepsEveryNote() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let unlocked = try await Unlock.setUp(password: "old password", in: directory)
+		let unlocked = try await Unlock.setUp(password: "old password", in: directory) {
+			var parameters = try Unlock.makeParameters()
+			parameters.argon.m = Argon2.floor.m / 2
+			return parameters
+		}
 		for body in corpus.prefix(200) { try await unlocked.store.save(sampleNote(body: body)) }
 		let saved = try await snapshot(unlocked.store.liveNotes())
 
@@ -142,6 +146,10 @@ struct LibraryEndToEndTests {
 		await unlocked.store.close()
 
 		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		let recalibrated = try AppLock.read(from: AppLock.currentFile(in: directory))
+		#expect(recalibrated.argon.m >= Argon2.floor.m)
+		#expect(recalibrated.argon.t == Argon2.floor.t)
+		#expect(recalibrated.localSalt != unlocked.parameters.localSalt)
 		let relaunched = try await launch(in: directory, password: "new password ✓")
 		#expect(snapshot(relaunched.notes) == saved)
 		await relaunched.lock()

@@ -4,29 +4,89 @@ import Testing
 @testable import NativeNoteKit
 
 struct Argon2Tests {
-	@Test func calibrationKeepsTheFloorWhenItAlreadyCostsTheTarget() throws {
-		var readings = [0.0, 2.0].makeIterator()
+	private struct Curve {
+		private(set) var measured: [UInt32] = []
+		let seconds: (UInt32) -> TimeInterval
 
-		#expect(try Argon2.calibrateMemory(target: 1.0) { readings.next() ?? 0 } == Argon2.floor)
+		mutating func measure(_ parameters: Argon2.Parameters) -> TimeInterval {
+			measured.append(parameters.m)
+			return seconds(parameters.m)
+		}
 	}
 
-	@Test func calibrationRaisesMemoryOnlyAndStaysAMultipleOfEightLanes() throws {
-		var readings = [0.0, 0.25].makeIterator()
+	private static func nonlinear(_ memory: UInt32) -> TimeInterval {
+		0.14 * pow(Double(memory) / Double(Argon2.floor.m), 1.35)
+	}
 
-		let parameters = try Argon2.calibrateMemory(target: 1.0) { readings.next() ?? 0 }
+	@Test func calibrationKeepsTheFloorWhenItAlreadyCostsTheTarget() throws {
+		var curve = Curve { _ in 2.0 }
 
-		#expect(parameters.m == 4 * Argon2.floor.m)
+		#expect(try Argon2.calibrateMemory(target: 1.0) { curve.measure($0) } == Argon2.floor)
+		#expect(curve.measured == [Argon2.floor.m])
+	}
+
+	@Test func calibrationLandsJustUnderTheTargetOnACurveThatIsNotLinear() throws {
+		var curve = Curve(seconds: Self.nonlinear)
+
+		let parameters = try Argon2.calibrateMemory(target: 1.0) { curve.measure($0) }
+
+		#expect(Self.nonlinear(parameters.m) <= 1.0)
+		#expect(Self.nonlinear(parameters.m) > 0.9)
+		#expect(curve.measured.count <= 5)
 		#expect(parameters.t == Argon2.floor.t)
 		#expect(parameters.p == Argon2.floor.p)
 		#expect(parameters.m.isMultiple(of: 8 * parameters.p))
 	}
 
-	@Test func calibrationNeverExceedsTheMemoryLimit() throws {
-		var readings = [0.0, 0.001].makeIterator()
+	@Test func calibrationAimsAnInProcessRunAtFourTenthsOfASecond() throws {
+		var curve = Curve(seconds: Self.nonlinear)
 
-		let parameters = try Argon2.calibrateMemory(target: 1.0, limit: 512 * 1024) { readings.next() ?? 0 }
+		let parameters = try Argon2.calibrateMemory { curve.measure($0) }
+
+		#expect(Self.nonlinear(parameters.m) <= 0.4)
+		#expect(Self.nonlinear(parameters.m) > 0.35)
+	}
+
+	@Test func calibrationNeverKeepsMemoryThatMeasuredOverTheTarget() throws {
+		var curve = Curve { $0 > 700 * 1024 ? 1.4 : 0.2 }
+
+		let parameters = try Argon2.calibrateMemory(target: 1.0) { curve.measure($0) }
+
+		#expect(parameters.m <= 700 * 1024)
+		#expect(parameters.m > Argon2.floor.m)
+	}
+
+	@Test func calibrationNeverMeasuresPastTheMemoryLimit() throws {
+		var curve = Curve { _ in 0.001 }
+
+		let parameters = try Argon2.calibrateMemory(target: 1.0, limit: 512 * 1024) { curve.measure($0) }
 
 		#expect(parameters.m == 512 * 1024)
+		#expect(curve.measured.allSatisfy { $0 <= 512 * 1024 })
+	}
+
+	@Test func calibrationStopsAtTwoGibibytesByDefault() throws {
+		var curve = Curve { _ in 0.001 }
+
+		let parameters = try Argon2.calibrateMemory { curve.measure($0) }
+
+		#expect(parameters.m == 2 * 1024 * 1024)
+		#expect(curve.measured.allSatisfy { $0 <= 2 * 1024 * 1024 })
+	}
+
+	@Test func calibrationScalesALinearCurveStraightToFourTenthsOfASecond() throws {
+		var curve = Curve { 0.2 * Double($0) / Double(Argon2.floor.m) }
+
+		let parameters = try Argon2.calibrateMemory { curve.measure($0) }
+
+		#expect(parameters.m == 2 * Argon2.floor.m)
+		#expect(curve.measured == [Argon2.floor.m, 2 * Argon2.floor.m])
+	}
+
+	@Test func calibrationDistrustsACandidateThatTookNoTime() throws {
+		var curve = Curve { $0 == Argon2.floor.m ? 0.2 : 0 }
+
+		#expect(try Argon2.calibrateMemory { curve.measure($0) } == Argon2.floor)
 	}
 
 	@Test func rejectsParametersBelowTheAlgorithmMinimum() {
@@ -39,9 +99,11 @@ struct Argon2Tests {
 		}
 	}
 
-	@Test func calibrationKeepsTheFloorWhenTheClockDidNotAdvance() throws {
-		var readings = [1.0, 1.0].makeIterator()
+	@Test(arguments: [0.0, -1.0])
+	func calibrationKeepsTheFloorWhenTheClockDidNotAdvance(reading: TimeInterval) throws {
+		var curve = Curve { _ in reading }
 
-		#expect(try Argon2.calibrateMemory(target: 1.0) { readings.next() ?? 0 } == Argon2.floor)
+		#expect(try Argon2.calibrateMemory { curve.measure($0) } == Argon2.floor)
+		#expect(curve.measured == [Argon2.floor.m])
 	}
 }

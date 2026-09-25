@@ -36,24 +36,38 @@ nonisolated enum Argon2 {
 	}
 
 	static func calibrateMemory(
-		target: TimeInterval = 1.0,
+		target: TimeInterval = 0.4,
 		limit: UInt32 = 2 * 1024 * 1024,
-		clock: () -> TimeInterval = defaultClock
+		refinements: Int = 4,
+		measure: (Parameters) throws -> TimeInterval = timedHash
 	) throws -> Parameters {
-		var calibrated = floor
+		let atFloor = try measure(floor)
+		guard atFloor > 0, atFloor < target else { return floor }
 
-		let started = clock()
-		_ = try hash(password: Data("native-note calibration".utf8), salt: Data(repeating: 0, count: 16), parameters: calibrated)
-		let elapsedAtFloor = clock() - started
-		guard elapsedAtFloor > 0, elapsedAtFloor < target else { return floor }
-
-		let memoryForTarget = (Double(floor.m) * target / elapsedAtFloor).rounded()
-		let withinLimit = UInt32(min(Double(limit), max(Double(floor.m), memoryForTarget)))
-		calibrated.m = withinLimit - withinLimit % (8 * floor.p)
-		return calibrated
+		var fits = (m: floor.m, time: atFloor)
+		var tooSlow: UInt32?
+		for _ in 0 ..< refinements {
+			let estimate = tooSlow.map { Double(fits.m) / 2 + Double($0) / 2 } ?? Double(fits.m) * target / fits.time
+			let candidate = aligned(min(Double(limit), estimate))
+			guard candidate > fits.m, candidate != tooSlow else { break }
+			let time = try measure(Parameters(m: candidate, t: floor.t, p: floor.p))
+			if time > 0, time <= target {
+				fits = (candidate, time)
+			} else {
+				tooSlow = candidate
+			}
+		}
+		return Parameters(m: fits.m, t: floor.t, p: floor.p)
 	}
 
-	private static func defaultClock() -> TimeInterval {
-		Double(DispatchTime.now().uptimeNanoseconds) / 1e9
+	private static func aligned(_ memory: Double) -> UInt32 {
+		let whole = UInt32(memory.rounded(.down))
+		return whole - whole % (8 * floor.p)
+	}
+
+	private static func timedHash(_ parameters: Parameters) throws -> TimeInterval {
+		let started = DispatchTime.now().uptimeNanoseconds
+		_ = try hash(password: Data("native-note calibration".utf8), salt: Data(repeating: 0, count: 16), parameters: parameters)
+		return Double(DispatchTime.now().uptimeNanoseconds - started) / 1e9
 	}
 }

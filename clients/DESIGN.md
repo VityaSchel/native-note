@@ -71,14 +71,14 @@ Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alon
 
 #### Unlock parameters
 
-`localSalt` and `argonParams` are public key parameters, so they're stored outside of the database. They must exactly match the values that produced the key. `argonParams` is calibrated at setup to ~1.0 s with floor `m=256 MiB, t=3, p=4`.
+`localSalt` and `argonParams` are public key parameters, so they're stored outside of the database. They must exactly match the values that produced the key. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, to the largest value whose measured in-process run takes at most 0.4 s, capped at 2 GiB, and a password change never lowers it. A cold unlock in a freshly launched app costs more than an in-process run, so 0.4 s lands a cold unlock around 0.4–1 s.
 
 #### Changing the password
 
 `localDbKey` changes with the password, so the database is rekeyed:
 
 1. Confirm the current password with a fresh open
-2. Write the new unlock parameters to a pending file, keeping the current one
+2. Write the new unlock parameters, with a fresh salt and recalibrated `argonParams`, to a pending file, keeping the current one
 3. Run `PRAGMA rekey`
 4. Verify a fresh open with the new key; if it fails, reconnect the store with the old key, delete the pending file and keep the old password
 5. Replace the current key file with the pending one

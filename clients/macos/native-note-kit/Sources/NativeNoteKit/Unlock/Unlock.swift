@@ -99,7 +99,8 @@ nonisolated enum Unlock {
 		to newPassword: String,
 		parameters: UnlockParameters,
 		store: NoteStore,
-		in directory: URL
+		in directory: URL,
+		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() }
 	) async throws {
 		let database = AppLock.databaseFile(in: directory)
 		let oldKey = try await BlockingWork.run { try localDbKey(password: oldPassword, parameters: parameters) }
@@ -111,6 +112,8 @@ nonisolated enum Unlock {
 
 		var next = parameters
 		next.localSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
+		let calibrated = try await BlockingWork.run(calibrate)
+		next.argon = calibrated.m > parameters.argon.m ? calibrated : parameters.argon
 		let newKey = try await BlockingWork.run { [next] in try localDbKey(password: newPassword, parameters: next) }
 
 		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
