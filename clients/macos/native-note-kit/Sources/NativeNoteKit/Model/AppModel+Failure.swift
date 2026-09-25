@@ -30,6 +30,8 @@ extension AppModel {
 				"These notes are bound to another Mac's Secure Enclave and cannot open here. Restore them from an export."
 			case Unlock.Failure.passwordNotChanged:
 				"Password not changed. Try again."
+			case Unlock.Failure.storedKeyRejected:
+				"The key saved for Touch ID no longer opens these notes. Unlock with your password."
 			case AppLock.Unreadable.unsupportedVersion:
 				"The unlock parameters were written by a newer version of Native Note. Update the app to open them."
 			case is DecodingError:

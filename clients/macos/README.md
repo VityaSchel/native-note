@@ -3,6 +3,7 @@
 Dependencies:
 
 - CryptoKit
+- LocalAuthentication
 - Security
 - [SQLCipher.swift](https://github.com/sqlcipher/SQLCipher.swift) — revision `205df55` (`4.17.0`), a prebuilt XCFramework published by Zetetic
 - [phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) — revision `f57e61e`, built from source
@@ -31,15 +32,16 @@ SQLCipher uses the **CommonCrypto** backend, not a bundled OpenSSL — `PRAGMA c
 
 Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee.
 
-Biometric unlock (planned) keeps `localDbKey` in the Keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics), so a new fingerprint cannot unlock it.
+Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics), so a new fingerprint cannot unlock it. It needs a team-signed build; the switch arrives with the settings window.
 
 ### Entitlements
 
-| Entitlement                                         | Reason     |
-| --------------------------------------------------- | ---------- |
-| `com.apple.security.app-sandbox`                    | on         |
-| `com.apple.security.network.client`                 | sync       |
-| `com.apple.security.files.user-selected.read-write` | export and import |
+| Entitlement                                         | Reason                                   |
+| --------------------------------------------------- | ---------------------------------------- |
+| `com.apple.security.app-sandbox`                    | on                                       |
+| `com.apple.security.network.client`                 | sync                                     |
+| `com.apple.security.files.user-selected.read-write` | export and import                        |
+| `keychain-access-groups`                            | Touch ID unlock, team-signed builds only |
 
 `com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Release builds must be signed for distribution so that it is dropped.
 

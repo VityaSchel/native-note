@@ -9,11 +9,13 @@ nonisolated enum Unlock {
 		case databaseMissing
 		case boundToAnotherMac
 		case passwordNotChanged
+		case storedKeyRejected
 	}
 
 	struct Unlocked {
 		let store: NoteStore
 		let parameters: UnlockParameters
+		let key: Data
 	}
 
 	static func localDbKey(password: String, parameters: UnlockParameters) throws -> Data {
@@ -63,7 +65,7 @@ nonisolated enum Unlock {
 		}
 		let store = try await NoteStore.create(url: database, key: key)
 		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
-		return Unlocked(store: store, parameters: parameters)
+		return Unlocked(store: store, parameters: parameters, key: key)
 	}
 
 	@concurrent static func open(password: String, in directory: URL) async throws -> Unlocked {
@@ -86,12 +88,26 @@ nonisolated enum Unlock {
 				let key = try await BlockingWork.run { try localDbKey(password: password, parameters: parameters) }
 				let store = try await NoteStore.open(url: database, key: key)
 				try AppLock.keep(file, in: directory)
-				return Unlocked(store: store, parameters: parameters)
+				return Unlocked(store: store, parameters: parameters, key: key)
 			} catch SQLiteError.wrongKey {
 				continue
 			}
 		}
 		throw unreadable ?? Failure.wrongPassword
+	}
+
+	@concurrent static func open(key: Data, in directory: URL) async throws -> Unlocked {
+		guard !AppLock.parameterFiles(in: directory).isEmpty else { throw Failure.neverSetUp }
+		let database = AppLock.databaseFile(in: directory)
+		let size = (try? FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int) ?? 0
+		guard size > 0 else { throw Failure.databaseMissing }
+		let store: NoteStore
+		do {
+			store = try await NoteStore.open(url: database, key: key)
+		} catch SQLiteError.wrongKey {
+			throw Failure.storedKeyRejected
+		}
+		return Unlocked(store: store, parameters: try AppLock.read(from: AppLock.currentFile(in: directory)), key: key)
 	}
 
 	@concurrent static func changePassword(
@@ -100,6 +116,7 @@ nonisolated enum Unlock {
 		parameters: UnlockParameters,
 		store: NoteStore,
 		in directory: URL,
+		storedKey: (any UnlockKeyStore)? = nil,
 		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() }
 	) async throws {
 		let database = AppLock.databaseFile(in: directory)
@@ -121,6 +138,7 @@ nonisolated enum Unlock {
 			try FileManager.default.removeItem(at: AppLock.pendingRekeyFile(in: directory))
 			throw Failure.passwordNotChanged
 		}
+		try? storedKey?.delete()
 		try AppLock.promoteRekey(in: directory)
 	}
 }

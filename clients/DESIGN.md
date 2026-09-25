@@ -92,7 +92,10 @@ Optional, off by default. When enabled, `localDbKey` is stored in the platform's
 The unlock screen always offers the password form. When biometric unlock is enabled it also offers a biometric button beside it:
 
 - Prompt dismissed, cancelled or failed to authenticate — silently return to the unlock screen. The user can press the button again or type the password.
-- Read or decryption fails — show an error, then return to the same unlock screen.
+- Read or decryption fails — show an error, forget the stored key, then return to the same unlock screen.
+- The stored key no longer opens the database — the same.
+
+Changing the password deletes the stored key, and so does setting up a new library in the same place. While a biometric prompt is up, the password form waits.
 
 ## Recovery flow
 

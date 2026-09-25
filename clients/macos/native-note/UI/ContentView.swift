@@ -20,7 +20,8 @@ struct ContentView: View {
 					isSetup: model.phase == .needsSetup,
 					failure: model.failure,
 					submit: model.submit(password:),
-					dismissFailure: model.dismissFailure
+					dismissFailure: model.dismissFailure,
+					unlockWithBiometrics: model.canUnlockWithBiometrics ? { await model.unlockWithBiometrics() } : nil
 				)
 			case .unlocked:
 				library

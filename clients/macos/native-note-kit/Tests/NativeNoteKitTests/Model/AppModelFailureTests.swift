@@ -11,6 +11,7 @@ struct AppModelFailureTests {
 		(Unlock.Failure.databaseMissing, "The notes database is missing."),
 		(Unlock.Failure.boundToAnotherMac, "These notes are bound to another Mac's Secure Enclave and cannot open here. Restore them from an export."),
 		(Unlock.Failure.passwordNotChanged, "Password not changed. Try again."),
+		(Unlock.Failure.storedKeyRejected, "The key saved for Touch ID no longer opens these notes. Unlock with your password."),
 		(AppLock.Unreadable.unsupportedVersion(2), "The unlock parameters were written by a newer version of Native Note. Update the app to open them."),
 		(SQLiteError.closed, "The notes database is closed."),
 		(SQLiteError.newerSchema(found: 2, known: 1), "The notes database was written by a newer version of Native Note. Update the app to open it."),

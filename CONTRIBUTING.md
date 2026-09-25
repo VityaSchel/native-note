@@ -52,6 +52,26 @@ to gain CI: both workflows already run over `server/` as soon as a `server/Cargo
 
 Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer on macOS 26.0. `xcodebuild` needs Xcode selected, not the Command Line Tools (`sudo xcode-select -s /Applications/Xcode.app`). The first build fetches SQLCipher and Argon2.
 
+Touch ID unlock needs a team-signed build. Put your team in `clients/macos/Local.xcconfig`, which git ignores, and pass `-allowProvisioningUpdates` to `xcodebuild`:
+
+```
+DEVELOPMENT_TEAM = <your team ID>
+NATIVE_NOTE_ENTITLEMENTS = NativeNote.entitlements
+```
+
+Without it the app builds without the keychain entitlement, Touch ID unlock is unavailable, and its keychain tests skip.
+
+On a free Personal Team the development profile expires after 7 days; rebuild before then.
+
+Build and install a Release copy:
+
+```sh
+cd clients/macos
+xcodebuild build -project native-note.xcodeproj -scheme native-note -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -allowProvisioningUpdates
+rm -rf "/Applications/Native Note.app"
+ditto "build/Build/Products/Release/Native Note.app" "/Applications/Native Note.app"
+```
+
 Package tests run without the app host:
 
 ```sh

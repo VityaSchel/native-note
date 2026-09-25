@@ -34,6 +34,12 @@ struct UnlockForm {
 		return password
 	}
 
+	mutating func begin() -> Bool {
+		guard !working else { return false }
+		working = true
+		return true
+	}
+
 	mutating func finish() {
 		working = false
 		password = ""

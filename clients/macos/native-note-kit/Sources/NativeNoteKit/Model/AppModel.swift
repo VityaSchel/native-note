@@ -19,6 +19,7 @@ import Observation
 	public private(set) var failure: Failure?
 	public private(set) var conflicts: [NoteConflict] = []
 	public private(set) var isImporting = false
+	public private(set) var canUnlockWithBiometrics = false
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -47,6 +48,8 @@ import Observation
 	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
 	private let exportParameters: Argon2.Parameters
+	private let keyStore: any UnlockKeyStore
+	private var unlockedKey: Data?
 	private var store: NoteStore?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
@@ -62,27 +65,32 @@ import Observation
 		scheduler: SaveScheduler = SaveScheduler(),
 		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters,
 		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search,
-		exportParameters: Argon2.Parameters = Argon2.floor
+		exportParameters: Argon2.Parameters = Argon2.floor,
+		keyStore: (any UnlockKeyStore)? = nil
 	) {
 		self.directory = directory
 		self.scheduler = scheduler
 		self.makeParameters = makeParameters
 		self.searchNotes = searchNotes
 		self.exportParameters = exportParameters
+		self.keyStore = keyStore ?? KeychainUnlockKeyStore(directory: directory)
 	}
 
 	public func start() {
 		phase = AppLock.parameterFiles(in: directory).isEmpty ? .needsSetup : .locked
+		refreshBiometricUnlock()
 	}
 
 	func setUp(password: String) async {
 		await openLibrary {
-			try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters).store
+			let unlocked = try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters)
+			try? self.keyStore.delete()
+			return unlocked
 		}
 	}
 
 	func unlock(password: String) async {
-		await openLibrary { try await Unlock.open(password: password, in: self.directory).store }
+		await openLibrary { try await Unlock.open(password: password, in: self.directory) }
 	}
 
 	public func submit(password: String) async {
@@ -103,6 +111,8 @@ import Observation
 		failingSaves = [:]
 		searchFailing = false
 		conflicts = []
+		unlockedKey = nil
+		refreshBiometricUnlock()
 		await scheduler.flushAll()
 		guard let closing else { return }
 		if unsavedReason == nil { await closing.close() } else { retiring = closing }
@@ -163,6 +173,57 @@ import Observation
 
 	public func dismissFailure() {
 		failure = nil
+	}
+
+	public var isBiometricUnlockEnabled: Bool {
+		keyStore.hasKey()
+	}
+
+	@discardableResult
+	public func enableBiometricUnlock() async -> Bool {
+		guard phase == .unlocked, let unlockedKey, keyStore.isAvailable else { return false }
+		do {
+			try keyStore.save(unlockedKey)
+			return true
+		} catch {
+			failure = .unexpected("Touch ID unlock could not be turned on. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
+			return false
+		}
+	}
+
+	public func disableBiometricUnlock() {
+		do {
+			try keyStore.delete()
+		} catch {
+			failure = .unexpected("Touch ID unlock could not be turned off. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
+		}
+		refreshBiometricUnlock()
+	}
+
+	public func unlockWithBiometrics() async {
+		let key: Data?
+		do {
+			key = try await keyStore.load(reason: "unlock your notes")
+		} catch {
+			forgetStoredKey(explaining: "Touch ID could not read the unlock key. Unlock with your password.")
+			return
+		}
+		guard let key, phase == .locked else { return }
+		if let error = await openLibrary({ try await Unlock.open(key: key, in: self.directory) }),
+			case Unlock.Failure.storedKeyRejected = error
+		{
+			forgetStoredKey(explaining: Failure.reason(for: error))
+		}
+	}
+
+	private func forgetStoredKey(explaining message: String) {
+		try? keyStore.delete()
+		refreshBiometricUnlock()
+		failure = .unexpected(message)
+	}
+
+	private func refreshBiometricUnlock() {
+		canUnlockWithBiometrics = phase == .locked && keyStore.isAvailable && keyStore.hasKey()
 	}
 
 	public static func isEncryptedExport(at url: URL) -> Bool {
@@ -301,13 +362,17 @@ import Observation
 		notes[index] = note
 	}
 
-	private func openLibrary(_ open: @escaping () async throws -> NoteStore) async {
+	@discardableResult
+	private func openLibrary(_ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
 		failure = nil
 		do {
-			let opened = try await open()
+			let unlocked = try await open()
+			let opened = unlocked.store
+			let loaded = try await opened.liveNotes()
 			store = opened
+			unlockedKey = unlocked.key
 			let carried = failingSaves.values.map(\.note)
-			notes = try await opened.liveNotes()
+			notes = loaded
 			for note in carried {
 				guard let index = notes.firstIndex(where: { $0.id == note.id }) else { continue }
 				notes[index] = Self.newer(note, notes[index])
@@ -320,9 +385,12 @@ import Observation
 			if let unsavedReason { failure = .unsaved(unsavedReason) }
 			if !search.isEmpty { await runSearch() }
 			phase = .unlocked
+			canUnlockWithBiometrics = false
+			return nil
 		} catch {
 			if case Unlock.Failure.alreadySetUp = error { phase = .locked }
 			failure = Failure(error)
+			return error
 		}
 	}
 

@@ -1,0 +1,3 @@
+NATIVE_NOTE_ENTITLEMENTS =
+
+#include? "Local.xcconfig"

@@ -6,6 +6,7 @@ struct UnlockView: View {
 	let failure: AppModel.Failure?
 	let submit: (String) async -> Void
 	let dismissFailure: () -> Void
+	var unlockWithBiometrics: (() async -> Void)?
 
 	@State private var form = UnlockForm()
 
@@ -37,9 +38,21 @@ struct UnlockView: View {
 					.foregroundStyle(.red)
 			}
 
-			Button(isSetup ? "Create" : "Unlock", action: send)
-				.keyboardShortcut(.defaultAction)
-				.disabled(!form.canSubmit)
+			HStack {
+				Button(isSetup ? "Create" : "Unlock", action: send)
+					.keyboardShortcut(.defaultAction)
+					.disabled(!form.canSubmit)
+				if let unlockWithBiometrics, !isSetup {
+					Button("Unlock with Touch ID", systemImage: "touchid") {
+						guard form.begin() else { return }
+						Task {
+							await unlockWithBiometrics()
+							form.finish()
+						}
+					}
+					.disabled(form.working)
+				}
+			}
 
 			if form.working {
 				ProgressView().controlSize(.small)
@@ -61,6 +74,10 @@ struct UnlockView: View {
 
 #Preview("Unlock") {
 	UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {})
+}
+
+#Preview("Unlock with Touch ID") {
+	UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}, unlockWithBiometrics: {})
 }
 
 #Preview("Unlock, wrong password") {

@@ -47,3 +47,6 @@ coverage/
 # Editors
 .idea/
 .vscode/*
+
+# Local signing
+clients/macos/Local.xcconfig

@@ -365,4 +365,132 @@ struct UnlockTests {
 		let kept = try await NoteStore.open(url: aside, key: databaseKey)
 		#expect(try await kept.liveNotes().map(\.body) == ["typed before the crash"])
 	}
+
+	@Test func aStoredKeyOpensTheLibraryAndReportsItsParameters() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let key = try Unlock.localDbKey(password: "old password", parameters: parameters)
+
+		let unlocked = try await Unlock.open(key: key, in: directory)
+
+		#expect(try await unlocked.store.liveNotes().map(\.body) == ["seeded"])
+		#expect(unlocked.parameters == parameters)
+		#expect(unlocked.key == key)
+	}
+
+	@Test func aStoredKeyThatNoLongerFitsIsRejected() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		_ = try await seed("old password", in: directory)
+
+		await #expect(throws: Unlock.Failure.storedKeyRejected) {
+			_ = try await Unlock.open(key: Data(repeating: 0x42, count: 32), in: directory)
+		}
+	}
+
+	@Test func aStoredKeyNeverCreatesTheDatabase() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+
+		await #expect(throws: Unlock.Failure.databaseMissing) {
+			_ = try await Unlock.open(key: Data(repeating: 0x42, count: 32), in: directory)
+		}
+		#expect(!FileManager.default.fileExists(atPath: AppLock.databaseFile(in: directory).path))
+		await #expect(throws: Unlock.Failure.neverSetUp) {
+			_ = try await Unlock.open(key: Data(repeating: 0x42, count: 32), in: temporaryDirectory())
+		}
+	}
+
+	@Test func changingThePasswordForgetsTheKeySavedForTouchID() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let opened = try await Unlock.open(password: "old password", in: directory)
+		let keys = FakeKeyStore()
+		try keys.save(opened.key)
+
+		try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
+
+		#expect(keys.storedKey == nil)
+	}
+
+	@Test func aPasswordChangeThatDidNotTakeKeepsTheKeySavedForTouchID() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let opened = try await Unlock.open(password: "old password", in: directory)
+		let keys = FakeKeyStore()
+		try keys.save(opened.key)
+
+		await #expect(throws: Unlock.Failure.wrongPassword) {
+			try await Unlock.changePassword(from: "guess", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
+		}
+
+		#expect(keys.storedKey == opened.key)
+	}
+
+	@Test func aStoredKeyOnANewerDatabaseSaysSoRatherThanRejectingTheKey() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let key = try Unlock.localDbKey(password: "old password", parameters: parameters)
+		try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: key).execute("PRAGMA user_version = 99")
+
+		await #expect(throws: SQLiteError.self) {
+			_ = try await Unlock.open(key: key, in: directory)
+		}
+	}
+
+	@Test func aStoredKeyReportsTheCurrentParametersWhenARekeyIsPending() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		var pending = parameters
+		pending.localSalt = Data(repeating: 0x99, count: 16)
+		try AppLock.write(pending, to: AppLock.pendingRekeyFile(in: directory))
+
+		let unlocked = try await Unlock.open(key: try Unlock.localDbKey(password: "old password", parameters: parameters), in: directory)
+
+		#expect(unlocked.parameters == parameters)
+	}
+
+	@Test func aPasswordChangeThatDoesNotTakeKeepsTheKeySavedForTouchID() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let opened = try await Unlock.open(password: "old password", in: directory)
+		let keys = FakeKeyStore()
+		try keys.save(opened.key)
+		let writer = try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: opened.key)
+		try writer.execute("BEGIN IMMEDIATE")
+
+		await #expect(throws: Unlock.Failure.passwordNotChanged) {
+			try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
+		}
+		try writer.execute("ROLLBACK")
+
+		#expect(keys.storedKey == opened.key)
+	}
+
+	@Test func aPasswordChangeThatCannotPromoteStillForgetsTheOldKey() async throws {
+		let directory = temporaryDirectory()
+		let current = AppLock.currentFile(in: directory)
+		defer {
+			try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: current.path)
+			try? FileManager.default.removeItem(at: directory)
+		}
+		let parameters = try await seed("old password", in: directory)
+		let opened = try await Unlock.open(password: "old password", in: directory)
+		let keys = FakeKeyStore()
+		try keys.save(opened.key)
+		try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: current.path)
+
+		await #expect(throws: (any Error).self) {
+			try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
+		}
+
+		#expect(keys.storedKey == nil)
+	}
 }

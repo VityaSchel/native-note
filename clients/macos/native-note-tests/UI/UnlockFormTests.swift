@@ -44,6 +44,23 @@ struct UnlockFormTests {
 		#expect(!form.mismatched)
 	}
 
+	@Test func aTouchIDAttemptHoldsTheFormUntilItFinishes() {
+		var form = UnlockForm()
+		form.password = "correct horse"
+
+		let first = form.begin()
+		let second = form.begin()
+		let submitted = form.submit(confirming: false)
+
+		#expect(first)
+		#expect(!second)
+		#expect(!form.canSubmit)
+		#expect(submitted == nil)
+
+		form.finish()
+		#expect(!form.working)
+	}
+
 	@Test func unlockIgnoresTheConfirmationField() {
 		var form = UnlockForm()
 		form.password = "correct horse"
