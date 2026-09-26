@@ -107,8 +107,8 @@ struct NoteEditor: NSViewRepresentable {
 
 		fileprivate static let bodyParagraphStyle: NSParagraphStyle = {
 			let style = NSMutableParagraphStyle()
-			style.lineHeightMultiple = 1.0
-			style.paragraphSpacing = 8
+			style.lineSpacing = 3
+			style.paragraphSpacing = 2
 			return style
 		}()
 
@@ -124,7 +124,7 @@ struct NoteEditor: NSViewRepresentable {
 		private static let headingStyle: [NSAttributedString.Key: Any] = {
 			let style = NSMutableParagraphStyle()
 			style.lineHeightMultiple = 1.15
-			style.paragraphSpacing = 14
+			style.paragraphSpacing = 8
 			return [
 				.font: NSFont.preferredFont(forTextStyle: .largeTitle).bold,
 				.paragraphStyle: style,

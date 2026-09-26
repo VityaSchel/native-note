@@ -19,6 +19,24 @@ struct NoteEditorTests {
 		#expect(editor.pointSize(at: 0) == headingSize)
 	}
 
+	@Test func linesWrittenOneAtATimeSitCloseTogether() throws {
+		let editor = Editor("Weekend\nmilk\nbread\na new kettle")
+		let layout = try #require(editor.textView.textLayoutManager)
+		var fragments: [CGRect] = []
+		layout.enumerateTextLayoutFragments(from: layout.documentRange.location, options: [.ensuresLayout]) { fragment in
+			fragments.append(fragment.layoutFragmentFrame)
+			return true
+		}
+		try #require(fragments.count == 4)
+		let lineHeight = NSLayoutManager().defaultLineHeight(for: NSFont.preferredFont(forTextStyle: .body))
+
+		for (upper, lower) in zip(fragments[1...], fragments[2...]) {
+			#expect(lower.minY - upper.minY - lineHeight <= 6, "body lines are \(lower.minY - upper.minY) pt apart for a \(lineHeight) pt line")
+		}
+		let titleHeight = NSLayoutManager().defaultLineHeight(for: NSFont.preferredFont(forTextStyle: .largeTitle)) * 1.15
+		#expect(fragments[1].minY - fragments[0].minY - titleHeight <= 10, "the body starts \(fragments[1].minY - fragments[0].minY) pt below a \(titleHeight) pt title")
+	}
+
 	@Test func aChangeToAttributesAloneIsIgnored() {
 		let editor = Editor("Title\nbody")
 		let body = NSRange(location: 6, length: 4)
