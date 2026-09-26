@@ -37,6 +37,20 @@ struct ContentViewTests {
 		#expect(model.selectedNote?.body == "Title typed")
 	}
 
+	@Test func theToolbarNamesTheNotebookAndCountsItsNotes() async throws {
+		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { offscreen.close() }
+
+		#expect(offscreen.window.title == "All notes")
+		#expect(offscreen.window.subtitle == "2 notes")
+
+		await model.deleteSelected()
+		await offscreen.pump { offscreen.window.subtitle != "2 notes" }
+
+		#expect(offscreen.window.subtitle == "1 note")
+	}
+
 	@Test func closingTheWindowSavesAtOnce() async throws {
 		let (model, directory, offscreen) = try await library(["Title"])
 		defer { try? FileManager.default.removeItem(at: directory) }

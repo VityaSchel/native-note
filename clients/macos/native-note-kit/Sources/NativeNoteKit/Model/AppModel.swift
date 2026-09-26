@@ -43,6 +43,10 @@ import Observation
 		selection.flatMap { id in notes.first { $0.id == id } }
 	}
 
+	public var noteCount: Int {
+		notes.count
+	}
+
 	private let directory: URL
 	private let scheduler: SaveScheduler
 	private let makeParameters: @Sendable () throws -> UnlockParameters

@@ -32,6 +32,10 @@ struct ContentView: View {
 		.onDisappear { Task { await model.flushPendingSaves() } }
 	}
 
+	static func noteCount(_ count: Int) -> String {
+		count == 1 ? "1 note" : "\(count) notes"
+	}
+
 	private var library: some View {
 		NavigationSplitView {
 			List {
@@ -41,6 +45,8 @@ struct ContentView: View {
 		} content: {
 			NoteListView(groups: model.groups, selection: $model.selection, search: $model.search)
 				.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
+				.navigationTitle("All notes")
+				.navigationSubtitle(Self.noteCount(model.noteCount))
 				.onChange(of: model.search) { Task { await model.runSearch() } }
 				.alert(exchange.lastImport?.message ?? "", isPresented: $exchange.showsSummary) {
 					Button("OK") {}
