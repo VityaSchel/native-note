@@ -30,7 +30,7 @@ struct SessionEndToEndTests {
 		let first = try field("Password", in: window)
 		try type(password, into: first, of: window)
 		if confirming {
-			try type(password, into: try field("Confirm password", in: window), of: window)
+			try type(password, into: try field("Confirm Password", in: window), of: window)
 		}
 		first.currentEditor()?.insertNewline(nil) ?? window.window.firstResponder?.insertNewline(nil)
 	}

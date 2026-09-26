@@ -12,18 +12,24 @@ struct UnlockView: View {
 
 	@State private var form = UnlockForm()
 	@State private var confirmingErase = false
+	@State private var touchingID = false
 
 	var body: some View {
-		VStack(spacing: 16) {
-			Text(isSetup ? "Set an unlock password" : "Native Note")
-				.font(.title2.weight(.semibold))
+		VStack(spacing: 18) {
+			Image(systemName: isSetup ? "key.shield.fill" : "lock.shield.fill")
+				.font(.system(size: 56))
+				.foregroundStyle(.tint)
 
-			if isSetup {
-				Text("Notes are encrypted with this password. It cannot be recovered.")
-					.font(.callout)
-					.foregroundStyle(.secondary)
-					.multilineTextAlignment(.center)
-					.fixedSize(horizontal: false, vertical: true)
+			VStack(spacing: 6) {
+				Text(isSetup ? "Set an Unlock Password" : "Native Note")
+					.font(.largeTitle.bold())
+				if isSetup {
+					Text("Notes are encrypted with this password. It cannot be recovered.")
+						.font(.callout)
+						.foregroundStyle(.secondary)
+						.multilineTextAlignment(.center)
+						.fixedSize(horizontal: false, vertical: true)
+				}
 			}
 
 			if let setupWarning {
@@ -33,44 +39,50 @@ struct UnlockView: View {
 					.fixedSize(horizontal: false, vertical: true)
 			}
 
-			SecureField("Password", text: $form.password)
-				.textFieldStyle(.roundedBorder)
-				.onSubmit(send)
-
-			if isSetup {
-				SecureField("Confirm password", text: $form.confirmation)
-					.textFieldStyle(.roundedBorder)
+			VStack(spacing: 10) {
+				SecureField("Password", text: $form.password)
 					.onSubmit(send)
+				if isSetup {
+					SecureField("Confirm Password", text: $form.confirmation)
+						.onSubmit(send)
+				}
 			}
+			.textFieldStyle(.roundedBorder)
+			.controlSize(.extraLarge)
 
-			if let inlineMessage = form.inlineMessage(for: failure) {
-				Text(inlineMessage)
-					.font(.callout)
-					.foregroundStyle(.red)
-			}
+			Text(form.inlineMessage(for: failure) ?? " ")
+				.font(.callout)
+				.foregroundStyle(.red)
+				.frame(minHeight: 18)
 
-			HStack {
-				Button(isSetup ? "Create" : "Unlock", action: send)
-					.keyboardShortcut(.defaultAction)
-					.disabled(!form.canSubmit)
+			VStack(spacing: 10) {
+				Button(action: send) {
+					working(isSetup ? "Create" : "Unlock", spinning: form.working && !touchingID)
+				}
+				.buttonStyle(.glassProminent)
+				.keyboardShortcut(.defaultAction)
+				.disabled(!form.canSubmit)
+
 				if let unlockWithBiometrics, !isSetup {
-					Button("Unlock with Touch ID", systemImage: "touchid") {
+					Button {
 						guard form.begin() else { return }
+						touchingID = true
 						Task {
 							await unlockWithBiometrics()
+							touchingID = false
 							form.finish()
 						}
+					} label: {
+						working(Label("Unlock with Touch ID", systemImage: "touchid"), spinning: touchingID)
 					}
+					.buttonStyle(.glass)
 					.disabled(form.working)
 				}
 			}
-
-			if form.working {
-				ProgressView().controlSize(.small)
-			}
+			.controlSize(.extraLarge)
 
 			if eraseLibrary != nil, !isSetup {
-				Button("Forgot password?") { confirmingErase = true }
+				Button("Forgot Password?") { confirmingErase = true }
 					.buttonStyle(.link)
 					.disabled(form.working)
 			}
@@ -80,9 +92,23 @@ struct UnlockView: View {
 		} message: {
 			Text(Self.eraseMessage)
 		}
+		.frame(width: 300)
 		.padding(32)
-		.frame(width: 360)
 		.failureAlert(failure, dismiss: dismissFailure)
+	}
+
+	private func working(_ title: String, spinning: Bool) -> some View {
+		working(Text(title), spinning: spinning)
+	}
+
+	private func working(_ label: some View, spinning: Bool) -> some View {
+		ZStack {
+			label.opacity(spinning ? 0 : 1)
+			if spinning {
+				ProgressView().controlSize(.small)
+			}
+		}
+		.frame(maxWidth: .infinity)
 	}
 
 	var setupWarning: String? {

@@ -35,7 +35,7 @@ struct UnlockViewTests {
 		let offscreen = OffscreenWindow(UnlockView(isSetup: true, failure: nil, submit: { submitted.append($0) }, dismissFailure: {}))
 		defer { offscreen.close() }
 		let password = try field("Password", in: offscreen)
-		let confirmation = try field("Confirm password", in: offscreen)
+		let confirmation = try field("Confirm Password", in: offscreen)
 
 		try type("correct horse", into: password, of: offscreen)
 		try type("correct horse", into: confirmation, of: offscreen)
@@ -50,7 +50,7 @@ struct UnlockViewTests {
 		let offscreen = OffscreenWindow(UnlockView(isSetup: true, failure: nil, submit: { submitted.append($0) }, dismissFailure: {}))
 		defer { offscreen.close() }
 		let password = try field("Password", in: offscreen)
-		let confirmation = try field("Confirm password", in: offscreen)
+		let confirmation = try field("Confirm Password", in: offscreen)
 
 		try type("correct horse", into: password, of: offscreen)
 		try type("correct hose", into: confirmation, of: offscreen)
