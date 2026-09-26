@@ -33,7 +33,7 @@ struct NoteEditor: NSViewRepresentable {
 		textView.isVerticallyResizable = true
 		textView.textContainer?.widthTracksTextView = true
 		textView.defaultParagraphStyle = Coordinator.bodyParagraphStyle
-		textView.typingAttributes = Coordinator.bodyAttributes
+		textView.typingAttributes = Coordinator.headingAttributes
 
 		let scrollView = NSScrollView()
 		scrollView.documentView = textView
@@ -98,6 +98,16 @@ struct NoteEditor: NSViewRepresentable {
 			finishEdit()
 		}
 
+		func textViewDidChangeSelection(_ notification: Notification) {
+			guard let textView, !textView.hasMarkedText() else { return }
+			let text = textView.string as NSString
+			let newline = text.rangeOfCharacter(from: .newlines)
+			let titleEnd = newline.location == NSNotFound ? text.length : newline.location
+			let typing = textView.selectedRange().location <= titleEnd ? Self.headingAttributes : Self.bodyAttributes
+			guard textView.typingAttributes[.font] as? NSFont != typing[.font] as? NSFont else { return }
+			textView.typingAttributes = typing
+		}
+
 		@objc fileprivate func finishEdit() {
 			pushText()
 			guard let storage = editedStorage else { return }
@@ -120,6 +130,8 @@ struct NoteEditor: NSViewRepresentable {
 		]
 
 		fileprivate static let bodyAttributes = bodyStyle.merging([.foregroundColor: NSColor.textColor]) { $1 }
+
+		fileprivate static let headingAttributes = headingStyle.merging([.foregroundColor: NSColor.textColor]) { $1 }
 
 		private static let headingStyle: [NSAttributedString.Key: Any] = {
 			let style = NSMutableParagraphStyle()

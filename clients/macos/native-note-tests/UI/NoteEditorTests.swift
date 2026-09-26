@@ -47,6 +47,31 @@ struct NoteEditorTests {
 		#expect(glyph(of: "a", in: bodyFont) != glyph(of: "a", in: NSFont.preferredFont(forTextStyle: .body)))
 	}
 
+	@Test func anEmptyNoteTypesItsTitleAtTitleSize() {
+		let editor = Editor("")
+
+		#expect((editor.textView.typingAttributes[.font] as? NSFont)?.pointSize == headingSize)
+	}
+
+	@Test func aClearedTitleLineKeepsTheTitleSize() {
+		let editor = Editor("Title\nbody")
+		editor.textView.setSelectedRange(NSRange(location: 5, length: 0))
+
+		for _ in 0 ..< 5 { editor.textView.deleteBackward(nil) }
+
+		#expect(editor.textView.string == "\nbody")
+		#expect(editor.textView.selectedRange().location == 0)
+		#expect((editor.textView.typingAttributes[.font] as? NSFont)?.pointSize == headingSize)
+	}
+
+	@Test func theBodyTypesAtBodySize() {
+		let editor = Editor("Title\nbody")
+
+		editor.textView.setSelectedRange(NSRange(location: 8, length: 0))
+
+		#expect((editor.textView.typingAttributes[.font] as? NSFont)?.pointSize == bodySize)
+	}
+
 	@Test func aChangeToAttributesAloneIsIgnored() {
 		let editor = Editor("Title\nbody")
 		let body = NSRange(location: 6, length: 4)
