@@ -16,6 +16,22 @@ private enum Hex {
 	}
 }
 
+enum VectorFile: String, CaseIterable {
+	case argon2, hkdf, export
+	case blinding, content, note, frames, envelope, padding, sync
+	case mnemonic, pairing
+
+	var deferredToPhase: Int? {
+		switch self {
+		case .argon2, .hkdf, .export: nil
+		case .blinding, .content, .note, .frames, .envelope, .padding, .sync: 5
+		case .mnemonic, .pairing: 6
+		}
+	}
+
+	var fileName: String { "\(rawValue).json" }
+}
+
 enum Vectors {
 	struct Case {
 		let name: String
@@ -42,10 +58,11 @@ enum Vectors {
 		}
 	}
 
-	static func load(_ file: String) throws -> [Case] {
-		let url = try bundledVectorsDirectory.appending(path: file)
+	static func load(_ file: VectorFile) throws -> [Case] {
+		try #require(file.deferredToPhase == nil, "\(file.fileName) is listed as deferred")
+		let url = try bundledVectorsDirectory.appending(path: file.fileName)
 		let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
-		let cases = try #require((object as? [String: Any])?["cases"] as? [[String: Any]], "\(file) has no cases")
+		let cases = try #require((object as? [String: Any])?["cases"] as? [[String: Any]], "\(file.fileName) has no cases")
 		return cases.map { Case(name: $0["name"] as? String ?? "unnamed", fields: $0) }
 	}
 }

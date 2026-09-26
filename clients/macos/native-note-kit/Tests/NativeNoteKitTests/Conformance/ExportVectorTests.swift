@@ -12,7 +12,7 @@ struct ExportVectorTests {
 		let salt: Data
 
 		init() throws {
-			vector = try #require(try Vectors.load("export.json").first { $0.name == "export" })
+			vector = try #require(try Vectors.load(.export).first { $0.name == "export" })
 			passphrase = try #require(vector.string("passphrase"))
 			parameters = Argon2.Parameters(
 				m: UInt32(try #require(vector.int("m"))),
@@ -47,7 +47,7 @@ struct ExportVectorTests {
 	}
 
 	@Test func everyCaseOpensOrIsRejectedAsDeclared() throws {
-		let cases = try Vectors.load("export.json")
+		let cases = try Vectors.load(.export)
 		#expect(cases.count == 7)
 
 		for vector in cases {

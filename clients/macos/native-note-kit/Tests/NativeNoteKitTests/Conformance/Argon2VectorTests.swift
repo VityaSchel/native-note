@@ -5,7 +5,7 @@ import Testing
 
 struct Argon2VectorTests {
 	@Test func matchesTheReferenceImplementation() throws {
-		for vector in try Vectors.load("argon2.json") {
+		for vector in try Vectors.load(.argon2) {
 			let parameters = Argon2.Parameters(
 				m: UInt32(try #require(vector.int("m"))),
 				t: UInt32(try #require(vector.int("t"))),

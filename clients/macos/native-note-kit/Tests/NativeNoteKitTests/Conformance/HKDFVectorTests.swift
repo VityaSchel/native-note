@@ -5,7 +5,7 @@ import Testing
 
 struct HKDFVectorTests {
 	@Test func everyLabelMatches() throws {
-		let cases = try Vectors.load("hkdf.json")
+		let cases = try Vectors.load(.hkdf)
 		#expect(!cases.isEmpty)
 
 		for vector in cases {
@@ -26,7 +26,7 @@ struct HKDFVectorTests {
 	}
 
 	@Test func labelConstantsMatchTheSpec() throws {
-		let labels = try Vectors.load("hkdf.json").reduce(into: [String: String]()) { labels, vector in
+		let labels = try Vectors.load(.hkdf).reduce(into: [String: String]()) { labels, vector in
 			labels[vector.name] = vector.string("info")
 		}
 
@@ -38,7 +38,7 @@ struct HKDFVectorTests {
 	}
 
 	@Test func localDbKeyConcatenatesArgonOutputAndMachineId() throws {
-		let vector = try #require(try Vectors.load("hkdf.json").first { $0.name == "localDbKey" })
+		let vector = try #require(try Vectors.load(.hkdf).first { $0.name == "localDbKey" })
 
 		let key = KeyDerivation.localDbKey(
 			argonOut: try vector.require("argonOut"),
