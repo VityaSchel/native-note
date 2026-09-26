@@ -23,7 +23,8 @@ struct ContentView: View {
 					dismissFailure: model.dismissFailure,
 					unlockWithBiometrics: model.canUnlockWithBiometrics ? { await model.unlockWithBiometrics() } : nil,
 					eraseLibrary: { Task { await model.eraseLibrary() } },
-					hasSecureEnclave: AppModel.hasSecureEnclave
+					hasSecureEnclave: AppModel.hasSecureEnclave,
+					promptsTouchID: model.offersBiometricUnlock
 				)
 			case .unlocked:
 				library

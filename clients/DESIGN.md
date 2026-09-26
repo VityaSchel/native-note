@@ -105,6 +105,8 @@ The unlock screen always offers the password form. When biometric unlock is enab
 
 Changing the password deletes the stored key, and so does setting up a new library in the same place. While a biometric prompt is up, the password form waits.
 
+The unlock screen opens the biometric prompt by itself when the app starts locked and when the user returns to the locked app, so a touch unlocks without a click. It does not right after the user locks, and a return caused by the prompt itself does not count.
+
 ## Recovery flow
 
 Only applicable for when server and e2ee sync are configured. [Recovery key](../docs/PROTOCOL.md#recovery-key) is used to decrypt server-stored [Content key](../docs/PROTOCOL.md#content-key) blob. Recovery key only restores Content key, so on its own it's not enough to configure a new device for sync.

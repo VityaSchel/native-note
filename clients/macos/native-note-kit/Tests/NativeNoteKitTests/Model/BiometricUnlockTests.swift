@@ -315,4 +315,94 @@ struct BiometricUnlockTests {
 		#expect(keys.storedKey == nil)
 		#expect(!model.canUnlockWithBiometrics)
 	}
+
+	@Test func aLibraryThatStartsLockedOffersTouchIDRightAway() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		#expect(await model.enableBiometricUnlock())
+		await model.lock()
+
+		let relaunched = AppModel(directory: directory, keyStore: keys)
+		relaunched.start()
+
+		#expect(relaunched.offersBiometricUnlock)
+	}
+
+	@Test func lockingByHandOffersTouchIDOnlyOnceTheAppIsReturnedTo() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		#expect(await model.enableBiometricUnlock())
+
+		await model.lock()
+		#expect(!model.offersBiometricUnlock)
+		model.offerBiometricUnlock()
+
+		#expect(model.offersBiometricUnlock)
+	}
+
+	@Test func typingThePasswordInsteadDropsTheOffer() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		#expect(await model.enableBiometricUnlock())
+		await model.lock()
+		let relaunched = AppModel(directory: directory, keyStore: keys)
+		relaunched.start()
+		#expect(relaunched.offersBiometricUnlock)
+
+		await relaunched.submit(password: workspacePassword)
+		#expect(relaunched.phase == .unlocked)
+		await relaunched.lock()
+
+		#expect(!relaunched.offersBiometricUnlock)
+	}
+
+	@Test func nothingIsOfferedWithoutTouchIDOrWhileUnlocked() async throws {
+		let (model, directory) = try await library(FakeKeyStore())
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		model.offerBiometricUnlock()
+		#expect(!model.offersBiometricUnlock)
+		await model.lock()
+		model.offerBiometricUnlock()
+		#expect(!model.offersBiometricUnlock)
+	}
+
+	@Test func thePromptTakesTheOfferAndRefusesNewOnesWhileItIsUp() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		#expect(await model.enableBiometricUnlock())
+		await model.lock()
+		model.offerBiometricUnlock()
+		let seen = PromptState()
+		keys.reply(with: .cancel)
+		keys.whileLoading {
+			let state = await MainActor.run {
+				model.offerBiometricUnlock()
+				return (model.isPromptingBiometrics, model.offersBiometricUnlock)
+			}
+			await seen.record(prompting: state.0, offered: state.1)
+		}
+
+		await model.unlockWithBiometrics()
+
+		#expect(await seen.prompting)
+		#expect(await !seen.offered)
+		#expect(!model.isPromptingBiometrics)
+		#expect(!model.offersBiometricUnlock)
+		#expect(model.phase == .locked)
+	}
+}
+
+private actor PromptState {
+	private(set) var prompting = false
+	private(set) var offered = true
+
+	func record(prompting: Bool, offered: Bool) {
+		self.prompting = prompting
+		self.offered = offered
+	}
 }

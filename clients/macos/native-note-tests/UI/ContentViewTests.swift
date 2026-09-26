@@ -124,6 +124,30 @@ struct ContentViewTests {
 		#expect(offscreen.window.firstResponder === list)
 	}
 
+	@Test func returningToTheLockedAppUnlocksWithATouch() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await unlockedModel { [alarm] directory in
+			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
+		}
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try await fill(model, with: ["kayak"])
+		#expect(await model.enableBiometricUnlock())
+		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
+		defer { offscreen.close() }
+
+		await model.lock()
+		offscreen.pump(for: 0.2)
+		#expect(model.phase == .locked)
+		#expect(keys.reasons == ["turn on Touch ID unlock"])
+
+		model.offerBiometricUnlock()
+		await offscreen.pump { model.phase == .unlocked }
+
+		#expect(model.phase == .unlocked)
+		#expect(keys.reasons.last == "unlock your notes")
+		#expect(model.notes.map(\.body) == ["kayak"])
+	}
+
 	@Test func closingTheWindowSavesAtOnce() async throws {
 		let (model, directory, offscreen) = try await library(["Title"])
 		defer { try? FileManager.default.removeItem(at: directory) }

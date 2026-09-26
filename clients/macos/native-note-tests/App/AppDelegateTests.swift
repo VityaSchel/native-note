@@ -91,6 +91,51 @@ struct AppDelegateTests {
 		#expect(try await observer(of: directory).note(id: id)?.body == "typed while the database was busy")
 	}
 
+	private func lockedWithTouchID(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
+		let (model, directory) = try await unlockedModel { [alarm] directory in
+			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
+		}
+		#expect(await model.enableBiometricUnlock())
+		await model.lock()
+		return (model, directory)
+	}
+
+	@Test func returningToTheLockedAppOffersTouchID() async throws {
+		let (model, directory) = try await lockedWithTouchID(FakeKeyStore())
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
+		#expect(!model.offersBiometricUnlock)
+
+		delegate.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
+		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+
+		#expect(model.offersBiometricUnlock)
+	}
+
+	@Test func theTouchIDPromptTakingFocusDoesNotAskAgain() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await lockedWithTouchID(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
+		let (answer, answered) = AsyncStream<Void>.makeStream()
+		keys.reply(with: .cancel)
+		keys.whileLoading {
+			for await _ in answer { break }
+		}
+
+		let prompt = Task { await model.unlockWithBiometrics() }
+		await settle { model.isPromptingBiometrics }
+		delegate.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
+		answered.yield()
+		await prompt.value
+		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+		#expect(!model.offersBiometricUnlock)
+
+		delegate.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
+		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+		#expect(model.offersBiometricUnlock)
+	}
+
 	@Test func theQuitAlertOnlyQuitsOnAnExplicitClick() {
 		let alert = AppDelegate.quitLosingEditsAlert("disk I/O error")
 

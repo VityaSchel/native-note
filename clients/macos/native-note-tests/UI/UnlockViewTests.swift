@@ -70,4 +70,28 @@ struct UnlockViewTests {
 		#expect(warning(isSetup: true, hasSecureEnclave: true) == nil)
 		#expect(warning(isSetup: false, hasSecureEnclave: false) == nil)
 	}
+
+	@Test func aTouchIDOfferStartsThePromptWithoutAClick() async {
+		var prompts = 0
+		let offscreen = OffscreenWindow(
+			UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}, unlockWithBiometrics: { prompts += 1 }, promptsTouchID: true)
+		)
+		defer { offscreen.close() }
+
+		await offscreen.pump { prompts > 0 }
+
+		#expect(prompts == 1)
+	}
+
+	@Test func withoutAnOfferTouchIDWaitsForAClick() {
+		var prompts = 0
+		let offscreen = OffscreenWindow(
+			UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}, unlockWithBiometrics: { prompts += 1 })
+		)
+		defer { offscreen.close() }
+
+		offscreen.pump(for: 0.1)
+
+		#expect(prompts == 0)
+	}
 }

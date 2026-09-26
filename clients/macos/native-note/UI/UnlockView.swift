@@ -9,6 +9,7 @@ struct UnlockView: View {
 	var unlockWithBiometrics: (() async -> Void)?
 	var eraseLibrary: (() -> Void)?
 	var hasSecureEnclave = true
+	var promptsTouchID = false
 
 	@State private var form = UnlockForm()
 	@State private var confirmingErase = false
@@ -63,16 +64,8 @@ struct UnlockView: View {
 				.keyboardShortcut(.defaultAction)
 				.disabled(!form.canSubmit)
 
-				if let unlockWithBiometrics, !isSetup {
-					Button {
-						guard form.begin() else { return }
-						touchingID = true
-						Task {
-							await unlockWithBiometrics()
-							touchingID = false
-							form.finish()
-						}
-					} label: {
+				if unlockWithBiometrics != nil, !isSetup {
+					Button(action: touchID) {
 						working(Label("Unlock with Touch ID", systemImage: "touchid"), spinning: touchingID)
 					}
 					.buttonStyle(.glass)
@@ -86,6 +79,9 @@ struct UnlockView: View {
 					.buttonStyle(.link)
 					.disabled(form.working)
 			}
+		}
+		.onChange(of: promptsTouchID, initial: true) { _, prompts in
+			if prompts { touchID() }
 		}
 		.confirmationDialog(Self.eraseTitle, isPresented: $confirmingErase) {
 			Button(Self.eraseAction, role: .destructive) { eraseLibrary?() }
@@ -119,6 +115,16 @@ struct UnlockView: View {
 	static let eraseTitle = "Erase all notes and start over?"
 	static let eraseAction = "Erase Notes"
 	static let eraseMessage = "Without the password these notes cannot be recovered. Erasing deletes every note on this Mac and returns to setup."
+
+	private func touchID() {
+		guard let unlockWithBiometrics, !isSetup, form.begin() else { return }
+		touchingID = true
+		Task {
+			await unlockWithBiometrics()
+			touchingID = false
+			form.finish()
+		}
+	}
 
 	private func send() {
 		guard let password = form.submit(confirming: isSetup) else { return }

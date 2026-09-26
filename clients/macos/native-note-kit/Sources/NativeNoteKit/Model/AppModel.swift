@@ -21,6 +21,8 @@ import Observation
 	public private(set) var isImporting = false
 	public private(set) var canUnlockWithBiometrics = false
 	public private(set) var isBiometricUnlockEnabled = false
+	public private(set) var offersBiometricUnlock = false
+	public private(set) var isPromptingBiometrics = false
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -102,6 +104,12 @@ import Observation
 	public func start() {
 		phase = AppLock.parameterFiles(in: directory).isEmpty ? .needsSetup : .locked
 		refreshBiometricUnlock()
+		offerBiometricUnlock()
+	}
+
+	public func offerBiometricUnlock() {
+		guard canUnlockWithBiometrics, !isPromptingBiometrics else { return }
+		offersBiometricUnlock = true
 	}
 
 	func setUp(password: String) async {
@@ -127,6 +135,7 @@ import Observation
 	public func lock() async {
 		let closing = store
 		phase = .locked
+		offersBiometricUnlock = false
 		selection = nil
 		notes = []
 		store = nil
@@ -292,9 +301,10 @@ import Observation
 	}
 
 	public func unlockWithBiometrics() async {
+		offersBiometricUnlock = false
 		let key: Data?
 		do {
-			key = try await keyStore.load(reason: "unlock your notes")
+			key = try await promptForStoredKey()
 		} catch {
 			forgetStoredKey(explaining: "Touch ID could not read the unlock key. Unlock with your password.")
 			return
@@ -305,6 +315,12 @@ import Observation
 		{
 			forgetStoredKey(explaining: Failure.reason(for: error))
 		}
+	}
+
+	private func promptForStoredKey() async throws -> Data? {
+		isPromptingBiometrics = true
+		defer { isPromptingBiometrics = false }
+		return try await keyStore.load(reason: "unlock your notes")
 	}
 
 	private func forgetStoredKey(explaining message: String) {
