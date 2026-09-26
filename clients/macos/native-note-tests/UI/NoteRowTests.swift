@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import NativeNoteKit
 import SwiftUI
 import Testing
@@ -44,6 +45,15 @@ struct NoteRowTests {
 		#expect(height == 56, "a narrow row is \(height) pt tall")
 	}
 
+	@Test func theRowWritesASingleStoreyALikeAppleNotes() {
+		let context = EnvironmentValues().fontResolutionContext
+
+		for (font, plain) in [(NoteRow.titleFont, Font.headline), (NoteRow.detailFont, Font.callout)] {
+			#expect(glyph(of: "a", in: font.resolve(in: context).ctFont) != glyph(of: "a", in: plain.resolve(in: context).ctFont))
+			#expect(glyph(of: "b", in: font.resolve(in: context).ctFont) == glyph(of: "b", in: plain.resolve(in: context).ctFont))
+		}
+	}
+
 	@Test func theFontsMatchAppleNotes() {
 		let context = EnvironmentValues().fontResolutionContext
 		let title = NoteRow.titleFont.resolve(in: context)
@@ -62,4 +72,12 @@ struct NoteRowTests {
 		#expect(row.displayTitle == "Title")
 		#expect(row.displayPreview == "body")
 	}
+}
+
+func glyph(of character: String, in font: CTFont) -> CGGlyph {
+	let line = CTLineCreateWithAttributedString(NSAttributedString(string: character, attributes: [.font: font]))
+	let run = (CTLineGetGlyphRuns(line) as? [CTRun])?.first
+	var glyph = CGGlyph()
+	if let run { CTRunGetGlyphs(run, CFRange(location: 0, length: 1), &glyph) }
+	return glyph
 }

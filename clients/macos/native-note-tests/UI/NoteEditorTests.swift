@@ -37,6 +37,16 @@ struct NoteEditorTests {
 		#expect(fragments[1].minY - fragments[0].minY - titleHeight <= 10, "the body starts \(fragments[1].minY - fragments[0].minY) pt below a \(titleHeight) pt title")
 	}
 
+	@Test func theTitleAndBodyWriteASingleStoreyALikeAppleNotes() throws {
+		let editor = Editor("Pasta\nbasil and garlic")
+		let storage = try #require(editor.textView.textStorage)
+		let titleFont = try #require(storage.attribute(.font, at: 1, effectiveRange: nil) as? NSFont)
+		let bodyFont = try #require(storage.attribute(.font, at: 7, effectiveRange: nil) as? NSFont)
+
+		#expect(glyph(of: "a", in: titleFont) != glyph(of: "a", in: NSFontManager.shared.convert(NSFont.preferredFont(forTextStyle: .largeTitle), toHaveTrait: .boldFontMask)))
+		#expect(glyph(of: "a", in: bodyFont) != glyph(of: "a", in: NSFont.preferredFont(forTextStyle: .body)))
+	}
+
 	@Test func aChangeToAttributesAloneIsIgnored() {
 		let editor = Editor("Title\nbody")
 		let body = NSRange(location: 6, length: 4)

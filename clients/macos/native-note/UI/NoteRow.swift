@@ -2,8 +2,8 @@ import NativeNoteKit
 import SwiftUI
 
 struct NoteRow: View {
-	static let titleFont = Font.headline
-	static let detailFont = Font.callout
+	static let titleFont = Font(NSFont.preferredFont(forTextStyle: .headline).withSingleStoreyA as CTFont)
+	static let detailFont = Font(NSFont.preferredFont(forTextStyle: .callout).withSingleStoreyA as CTFont)
 
 	let note: Note
 	let now: Date

@@ -112,7 +112,7 @@ struct NoteEditor: NSViewRepresentable {
 			return style
 		}()
 
-		private static let bodyFont = NSFont.preferredFont(forTextStyle: .body)
+		private static let bodyFont = NSFont.preferredFont(forTextStyle: .body).withSingleStoreyA
 
 		private static let bodyStyle: [NSAttributedString.Key: Any] = [
 			.font: bodyFont,
@@ -126,7 +126,7 @@ struct NoteEditor: NSViewRepresentable {
 			style.lineHeightMultiple = 1.15
 			style.paragraphSpacing = 8
 			return [
-				.font: NSFont.preferredFont(forTextStyle: .largeTitle).bold,
+				.font: NSFont.preferredFont(forTextStyle: .largeTitle).bold.withSingleStoreyA,
 				.paragraphStyle: style,
 			]
 		}()
