@@ -8,13 +8,18 @@ struct NoteListView: View {
 	@Binding var search: String
 	let delete: (UUID) -> Void
 
+	@FocusState private var focused: Bool
+
 	var emptyState: (title: String, systemImage: String)? {
 		guard groups.isEmpty else { return nil }
 		return search.isEmpty ? ("No notes", "note.text") : ("No matches", "magnifyingglass")
 	}
 
 	var body: some View {
-		List(selection: $selection) {
+		List(selection: Binding(get: { selection }, set: { chosen in
+			selection = chosen
+			focused = true
+		})) {
 			ForEach(groups) { group in
 				Section(group.title) {
 					ForEach(group.notes) { note in
@@ -29,6 +34,7 @@ struct NoteListView: View {
 		.listStyle(.inset)
 		// SwiftUI sizes the first row added to an empty list at the default height and never measures it again.
 		.id(groups.isEmpty)
+		.focused($focused)
 		.onDeleteCommand(perform: selection.map { id in { delete(id) } })
 		.contextMenu(forSelectionType: UUID.self) { ids in
 			if let id = ids.first {

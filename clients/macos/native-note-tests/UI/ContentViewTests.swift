@@ -108,6 +108,22 @@ struct ContentViewTests {
 		#expect(await model.flushPendingSaves())
 	}
 
+	@Test func pickingANoteInTheListFocusesTheList() async throws {
+		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { offscreen.close() }
+		let editor = try #require(offscreen.views(of: NSTextView.self).first { !$0.isFieldEditor && $0.isEditable })
+		try #require(offscreen.window.makeFirstResponder(editor))
+		let list = try noteList(in: offscreen)
+		let other = try #require(model.groups.first?.notes.last?.id)
+
+		list.selectRowIndexes(IndexSet(integer: list.numberOfRows - 1), byExtendingSelection: false)
+		await offscreen.pump { model.selection == other && offscreen.window.firstResponder === list }
+
+		#expect(model.selection == other)
+		#expect(offscreen.window.firstResponder === list)
+	}
+
 	@Test func closingTheWindowSavesAtOnce() async throws {
 		let (model, directory, offscreen) = try await library(["Title"])
 		defer { try? FileManager.default.removeItem(at: directory) }
