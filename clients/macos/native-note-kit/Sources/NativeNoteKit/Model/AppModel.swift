@@ -148,7 +148,11 @@ import Observation
 
 	public func deleteSelected() async {
 		guard let id = selection else { return }
-		selection = nil
+		await delete(id)
+	}
+
+	public func delete(_ id: UUID) async {
+		if selection == id { selection = nil }
 		guard await write({ try await $0.markDeleted(id: id, at: Date()) }) else { return }
 		await scheduler.discard(id)
 		notes.removeAll { $0.id == id }

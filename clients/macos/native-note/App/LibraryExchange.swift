@@ -43,6 +43,10 @@ import Observation
 	}
 
 	var acceptsCommands: Bool {
+		model.phase == .unlocked && sheet == nil
+	}
+
+	var canExchange: Bool {
 		model.phase == .unlocked && isIdle
 	}
 

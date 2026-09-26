@@ -109,14 +109,37 @@ struct LibraryExchangeTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let exchange = LibraryExchange(model: model)
 		#expect(exchange.acceptsCommands)
+		#expect(exchange.canExchange)
 
 		exchange.isExporting = true
 		#expect(!exchange.acceptsCommands)
+		#expect(!exchange.canExchange)
 		exchange.dismiss(.export)
 		#expect(exchange.acceptsCommands)
+		#expect(exchange.canExchange)
 
 		await model.lock()
 		#expect(!exchange.acceptsCommands)
+		#expect(!exchange.canExchange)
+	}
+
+	@Test func anImportHoldsExportAndImportButNotEditing() async throws {
+		let (model, directory) = try await library(["Shopping"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let file = directory.appending(path: "Native Note.zip")
+		#expect(await model.exportLibrary(to: file, passphrase: nil))
+		let exchange = LibraryExchange(model: model)
+
+		let importing = Task { await exchange.receive(file) }
+		for _ in 0 ..< 1_000 where !exchange.isImporting {
+			await Task.yield()
+		}
+		try #require(exchange.isImporting)
+
+		#expect(exchange.acceptsCommands)
+		#expect(!exchange.canExchange)
+		await importing.value
+		#expect(exchange.canExchange)
 	}
 
 	@Test func closingASheetFromOutsideDismissesIt() {

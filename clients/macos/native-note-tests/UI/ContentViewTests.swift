@@ -51,6 +51,37 @@ struct ContentViewTests {
 		#expect(offscreen.window.subtitle == "1 note")
 	}
 
+	@Test func deleteInTheListDeletesTheSelectedNote() async throws {
+		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { offscreen.close() }
+		let selected = try #require(model.selection)
+		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
+		try #require(offscreen.window.makeFirstResponder(list))
+		offscreen.pump()
+
+		#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
+		await offscreen.pump { model.notes.count == 1 }
+
+		#expect(!model.notes.contains { $0.id == selected })
+		#expect(model.notes.count == 1)
+	}
+
+	@Test func deleteInTheEditorDeletesTextNotTheNote() async throws {
+		let (model, directory, offscreen) = try await library(["Title"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { offscreen.close() }
+		let editor = try #require(offscreen.views(of: NSTextView.self).first { $0.string == "Title" })
+		try #require(offscreen.window.makeFirstResponder(editor))
+		editor.setSelectedRange(NSRange(location: 0, length: 5))
+
+		#expect(editor.tryToPerform(#selector(NSText.delete(_:)), with: nil))
+		await offscreen.pump { model.selectedNote?.body != "Title" }
+
+		#expect(model.notes.count == 1)
+		#expect(model.selectedNote?.body == "")
+	}
+
 	@Test func closingTheWindowSavesAtOnce() async throws {
 		let (model, directory, offscreen) = try await library(["Title"])
 		defer { try? FileManager.default.removeItem(at: directory) }

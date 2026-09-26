@@ -43,14 +43,16 @@ struct ContentView: View {
 			}
 			.navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
 		} content: {
-			NoteListView(groups: model.groups, selection: $model.selection, search: $model.search)
-				.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
-				.navigationTitle("All notes")
-				.navigationSubtitle(Self.noteCount(model.noteCount))
-				.onChange(of: model.search) { Task { await model.runSearch() } }
-				.alert(exchange.lastImport?.message ?? "", isPresented: $exchange.showsSummary) {
-					Button("OK") {}
-				}
+			NoteListView(groups: model.groups, selection: $model.selection, search: $model.search) { id in
+				Task { await model.delete(id) }
+			}
+			.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
+			.navigationTitle("All notes")
+			.navigationSubtitle(Self.noteCount(model.noteCount))
+			.onChange(of: model.search) { Task { await model.runSearch() } }
+			.alert(exchange.lastImport?.message ?? "", isPresented: $exchange.showsSummary) {
+				Button("OK") {}
+			}
 		} detail: {
 			if let note = model.selectedNote {
 				NoteEditor(text: Binding(get: { note.body }, set: { model.edit(note.id, $0) }))

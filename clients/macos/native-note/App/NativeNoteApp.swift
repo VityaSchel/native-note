@@ -14,12 +14,16 @@ struct NativeNoteApp: App {
 				Button("New Note") { Task { await delegate.model.createNote() } }
 					.keyboardShortcut("n")
 					.disabled(!delegate.exchange.acceptsCommands)
+				Divider()
+				Button("Lock") { Task { await delegate.model.lock() } }
+					.keyboardShortcut("l", modifiers: [.control, .command])
+					.disabled(!delegate.exchange.acceptsCommands)
 			}
 			CommandGroup(replacing: .importExport) {
 				Button("Export…") { delegate.exchange.isExporting = true }
-					.disabled(!delegate.exchange.acceptsCommands)
+					.disabled(!delegate.exchange.canExchange)
 				Button("Import…") { delegate.exchange.chooseImport() }
-					.disabled(!delegate.exchange.acceptsCommands)
+					.disabled(!delegate.exchange.canExchange)
 			}
 		}
 	}

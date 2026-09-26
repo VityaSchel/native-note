@@ -177,6 +177,38 @@ struct AppModelTests {
 		#expect(model.selection == nil)
 	}
 
+	@Test func deletingAnotherNoteKeepsTheSelection() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(directory: directory, makeParameters: { .fast })
+		await model.setUp(password: "correct horse")
+		await model.createNote()
+		let other = try #require(model.selection)
+		model.edit(other, "deleted from its row")
+		await model.createNote()
+		let selected = try #require(model.selection)
+		model.edit(selected, "still open")
+
+		await model.delete(other)
+		#expect(model.selection == selected)
+		await model.flushPendingSaves()
+		await model.lock()
+		await model.submit(password: "correct horse")
+
+		#expect(model.notes.map(\.body) == ["still open"])
+	}
+
+	@Test func deletingTheOpenNoteClosesIt() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+
+		await model.delete(try #require(model.selection))
+
+		#expect(model.notes.isEmpty)
+		#expect(model.selection == nil)
+	}
+
 	@Test func deletingWithNothingSelectedDoesNothing() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }

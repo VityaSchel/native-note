@@ -19,12 +19,19 @@ struct TestHostTests {
 		#expect(item.keyEquivalentModifierMask == .command)
 	}
 
+	@Test func lockIsControlCommandL() throws {
+		let item = try #require(try fileMenu().item(withTitle: "Lock"))
+
+		#expect(item.keyEquivalent == "l")
+		#expect(item.keyEquivalentModifierMask == [.control, .command])
+	}
+
 	@Test func libraryCommandsWaitForUnlock() throws {
 		let file = try fileMenu()
 
 		file.update()
 
-		for title in ["New Note", "Export…", "Import…"] {
+		for title in ["New Note", "Lock", "Export…", "Import…"] {
 			#expect(file.item(withTitle: title)?.isEnabled == false, "\(title)")
 		}
 	}

@@ -6,6 +6,7 @@ struct NoteListView: View {
 	var now = Date.now
 	@Binding var selection: UUID?
 	@Binding var search: String
+	let delete: (UUID) -> Void
 
 	var emptyState: (title: String, systemImage: String)? {
 		guard groups.isEmpty else { return nil }
@@ -26,6 +27,12 @@ struct NoteListView: View {
 			}
 		}
 		.listStyle(.inset)
+		.onDeleteCommand(perform: selection.map { id in { delete(id) } })
+		.contextMenu(forSelectionType: UUID.self) { ids in
+			if let id = ids.first {
+				Button("Delete") { delete(id) }
+			}
+		}
 		.searchable(text: $search, placement: .automatic, prompt: "Search")
 		.overlay {
 			if let emptyState {
@@ -41,14 +48,14 @@ struct NoteListView: View {
 		@Previewable @State var search = ""
 
 		NavigationStack {
-			NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: $selection, search: $search)
+			NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: $selection, search: $search) { _ in }
 		}
 		.frame(width: 300, height: 460)
 	}
 
 	#Preview("Note list, empty") {
 		NavigationStack {
-			NoteListView(groups: [], selection: .constant(nil), search: .constant(""))
+			NoteListView(groups: [], selection: .constant(nil), search: .constant("")) { _ in }
 		}
 		.frame(width: 300, height: 460)
 	}
