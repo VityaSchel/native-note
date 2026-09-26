@@ -44,8 +44,10 @@ struct ContentView: View {
 			}
 			.navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
 		} content: {
-			NoteListView(groups: model.groups, selection: $model.selection, search: $model.search) { id in
-				Task { await model.delete(id) }
+			TimelineView(.everyMinute) { timeline in
+				NoteListView(groups: model.groups, now: timeline.date, selection: $model.selection, search: $model.search) { id in
+					Task { await model.delete(id) }
+				}
 			}
 			.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
 			.navigationTitle("All notes")

@@ -15,7 +15,7 @@ struct NoteListViewTests {
 	private func offscreen(selection: UUID?, _ deletions: Deletions) -> OffscreenWindow<NavigationStack<NavigationPath, NoteListView>> {
 		OffscreenWindow(
 			NavigationStack {
-				NoteListView(groups: NoteGroup.samples, selection: .constant(selection), search: .constant("")) { deletions.ids.append($0) }
+				NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: .constant(selection), search: .constant("")) { deletions.ids.append($0) }
 			},
 			width: 300,
 			height: 460
@@ -113,21 +113,21 @@ struct NoteListViewTests {
 	}
 
 	@Test func anEmptyLibrarySaysThereAreNoNotes() {
-		let list = NoteListView(groups: [], selection: .constant(nil), search: .constant("")) { _ in }
+		let list = NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in }
 
 		#expect(list.emptyState?.title == "No notes")
 		#expect(list.emptyState?.systemImage == "note.text")
 	}
 
 	@Test func aSearchWithoutResultsSaysThereAreNoMatches() {
-		let list = NoteListView(groups: [], selection: .constant(nil), search: .constant("kayak")) { _ in }
+		let list = NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("kayak")) { _ in }
 
 		#expect(list.emptyState?.title == "No matches")
 		#expect(list.emptyState?.systemImage == "magnifyingglass")
 	}
 
 	@Test func aListWithNotesShowsNoPlaceholder() {
-		let list = NoteListView(groups: NoteGroup.samples, selection: .constant(nil), search: .constant("kayak")) { _ in }
+		let list = NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: .constant(nil), search: .constant("kayak")) { _ in }
 
 		#expect(list.emptyState == nil)
 	}

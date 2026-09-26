@@ -3,7 +3,7 @@ import SwiftUI
 
 struct NoteListView: View {
 	let groups: [NoteGroup]
-	var now = Date.now
+	let now: Date
 	@Binding var selection: UUID?
 	@Binding var search: String
 	let delete: (UUID) -> Void
@@ -55,7 +55,7 @@ struct NoteListView: View {
 
 	#Preview("Note list, empty") {
 		NavigationStack {
-			NoteListView(groups: [], selection: .constant(nil), search: .constant("")) { _ in }
+			NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in }
 		}
 		.frame(width: 300, height: 460)
 	}

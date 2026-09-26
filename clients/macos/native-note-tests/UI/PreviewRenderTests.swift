@@ -41,7 +41,7 @@ struct PreviewRenderTests {
 	@Test func noteListWithSamples() {
 		render(
 			NavigationStack {
-				NoteListView(groups: NoteGroup.samples, selection: .constant(nil), search: .constant("")) { _ in }
+				NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in }
 			}
 		)
 	}
@@ -51,6 +51,7 @@ struct PreviewRenderTests {
 			NavigationStack {
 				NoteListView(
 					groups: NoteGroup.samples,
+					now: Note.sampleNow,
 					selection: .constant(NoteGroup.samples[0].notes[0].id),
 					search: .constant(""),
 					delete: { _ in }
@@ -66,6 +67,7 @@ struct PreviewRenderTests {
 			} content: {
 				NoteListView(
 					groups: NoteGroup.samples,
+					now: Note.sampleNow,
 					selection: .constant(NoteGroup.samples[0].notes[0].id),
 					search: .constant(""),
 					delete: { _ in }
@@ -91,7 +93,7 @@ struct PreviewRenderTests {
 		let offscreen = OffscreenWindow(
 			AnyView(
 				NavigationStack {
-					NoteListView(groups: first, selection: .constant(staleSelection), search: .constant("")) { _ in }
+					NoteListView(groups: first, now: Note.sampleNow, selection: .constant(staleSelection), search: .constant("")) { _ in }
 				}
 			)
 		)
@@ -99,7 +101,7 @@ struct PreviewRenderTests {
 		for _ in 0 ..< 3 {
 			offscreen.host.rootView = AnyView(
 				NavigationStack {
-					NoteListView(groups: freshGroups(), selection: .constant(staleSelection), search: .constant("")) { _ in }
+					NoteListView(groups: freshGroups(), now: Note.sampleNow, selection: .constant(staleSelection), search: .constant("")) { _ in }
 				}
 			)
 			offscreen.pump(for: 0.05)
@@ -110,7 +112,7 @@ struct PreviewRenderTests {
 	@Test func listToleratesASelectionThatIsNotInTheList() {
 		render(
 			NavigationStack {
-				NoteListView(groups: NoteGroup.samples, selection: .constant(UUID()), search: .constant("")) { _ in }
+				NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: .constant(UUID()), search: .constant("")) { _ in }
 			}
 		)
 	}
@@ -118,7 +120,7 @@ struct PreviewRenderTests {
 	@Test func noteListEmpty() {
 		render(
 			NavigationStack {
-				NoteListView(groups: [], selection: .constant(nil), search: .constant("")) { _ in }
+				NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in }
 			}
 		)
 	}
@@ -126,7 +128,7 @@ struct PreviewRenderTests {
 	@Test func noteListWithoutMatches() {
 		render(
 			NavigationStack {
-				NoteListView(groups: [], selection: .constant(nil), search: .constant("kayak")) { _ in }
+				NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("kayak")) { _ in }
 			}
 		)
 	}
