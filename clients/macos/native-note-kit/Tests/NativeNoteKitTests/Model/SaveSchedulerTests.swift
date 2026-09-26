@@ -127,6 +127,32 @@ struct SaveSchedulerTests {
 		#expect(await saves.values.isEmpty)
 	}
 
+	@Test func discardingAllDropsASaveScheduledWhileItWaits() async {
+		let scheduler = scheduler()
+		let held = Alarm()
+		let saves = Log()
+		let id = UUID()
+		scheduler.schedule(id) {
+			try? await held.sleep(for: .zero)
+			await MainActor.run { scheduler.schedule(id) { await saves.append(2) } }
+			return false
+		}
+		let flushing = Task { await scheduler.flush(id) }
+		await settle { await held.sleeping == 1 }
+
+		let discarding = Task { await scheduler.discardAll() }
+		await held.ring()
+		_ = await flushing.value
+		await discarding.value
+
+		#expect(await scheduler.flushAll())
+		#expect(await saves.values.isEmpty)
+
+		scheduler.schedule(id) { await saves.append(3) }
+		#expect(await scheduler.flushAll())
+		#expect(await saves.values == [3])
+	}
+
 	@Test func theDefaultSleepFiresTheSave() async {
 		let scheduler = SaveScheduler(delay: .milliseconds(10))
 		let saves = Log()

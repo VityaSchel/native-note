@@ -21,7 +21,8 @@ struct ContentView: View {
 					failure: model.failure,
 					submit: model.submit(password:),
 					dismissFailure: model.dismissFailure,
-					unlockWithBiometrics: model.canUnlockWithBiometrics ? { await model.unlockWithBiometrics() } : nil
+					unlockWithBiometrics: model.canUnlockWithBiometrics ? { await model.unlockWithBiometrics() } : nil,
+					eraseLibrary: { Task { await model.eraseLibrary() } }
 				)
 			case .unlocked:
 				library

@@ -13,6 +13,7 @@ final class SaveScheduler {
 	private let sleep: Sleep
 	private var pending: [UUID: Pending] = [:]
 	private var writing: [UUID: Task<Bool, Never>] = [:]
+	private var discarding = false
 
 	init(delay: Duration = .milliseconds(300), sleep: @escaping Sleep = { try await Task.sleep(for: $0) }) {
 		self.delay = delay
@@ -20,6 +21,7 @@ final class SaveScheduler {
 	}
 
 	func schedule(_ id: UUID, _ save: @escaping Save) {
+		guard !discarding else { return }
 		guard pending[id] == nil else {
 			pending[id]?.save = save
 			return
@@ -64,5 +66,14 @@ final class SaveScheduler {
 	func discard(_ id: UUID) async {
 		pending.removeValue(forKey: id)?.deadline.cancel()
 		await flush(id)
+	}
+
+	func discardAll() async {
+		discarding = true
+		defer { discarding = false }
+		for due in pending.values { due.deadline.cancel() }
+		pending = [:]
+		for task in writing.values { _ = await task.value }
+		writing = [:]
 	}
 }

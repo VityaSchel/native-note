@@ -7,8 +7,10 @@ struct UnlockView: View {
 	let submit: (String) async -> Void
 	let dismissFailure: () -> Void
 	var unlockWithBiometrics: (() async -> Void)?
+	var eraseLibrary: (() -> Void)?
 
 	@State private var form = UnlockForm()
+	@State private var confirmingErase = false
 
 	var body: some View {
 		VStack(spacing: 16) {
@@ -57,11 +59,26 @@ struct UnlockView: View {
 			if form.working {
 				ProgressView().controlSize(.small)
 			}
+
+			if eraseLibrary != nil, !isSetup {
+				Button("Forgot password?") { confirmingErase = true }
+					.buttonStyle(.link)
+					.disabled(form.working)
+			}
+		}
+		.confirmationDialog(Self.eraseTitle, isPresented: $confirmingErase) {
+			Button(Self.eraseAction, role: .destructive) { eraseLibrary?() }
+		} message: {
+			Text(Self.eraseMessage)
 		}
 		.padding(32)
 		.frame(width: 360)
 		.failureAlert(failure, dismiss: dismissFailure)
 	}
+
+	static let eraseTitle = "Erase all notes and start over?"
+	static let eraseAction = "Erase Notes"
+	static let eraseMessage = "Without the password these notes cannot be recovered. Erasing deletes every note on this Mac and returns to setup."
 
 	private func send() {
 		guard let password = form.submit(confirming: isSetup) else { return }
@@ -78,6 +95,10 @@ struct UnlockView: View {
 
 #Preview("Unlock with Touch ID") {
 	UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}, unlockWithBiometrics: {})
+}
+
+#Preview("Unlock, forgotten password") {
+	UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in }, dismissFailure: {}, eraseLibrary: {})
 }
 
 #Preview("Unlock, wrong password") {

@@ -89,6 +89,6 @@ Documented risks and vulnerabilities:
 - **Server data-directory compromise leaks the API key.** An attacker who reads `/var/lib/native-note-server/api-key` can decrypt metadata and forge writes.
 - **No per-device revocation.** Losing a device means rotating the API key on the rest.
 - **A short password or pin without hardware binding** is brute-forceable offline in hours.
-- **In-app unlock attempt limiting is not a security control.** The counter sits in storage the attacker owns, and a real attacker attacks the database file rather than the app. It is a panic feature — wipe after N — and friction, nothing more.
+- **No in-app unlock attempt limiting.** A counter would sit in storage the attacker owns, and a real attacker attacks the database file rather than the app. A forgotten password leads to erasing the library behind a confirmation only, since anyone at an unlocked session can delete the library folder anyway.
 - **Hardware binding does not add per-guess cost.** A disk image cannot compute `machineId` at any password length, so it cannot be attacked offline at all. An attacker who runs code on the machine reads `machineId` with one call and then guesses offline at Argon2id cost.
 - **The content key never rotates.** The recovery layer exists so a leaked mnemonic does not require entire database re-encryption.

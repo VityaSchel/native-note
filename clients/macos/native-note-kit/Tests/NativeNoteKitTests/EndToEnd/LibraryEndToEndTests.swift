@@ -173,6 +173,23 @@ struct LibraryEndToEndTests {
 		#expect(try await snapshot(kept.liveNotes()) == orphaned)
 	}
 
+	@Test func erasingARealLibraryLeavesNothingToOpen() async throws {
+		let (model, directory) = try await realLibrary(password: "forgotten password")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.lock()
+
+		await model.eraseLibrary()
+
+		#expect(model.phase == .needsSetup)
+		#expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+		let relaunched = AppModel(directory: directory)
+		relaunched.start()
+		#expect(relaunched.phase == .needsSetup)
+		await relaunched.submit(password: "a new start")
+		#expect(relaunched.phase == .unlocked)
+		#expect(relaunched.notes.isEmpty)
+	}
+
 	private func run(_ tool: String, _ arguments: [String]) throws -> Int32 {
 		let process = Process()
 		process.executableURL = URL(fileURLWithPath: tool)

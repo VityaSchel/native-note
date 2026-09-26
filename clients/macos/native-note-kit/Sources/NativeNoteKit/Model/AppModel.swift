@@ -175,6 +175,25 @@ import Observation
 		failure = nil
 	}
 
+	public func eraseLibrary() async {
+		guard phase == .locked else { return }
+		let retired = retiring
+		retiring = nil
+		await retired?.close()
+		await scheduler.discardAll()
+		failingSaves = [:]
+		failure = nil
+		search = ""
+		matches = nil
+		try? keyStore.delete()
+		do {
+			try AppLock.erase(in: directory)
+		} catch {
+			report(error)
+		}
+		start()
+	}
+
 	public var isBiometricUnlockEnabled: Bool {
 		keyStore.hasKey()
 	}

@@ -117,4 +117,19 @@ struct AppLockTests {
 	@Test func reportsNothingWhenTheAppHasNeverBeenSetUp() {
 		#expect(AppLock.parameterFiles(in: temporaryDirectory()).isEmpty)
 	}
+
+	@Test func erasingRemovesOnlyTheLibraryFiles() throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+		let database = AppLock.databaseFile(in: directory)
+		let library = [AppLock.currentFile(in: directory), AppLock.pendingRekeyFile(in: directory), database, walFile(of: database), shmFile(of: database), directory.appending(path: "notes-set-aside-x-1.db")]
+		for file in library + [directory.appending(path: "export.zip"), directory.appending(path: "notes.txt")] {
+			FileManager.default.createFile(atPath: file.path, contents: Data("x".utf8))
+		}
+
+		try AppLock.erase(in: directory)
+
+		#expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == ["export.zip", "notes.txt"])
+	}
 }

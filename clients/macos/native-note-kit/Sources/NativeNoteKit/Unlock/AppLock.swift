@@ -32,6 +32,19 @@ nonisolated enum AppLock {
 		}
 	}
 
+	static func erase(in directory: URL) throws {
+		let database = databaseFile(in: directory)
+		let setAside = (try? FileManager.default.contentsOfDirectory(atPath: directory.path))?
+			.filter { $0.hasPrefix("notes-set-aside-") }
+			.map { directory.appending(path: $0) } ?? []
+		let files = [pendingRekeyFile(in: directory), currentFile(in: directory)]
+			+ ["", "-wal", "-shm"].map { URL(fileURLWithPath: database.path + $0) }
+			+ setAside
+		for file in files where FileManager.default.fileExists(atPath: file.path) {
+			try FileManager.default.removeItem(at: file)
+		}
+	}
+
 	static func setAside(_ database: URL) throws {
 		guard FileManager.default.fileExists(atPath: database.path) else { return }
 		let aside = try asideFile(for: database)

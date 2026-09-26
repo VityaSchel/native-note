@@ -85,6 +85,10 @@ Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alon
 
 Unlock tries the pending file, then the current one, and keeps whichever opens the database as the only file, so a crash between any steps leaves it openable. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside a database left without parameter files rather than deleting it, moving its sidecars first so an interrupted set-aside finishes on the next setup.
 
+#### Forgotten password
+
+The unlock screen offers to erase the library and start over, behind a confirmation. Erasing deletes the biometric key, then the unlock parameters, which leaves the notes unrecoverable, then the database with its sidecars and any set-aside copies, and returns to setup. A file that cannot be deleted is reported; once the parameters are gone the app returns to setup anyway.
+
 #### Unlocking with biometrics
 
 Optional, off by default. When enabled, `localDbKey` is stored in the platform's key store linked to the current biometric enrollment, so the OS invalidates it if the enrolled set changes.

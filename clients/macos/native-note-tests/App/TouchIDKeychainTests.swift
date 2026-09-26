@@ -90,4 +90,20 @@ struct TouchIDKeychainTests {
 		#expect(!model.canUnlockWithBiometrics)
 		#expect(!KeychainUnlockKeyStore(directory: directory).hasKey())
 	}
+
+	@Test func erasingTheLibraryRemovesItsTouchIDKey() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
+		let model = AppModel(directory: directory, makeParameters: { .fast })
+		model.start()
+		await model.submit(password: "correct horse")
+		#expect(await model.enableBiometricUnlock())
+		await model.lock()
+
+		await model.eraseLibrary()
+
+		#expect(model.phase == .needsSetup)
+		#expect(!KeychainUnlockKeyStore(directory: directory).hasKey())
+	}
 }
