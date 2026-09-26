@@ -27,7 +27,13 @@ import Observation
 			Task { await scheduler.flush(previous) }
 		}
 	}
-	public var search = ""
+	public var search = "" {
+		didSet {
+			guard search.isEmpty, !oldValue.isEmpty else { return }
+			matches = nil
+			searchFailing = false
+		}
+	}
 
 	public var unsavedReason: String? {
 		failingSaves.values.first?.reason

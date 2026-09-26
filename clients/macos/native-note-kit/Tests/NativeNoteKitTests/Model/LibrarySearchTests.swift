@@ -38,6 +38,18 @@ struct LibrarySearchTests {
 		#expect(model.groups.flatMap(\.notes).count == 2)
 	}
 
+	@Test func clearingASearchWithoutMatchesShowsEveryNoteAtOnce() async throws {
+		let (model, directory) = try await library(["Shopping\nquartz and bread", "Standup\nshipped storage"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		model.search = "kayak"
+		await model.runSearch()
+		try #require(model.groups.isEmpty)
+
+		model.search = ""
+
+		#expect(model.groups.flatMap(\.notes).count == 2)
+	}
+
 	@Test func aPrefixOfTheLastWordMatchesWhileTyping() async throws {
 		let (model, directory) = try await library(["kayak trip", "canoe"])
 		defer { try? FileManager.default.removeItem(at: directory) }
