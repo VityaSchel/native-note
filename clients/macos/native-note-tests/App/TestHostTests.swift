@@ -1,8 +1,20 @@
 import AppKit
 import Testing
 
+@testable import NativeNote
+@testable import NativeNoteKit
+
 @MainActor
 struct TestHostTests {
+	@Test func theTestHostNeverOpensTheRealLibrary() throws {
+		let model = AppDelegate().model
+
+		try #require(model.libraryDirectory == AppDelegate.testHostLibrary)
+		try #require(model.libraryDirectory.standardizedFileURL != AppLock.directory.standardizedFileURL)
+		model.start()
+		#expect(model.phase == .needsSetup)
+	}
+
 	@Test func theTestHostStaysOutOfTheDockAndInTheBackground() {
 		#expect(NSApp.activationPolicy() == .prohibited)
 		#expect(!NSApp.isActive)

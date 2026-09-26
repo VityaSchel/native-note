@@ -13,11 +13,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	override convenience init() {
-		self.init(model: AppModel())
+		self.init(model: Self.hostsTests ? AppModel(libraryAt: Self.testHostLibrary) : AppModel())
+	}
+
+	static let testHostLibrary = FileManager.default.temporaryDirectory.appending(path: "test-host-library")
+
+	private static var hostsTests: Bool {
+		ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 	}
 
 	func applicationWillFinishLaunching(_ notification: Notification) {
-		if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+		if Self.hostsTests {
 			NSApp.setActivationPolicy(.prohibited)
 		}
 	}

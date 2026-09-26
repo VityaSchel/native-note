@@ -50,6 +50,10 @@ import Observation
 		selection.flatMap { id in notes.first { $0.id == id } }
 	}
 
+	public var libraryDirectory: URL {
+		directory
+	}
+
 	public var noteCount: Int {
 		notes.count
 	}
