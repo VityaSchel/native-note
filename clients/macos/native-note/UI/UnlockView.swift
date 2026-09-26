@@ -8,6 +8,7 @@ struct UnlockView: View {
 	let dismissFailure: () -> Void
 	var unlockWithBiometrics: (() async -> Void)?
 	var eraseLibrary: (() -> Void)?
+	var hasSecureEnclave = true
 
 	@State private var form = UnlockForm()
 	@State private var confirmingErase = false
@@ -22,6 +23,14 @@ struct UnlockView: View {
 					.font(.callout)
 					.foregroundStyle(.secondary)
 					.multilineTextAlignment(.center)
+					.fixedSize(horizontal: false, vertical: true)
+			}
+
+			if let setupWarning {
+				Label(setupWarning, systemImage: "exclamationmark.triangle")
+					.font(.callout)
+					.foregroundStyle(.orange)
+					.fixedSize(horizontal: false, vertical: true)
 			}
 
 			SecureField("Password", text: $form.password)
@@ -76,6 +85,11 @@ struct UnlockView: View {
 		.failureAlert(failure, dismiss: dismissFailure)
 	}
 
+	var setupWarning: String? {
+		isSetup && !hasSecureEnclave ? Self.noSecureEnclaveWarning : nil
+	}
+
+	static let noSecureEnclaveWarning = "This Mac has no Secure Enclave, so only this password protects your notes."
 	static let eraseTitle = "Erase all notes and start over?"
 	static let eraseAction = "Erase Notes"
 	static let eraseMessage = "Without the password these notes cannot be recovered. Erasing deletes every note on this Mac and returns to setup."
@@ -125,4 +139,8 @@ struct UnlockView: View {
 
 #Preview("First run") {
 	UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {})
+}
+
+#Preview("First run, no Secure Enclave") {
+	UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}, hasSecureEnclave: false)
 }

@@ -19,6 +19,7 @@ struct PreviewRenderTests {
 		render(UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}))
 		render(UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}, unlockWithBiometrics: {}))
 		render(UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in }, dismissFailure: {}, eraseLibrary: {}))
+		render(UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}, hasSecureEnclave: false))
 	}
 
 	@Test func noteRows() {

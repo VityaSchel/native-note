@@ -60,4 +60,14 @@ struct UnlockViewTests {
 		#expect(submitted.isEmpty)
 		#expect(password.stringValue == "correct horse")
 	}
+
+	@Test func setupWarnsWithoutASecureEnclave() {
+		func warning(isSetup: Bool, hasSecureEnclave: Bool) -> String? {
+			UnlockView(isSetup: isSetup, failure: nil, submit: { _ in }, dismissFailure: {}, hasSecureEnclave: hasSecureEnclave).setupWarning
+		}
+
+		#expect(warning(isSetup: true, hasSecureEnclave: false) == UnlockView.noSecureEnclaveWarning)
+		#expect(warning(isSetup: true, hasSecureEnclave: true) == nil)
+		#expect(warning(isSetup: false, hasSecureEnclave: false) == nil)
+	}
 }

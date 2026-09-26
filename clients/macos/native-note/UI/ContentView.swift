@@ -22,7 +22,8 @@ struct ContentView: View {
 					submit: model.submit(password:),
 					dismissFailure: model.dismissFailure,
 					unlockWithBiometrics: model.canUnlockWithBiometrics ? { await model.unlockWithBiometrics() } : nil,
-					eraseLibrary: { Task { await model.eraseLibrary() } }
+					eraseLibrary: { Task { await model.eraseLibrary() } },
+					hasSecureEnclave: AppModel.hasSecureEnclave
 				)
 			case .unlocked:
 				library

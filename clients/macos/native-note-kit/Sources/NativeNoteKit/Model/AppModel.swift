@@ -206,6 +206,10 @@ import Observation
 		keyStore.hasKey()
 	}
 
+	public static var hasSecureEnclave: Bool {
+		MachineKey.isAvailable
+	}
+
 	@discardableResult
 	public func enableBiometricUnlock() async -> Bool {
 		guard phase == .unlocked, let unlockedKey, keyStore.isAvailable else { return false }
