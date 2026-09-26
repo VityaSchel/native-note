@@ -10,9 +10,14 @@ struct NoteListView: View {
 
 	@FocusState private var focused: Bool
 
-	var emptyState: (title: String, systemImage: String)? {
+	enum EmptyState {
+		case noNotes
+		case noResults
+	}
+
+	var emptyState: EmptyState? {
 		guard groups.isEmpty else { return nil }
-		return search.isEmpty ? ("No notes", "note.text") : ("No matches", "magnifyingglass")
+		return search.isEmpty ? .noNotes : .noResults
 	}
 
 	static func separatorsHidden(for note: Note, in group: NoteGroup) -> VerticalEdge.Set {
@@ -52,8 +57,10 @@ struct NoteListView: View {
 		}
 		.searchable(text: $search, placement: .automatic, prompt: "Search")
 		.overlay {
-			if let emptyState {
-				ContentUnavailableView(emptyState.title, systemImage: emptyState.systemImage)
+			switch emptyState {
+			case .noNotes: ContentUnavailableView("No notes", systemImage: "note.text")
+			case .noResults: ContentUnavailableView.search
+			case nil: EmptyView()
 			}
 		}
 	}

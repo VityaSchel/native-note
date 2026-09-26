@@ -189,15 +189,13 @@ struct NoteListViewTests {
 	@Test func anEmptyLibrarySaysThereAreNoNotes() {
 		let list = NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in }
 
-		#expect(list.emptyState?.title == "No notes")
-		#expect(list.emptyState?.systemImage == "note.text")
+		#expect(list.emptyState == .noNotes)
 	}
 
-	@Test func aSearchWithoutResultsSaysThereAreNoMatches() {
+	@Test func aSearchWithoutResultsSaysNoResults() {
 		let list = NoteListView(groups: [], now: Note.sampleNow, selection: .constant(nil), search: .constant("kayak")) { _ in }
 
-		#expect(list.emptyState?.title == "No matches")
-		#expect(list.emptyState?.systemImage == "magnifyingglass")
+		#expect(list.emptyState == .noResults)
 	}
 
 	@Test func aListWithNotesShowsNoPlaceholder() {
