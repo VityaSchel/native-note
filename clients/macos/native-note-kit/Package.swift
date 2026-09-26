@@ -24,9 +24,14 @@ let package = Package(
 			],
 			swiftSettings: [.defaultIsolation(MainActor.self)] + upcomingFeatures
 		),
+		.executableTarget(
+			name: "NativeNoteTypist",
+			dependencies: ["NativeNoteKit"],
+			swiftSettings: [.defaultIsolation(MainActor.self)] + upcomingFeatures
+		),
 		.testTarget(
 			name: "NativeNoteKitTests",
-			dependencies: ["NativeNoteKit"],
+			dependencies: ["NativeNoteKit", "NativeNoteTypist"],
 			resources: [.copy("vectors")],
 			swiftSettings: upcomingFeatures
 		),

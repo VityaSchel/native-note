@@ -90,7 +90,7 @@ Read the `Test run with N tests` line, not `TEST SUCCEEDED`: `-only-testing` wit
 
 Tests never present windows, sheets, or alerts. Call view logic directly or host the view in `OffscreenWindow`.
 
-Every feature gets unit tests and headless end-to-end tests. End-to-end tests run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`; both test commands include them, so the package run takes about two minutes.
+Every feature gets unit tests and headless end-to-end tests. End-to-end tests run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`; both test commands include them, so the package run takes about two minutes. The force-quit test SIGKILLs the `NativeNoteTypist` helper at random moments while it types through `AppModel`, then reopens the library: text typed more than the 300 ms save window plus 100 ms for the fsynced write before the kill must be on disk.
 
 Coverage is off in the shared scheme. Measure the package with `swift test --enable-code-coverage`, and the hosted tests with the sandbox off, since a sandboxed host writes no coverage data:
 

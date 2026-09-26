@@ -67,6 +67,10 @@ import Observation
 		self.init(directory: AppLock.directory)
 	}
 
+	public convenience init(libraryAt directory: URL) {
+		self.init(directory: directory)
+	}
+
 	init(
 		directory: URL,
 		scheduler: SaveScheduler = SaveScheduler(),
