@@ -35,6 +35,7 @@ struct ContentViewTests {
 		await offscreen.pump { model.selectedNote?.body != "Title" }
 
 		#expect(model.selectedNote?.body == "Title typed")
+		#expect(await model.flushPendingSaves())
 	}
 
 	@Test func theToolbarNamesTheNotebookAndCountsItsNotes() async throws {
@@ -80,6 +81,7 @@ struct ContentViewTests {
 
 		#expect(model.notes.count == 1)
 		#expect(model.selectedNote?.body == "")
+		#expect(await model.flushPendingSaves())
 	}
 
 	@Test func closingTheWindowSavesAtOnce() async throws {
