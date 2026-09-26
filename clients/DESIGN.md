@@ -6,6 +6,8 @@ SQLCipher, WAL, `synchronous=FULL` with `fullfsync` and `checkpoint_fullfsync` o
 
 A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A local save never bumps `v` and never writes to a tombstone. A failed save keeps retrying with the latest text, including across lock and unlock, and is reported once until no save is failing. Lock does not wait for a failing save and shows its failure on the lock screen. Quit with an unsaved edit asks first, and only Quit Anyway quits.
 
+Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`, so once locked the database on disk is `notes.db` alone, indistinguishable from random, beside the public unlock parameters in `app-lock.plist`. The sidecars exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock; their headers read as SQLite.
+
 ```sql
 CREATE TABLE note (
     uuid      BLOB PRIMARY KEY NOT NULL,

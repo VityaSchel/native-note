@@ -5,7 +5,7 @@ import Testing
 
 @MainActor @Suite(.serialized, .timeLimit(.minutes(10)))
 struct LibraryEndToEndTests {
-	private let corpus = RealisticCorpus.bodies(count: 600)
+	let corpus = RealisticCorpus.bodies(count: 600)
 
 	private struct Snapshot: Equatable {
 		let body: String
@@ -19,7 +19,7 @@ struct LibraryEndToEndTests {
 		})
 	}
 
-	private func launch(in directory: URL, password: String) async throws -> AppModel {
+	func launch(in directory: URL, password: String) async throws -> AppModel {
 		let model = AppModel(directory: directory)
 		model.start()
 		await model.submit(password: password)
@@ -27,7 +27,7 @@ struct LibraryEndToEndTests {
 		return model
 	}
 
-	private func realLibrary(password: String, filled: Bool = true) async throws -> (AppModel, URL) {
+	func realLibrary(password: String, filled: Bool = true) async throws -> (AppModel, URL) {
 		let directory = temporaryDirectory()
 		let model = try await launch(in: directory, password: password)
 		if filled { try await fill(model, with: corpus) }

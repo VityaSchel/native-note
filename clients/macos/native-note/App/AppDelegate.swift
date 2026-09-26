@@ -42,8 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	func terminate(reply: @escaping (Bool) -> Void) -> NSApplication.TerminateReply {
 		Task {
 			await model.flushPendingSaves()
-			guard let reason = model.unsavedReason else { return reply(true) }
-			reply(confirmQuitLosingEdits(reason))
+			if let reason = model.unsavedReason, !confirmQuitLosingEdits(reason) { return reply(false) }
+			await model.close()
+			reply(true)
 		}
 		return .terminateLater
 	}

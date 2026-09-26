@@ -137,6 +137,14 @@ import Observation
 		await scheduler.flushAll()
 	}
 
+	public func close() async {
+		await scheduler.flushAll()
+		let open = [store, retiring].compactMap(\.self)
+		store = nil
+		retiring = nil
+		for store in open { await store.close() }
+	}
+
 	public func createNote() async {
 		let now = Date()
 		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: true)

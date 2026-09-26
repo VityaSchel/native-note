@@ -55,6 +55,42 @@ struct AppDelegateTests {
 		try blocker.execute("ROLLBACK")
 	}
 
+	@Test func quittingClosesTheLibrary() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
+		let sidecars = { try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix("-wal") || $0.hasSuffix("-shm") } }
+		var replied: Bool?
+		#expect(try !sidecars().isEmpty)
+
+		_ = delegate.terminate { replied = $0 }
+		await settle { replied != nil }
+
+		#expect(replied == true)
+		#expect(try sidecars().isEmpty)
+	}
+
+	@Test func cancellingTheQuitKeepsTheLibraryOpen() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		await model.createNote()
+		let id = try #require(model.selection)
+		let blocker = try await connection(to: directory)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
+		var replied: Bool?
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		model.edit(id, "typed while the database was busy")
+		_ = delegate.terminate { replied = $0 }
+		await settle { replied != nil }
+		try blocker.execute("ROLLBACK")
+
+		#expect(replied == false)
+		#expect(await model.flushPendingSaves())
+		#expect(try await observer(of: directory).note(id: id)?.body == "typed while the database was busy")
+	}
+
 	@Test func theQuitAlertOnlyQuitsOnAnExplicitClick() {
 		let alert = AppDelegate.quitLosingEditsAlert("disk I/O error")
 
