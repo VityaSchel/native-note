@@ -2,7 +2,8 @@ import NativeNoteKit
 import SwiftUI
 
 struct NoteRow: View {
-	static let titleFont = Font.title3.weight(.bold)
+	static let titleFont = Font.headline
+	static let detailFont = Font.callout
 
 	let note: Note
 	let now: Date
@@ -13,6 +14,8 @@ struct NoteRow: View {
 			.dropFirst()
 			.joined()
 			.trimmingCharacters(in: .whitespacesAndNewlines)
+			.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+			.joined(separator: " ")
 	}
 
 	var displayTitle: String {
@@ -28,21 +31,22 @@ struct NoteRow: View {
 	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 2) {
+		VStack(alignment: .leading, spacing: 0) {
 			Text(displayTitle)
 				.font(Self.titleFont)
 				.lineLimit(1)
 
-			HStack(spacing: 6) {
+			HStack(spacing: 8) {
 				Text(dateLabel)
-					.font(.callout)
+					.font(Self.detailFont)
 				Text(displayPreview)
-					.font(.callout)
+					.font(Self.detailFont)
 					.foregroundStyle(.secondary)
 					.lineLimit(1)
 			}
 		}
-		.padding(.vertical, 2)
+		.padding(.top, 12)
+		.padding(.bottom, 13)
 	}
 }
 

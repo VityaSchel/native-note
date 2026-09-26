@@ -1,3 +1,4 @@
+import AppKit
 import NativeNoteKit
 import SwiftUI
 import Testing
@@ -10,7 +11,12 @@ struct NoteRowTests {
 		let row = NoteRow(note: .sample(1, "Title\n  first body line\nsecond", minutesAgo: 0), now: Note.sampleNow)
 
 		#expect(row.displayTitle == "Title")
-		#expect(row.displayPreview == "first body line\nsecond")
+		#expect(row.displayPreview == "first body line second")
+	}
+
+	@Test func eachLineBreakInThePreviewBecomesASpaceLikeAppleNotes() {
+		#expect(NoteRow(note: .sample(1, "Title\n123\n123", minutesAgo: 0), now: Note.sampleNow).displayPreview == "123 123")
+		#expect(NoteRow(note: .sample(1, "Title\na\n\n\nb", minutesAgo: 0), now: Note.sampleNow).displayPreview == "a   b")
 	}
 
 	@Test func anUntitledNoteIsCalledNewNote() {
@@ -29,12 +35,25 @@ struct NoteRowTests {
 		#expect(NoteRow(note: .sample(1, "", minutesAgo: 1_500), now: Note.sampleNow.addingTimeInterval(-86_400)).dateLabel != "Yesterday")
 	}
 
-	@Test func theTitleIsBoldAndLargerThanTheText() {
+	@Test func aLongPreviewShrinksBeforeTheDate() {
+		let note = Note.sample(1, "Standup\nshipped the storage layer and the export format, then reviewed the plan", minutesAgo: 60 * 24 * 3)
+		let row = NoteRow(note: note, now: Note.sampleNow)
+		let height = NSHostingView(rootView: row.frame(width: 190)).fittingSize.height
+
+		#expect(row.dateLabel.count > 5)
+		#expect(height == 56, "a narrow row is \(height) pt tall")
+	}
+
+	@Test func theFontsMatchAppleNotes() {
 		let context = EnvironmentValues().fontResolutionContext
 		let title = NoteRow.titleFont.resolve(in: context)
+		let detail = NoteRow.detailFont.resolve(in: context)
 
 		#expect(title.weight == Font.body.weight(.bold).resolve(in: context).weight)
-		#expect(title.pointSize > Font.body.resolve(in: context).pointSize)
+		#expect(title.pointSize == 13)
+		#expect(detail.weight == Font.body.resolve(in: context).weight)
+		#expect(detail.pointSize == 12)
+		#expect(!detail.isMonospaced)
 	}
 
 	@Test func aCrlfBodyShowsItsSecondLine() {

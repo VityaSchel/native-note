@@ -1,9 +1,9 @@
 import AppKit
-import NativeNoteKit
 import SwiftUI
 import Testing
 
 @testable import NativeNote
+@testable import NativeNoteKit
 
 @MainActor
 private final class Deletions {
@@ -56,6 +56,80 @@ struct NoteListViewTests {
 		}
 		let item = NSMenuItem(title: "Delete", action: delete, keyEquivalent: "")
 		return (responder as? NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? false
+	}
+
+	@Test func rowsMatchAppleNotesMetrics() throws {
+		let notes: [Note] = [.sample(1, "Shopping\nquartz, bread", minutesAgo: 5), .sample(2, "Standup\nshipped", minutesAgo: 90)]
+		let offscreen = OffscreenWindow(
+			NavigationStack {
+				NoteListView(groups: [NoteGroup(title: "Today", notes: notes)], now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in }
+			},
+			width: 300,
+			height: 260
+		)
+		defer { offscreen.close() }
+		offscreen.window.appearance = NSAppearance(named: .aqua)
+		offscreen.pump(for: 0.2)
+		let list = try #require(offscreen.views(of: NSTableView.self).first)
+		let row = list.convert(list.rect(ofRow: 1), to: offscreen.host)
+		let rep = try #require(offscreen.host.bitmapImageRepForCachingDisplay(in: offscreen.host.bounds))
+		offscreen.host.cacheDisplay(in: offscreen.host.bounds, to: rep)
+		let scale = CGFloat(rep.pixelsWide) / offscreen.host.bounds.width
+		let top = offscreen.host.isFlipped ? row.minY : offscreen.host.bounds.height - row.maxY
+		var textLeft = CGFloat.infinity
+		var inkTop = CGFloat.infinity
+		for y in Int(top * scale) ..< Int((top + row.height) * scale) {
+			for x in 0 ..< rep.pixelsWide where (rep.colorAt(x: x, y: y)?.brightnessComponent ?? 1) < 0.5 {
+				textLeft = min(textLeft, CGFloat(x) / scale)
+				inkTop = min(inkTop, CGFloat(y) / scale - top)
+			}
+		}
+
+		#expect(list.rect(ofRow: 1).height == 56)
+		#expect(list.rect(ofRow: 2).height == 56)
+		#expect(abs(textLeft - 35) <= 1, "text starts \(textLeft) pt from the list edge")
+		#expect(abs(inkTop - 15.8) <= 1.5, "the title's ink starts \(inkTop) pt below the row top")
+	}
+
+	@Test func onlyNotesOfTheSameDayAreSeparated() {
+		let notes: [Note] = [.sample(1, "a", minutesAgo: 1), .sample(2, "b", minutesAgo: 2), .sample(3, "c", minutesAgo: 3)]
+		let group = NoteGroup(title: "Today", notes: notes)
+
+		#expect(NoteListView.separatorsHidden(for: notes[0], in: group) == .top)
+		#expect(NoteListView.separatorsHidden(for: notes[1], in: group) == [])
+		#expect(NoteListView.separatorsHidden(for: notes[2], in: group) == .bottom)
+		#expect(NoteListView.separatorsHidden(for: notes[0], in: NoteGroup(title: "Today", notes: [notes[0]])) == [.top, .bottom])
+	}
+
+	@Test func noSeparatorTouchesADayHeading() throws {
+		let notes: [Note] = [.sample(1, "Shopping\nbread", minutesAgo: 5), .sample(2, "Standup\nshipped", minutesAgo: 90), .sample(3, "Reading\nRFC 9106", minutesAgo: 1_500)]
+		let groups = [NoteGroup(title: "Today", notes: Array(notes.prefix(2))), NoteGroup(title: "Yesterday", notes: [notes[2]])]
+		let offscreen = OffscreenWindow(
+			NavigationStack { NoteListView(groups: groups, now: Note.sampleNow, selection: .constant(nil), search: .constant("")) { _ in } },
+			width: 300,
+			height: 300
+		)
+		defer { offscreen.close() }
+		offscreen.window.appearance = NSAppearance(named: .aqua)
+		offscreen.pump(for: 0.2)
+		let list = try #require(offscreen.views(of: NSTableView.self).first)
+		try #require(list.numberOfRows == 5)
+		let rep = try #require(offscreen.host.bitmapImageRepForCachingDisplay(in: offscreen.host.bounds))
+		offscreen.host.cacheDisplay(in: offscreen.host.bounds, to: rep)
+		let scale = CGFloat(rep.pixelsWide) / offscreen.host.bounds.width
+		func lineNear(_ y: CGFloat) -> Bool {
+			(Int((y - 2) * scale) ... Int((y + 2) * scale)).contains { row in
+				(Int(40 * scale) ..< Int(250 * scale)).filter { (rep.colorAt(x: $0, y: row)?.brightnessComponent ?? 1) < 0.97 }.count > Int(150 * scale)
+			}
+		}
+		func edges(ofRow row: Int) -> (top: CGFloat, bottom: CGFloat) {
+			let rect = list.convert(list.rect(ofRow: row), to: offscreen.host)
+			return offscreen.host.isFlipped ? (rect.minY, rect.maxY) : (offscreen.host.bounds.height - rect.maxY, offscreen.host.bounds.height - rect.minY)
+		}
+
+		#expect(lineNear(edges(ofRow: 1).bottom), "notes of the same day keep their separator")
+		#expect(!lineNear(edges(ofRow: 3).top), "no line above the Yesterday heading")
+		#expect(!lineNear(edges(ofRow: 3).bottom), "no line under the Yesterday heading")
 	}
 
 	@Test func deleteRemovesTheSelectedNote() throws {

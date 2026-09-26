@@ -15,6 +15,13 @@ struct NoteListView: View {
 		return search.isEmpty ? ("No notes", "note.text") : ("No matches", "magnifyingglass")
 	}
 
+	static func separatorsHidden(for note: Note, in group: NoteGroup) -> VerticalEdge.Set {
+		var hidden: VerticalEdge.Set = []
+		if note.id == group.notes.first?.id { hidden.insert(.top) }
+		if note.id == group.notes.last?.id { hidden.insert(.bottom) }
+		return hidden
+	}
+
 	var body: some View {
 		List(selection: Binding(get: { selection }, set: { chosen in
 			selection = chosen
@@ -26,6 +33,8 @@ struct NoteListView: View {
 						// Containing the row dodges a macOS previews trap on custom views used directly as List rows.
 						// https://developer.apple.com/forums/thread/803429
 						ZStack(alignment: .leading) { NoteRow(note: note, now: now) }
+							.listRowInsets(EdgeInsets(top: 0, leading: 18.5, bottom: 0, trailing: 15.5))
+							.listRowSeparator(.hidden, edges: Self.separatorsHidden(for: note, in: group))
 							.tag(note.id)
 					}
 				}
