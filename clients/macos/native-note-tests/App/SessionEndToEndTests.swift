@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import NativeNote
@@ -14,11 +15,11 @@ struct SessionEndToEndTests {
 		"🎉 Party 👨‍👩‍👧‍👦\r\nbring the kettle",
 	]
 
-	private func field(_ placeholder: String, in window: OffscreenWindow<ContentView>) throws -> NSSecureTextField {
+	private func field(_ placeholder: String, in window: OffscreenWindow<some View>) throws -> NSSecureTextField {
 		try #require(window.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
 	}
 
-	private func type(_ text: String, into field: NSTextField, of window: OffscreenWindow<ContentView>) throws {
+	private func type(_ text: String, into field: NSTextField, of window: OffscreenWindow<some View>) throws {
 		try #require(window.window.makeFirstResponder(field))
 		let editor = try #require(field.currentEditor())
 		editor.insertText(text)
@@ -87,5 +88,38 @@ struct SessionEndToEndTests {
 		relaunched.start()
 		await relaunched.submit(password: password)
 		#expect(Set(relaunched.notes.map(\.body)) == saved)
+	}
+
+	@Test func changingThePasswordThroughItsForm() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(directory: directory)
+		model.start()
+		await model.submit(password: password)
+		try #require(model.phase == .unlocked, "\(String(describing: model.failure))")
+		for text in typed {
+			await model.createNote()
+			model.edit(try #require(model.selection), text)
+		}
+		var closed = false
+		let form = OffscreenWindow(ChangePasswordView(turnsTouchIDOff: false, change: model.changePassword(from:to:)) { closed = true })
+		defer { form.close() }
+
+		try type(password, into: try field("Current password", in: form), of: form)
+		try type("staple battery horse", into: try field("New password", in: form), of: form)
+		let confirmation = try field("Confirm new password", in: form)
+		try type("staple battery horse", into: confirmation, of: form)
+		confirmation.currentEditor()?.insertNewline(nil)
+		await form.pump(turns: 20_000) { closed }
+		try #require(closed)
+		await model.lock()
+
+		let relaunched = AppModel(directory: directory)
+		relaunched.start()
+		await relaunched.submit(password: "staple battery horse")
+		#expect(Set(relaunched.notes.map(\.body)) == Set(typed))
+		await relaunched.lock()
+		await relaunched.submit(password: password)
+		#expect(relaunched.failure == .wrongPassword)
 	}
 }

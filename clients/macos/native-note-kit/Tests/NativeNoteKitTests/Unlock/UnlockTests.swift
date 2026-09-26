@@ -239,6 +239,19 @@ struct UnlockTests {
 		_ = try await Unlock.open(password: "new password", in: directory)
 	}
 
+	@Test func changingThePasswordReportsTheNewParametersAndKey() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let parameters = try await seed("old password", in: directory)
+		let opened = try await Unlock.open(password: "old password", in: directory)
+
+		let changed = try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, calibrate: { parameters.argon })
+
+		#expect(changed.store === opened.store)
+		#expect(changed.parameters == (try AppLock.read(from: AppLock.currentFile(in: directory))))
+		#expect(changed.key == (try await Unlock.open(password: "new password", in: directory).key))
+	}
+
 	@Test func changingThePasswordRefusesAWrongCurrentPassword() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }

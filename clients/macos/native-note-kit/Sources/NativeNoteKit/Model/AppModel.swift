@@ -51,10 +51,12 @@ import Observation
 	private let directory: URL
 	private let scheduler: SaveScheduler
 	private let makeParameters: @Sendable () throws -> UnlockParameters
+	private let calibrate: @Sendable () throws -> Argon2.Parameters
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
 	private let exportParameters: Argon2.Parameters
 	private let keyStore: any UnlockKeyStore
 	private var unlockedKey: Data?
+	private var unlockParameters: UnlockParameters?
 	private var store: NoteStore?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
@@ -69,6 +71,7 @@ import Observation
 		directory: URL,
 		scheduler: SaveScheduler = SaveScheduler(),
 		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters,
+		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() },
 		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search,
 		exportParameters: Argon2.Parameters = Argon2.floor,
 		keyStore: (any UnlockKeyStore)? = nil
@@ -76,6 +79,7 @@ import Observation
 		self.directory = directory
 		self.scheduler = scheduler
 		self.makeParameters = makeParameters
+		self.calibrate = calibrate
 		self.searchNotes = searchNotes
 		self.exportParameters = exportParameters
 		self.keyStore = keyStore ?? KeychainUnlockKeyStore(directory: directory)
@@ -117,6 +121,7 @@ import Observation
 		searchFailing = false
 		conflicts = []
 		unlockedKey = nil
+		unlockParameters = nil
 		refreshBiometricUnlock()
 		await scheduler.flushAll()
 		guard let closing else { return }
@@ -237,6 +242,31 @@ import Observation
 			failure = .unexpected("Touch ID unlock could not be turned off. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
 		}
 		refreshBiometricUnlock()
+	}
+
+	public func changePassword(from current: String, to new: String) async -> Failure? {
+		guard phase == .unlocked, let store, let unlockParameters else {
+			return .unexpected("Unlock Native Note to change the password.")
+		}
+		defer { refreshBiometricUnlock() }
+		do {
+			let changed = try await Unlock.changePassword(
+				from: current,
+				to: new,
+				parameters: unlockParameters,
+				store: store,
+				in: directory,
+				storedKey: keyStore,
+				calibrate: calibrate
+			)
+			if self.store === store {
+				unlockedKey = changed.key
+				self.unlockParameters = changed.parameters
+			}
+			return nil
+		} catch {
+			return Failure(error)
+		}
 	}
 
 	public func unlockWithBiometrics() async {
@@ -411,6 +441,7 @@ import Observation
 			let loaded = try await opened.liveNotes()
 			store = opened
 			unlockedKey = unlocked.key
+			unlockParameters = unlocked.parameters
 			let carried = failingSaves.values.map(\.note)
 			notes = loaded
 			for note in carried {

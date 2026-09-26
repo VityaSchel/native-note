@@ -110,6 +110,7 @@ nonisolated enum Unlock {
 		return Unlocked(store: store, parameters: try AppLock.read(from: AppLock.currentFile(in: directory)), key: key)
 	}
 
+	@discardableResult
 	@concurrent static func changePassword(
 		from oldPassword: String,
 		to newPassword: String,
@@ -118,7 +119,7 @@ nonisolated enum Unlock {
 		in directory: URL,
 		storedKey: (any UnlockKeyStore)? = nil,
 		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() }
-	) async throws {
+	) async throws -> Unlocked {
 		let database = AppLock.databaseFile(in: directory)
 		let oldKey = try await BlockingWork.run { try localDbKey(password: oldPassword, parameters: parameters) }
 		do {
@@ -140,5 +141,6 @@ nonisolated enum Unlock {
 		}
 		try? storedKey?.delete()
 		try AppLock.promoteRekey(in: directory)
+		return Unlocked(store: store, parameters: next, key: newKey)
 	}
 }

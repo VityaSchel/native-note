@@ -29,7 +29,7 @@ struct SettingsViewTests {
 		let switches = Switches()
 		for enabled in [false, true] {
 			let offscreen = OffscreenWindow(
-				SecuritySettings(touchIDAvailable: true, touchIDEnabled: enabled, setTouchID: { switches.values.append($0) }),
+				SecuritySettings(touchIDAvailable: true, touchIDEnabled: enabled, setTouchID: { switches.values.append($0) }, changePassword: { _, _ in nil }),
 				width: 440,
 				height: 300
 			)
@@ -46,7 +46,7 @@ struct SettingsViewTests {
 
 	@Test func withoutTouchIDThereIsNoSwitch() {
 		let offscreen = OffscreenWindow(
-			SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, setTouchID: { _ in }),
+			SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, setTouchID: { _ in }, changePassword: { _, _ in nil }),
 			width: 440,
 			height: 300
 		)

@@ -157,6 +157,23 @@ struct LibraryEndToEndTests {
 		#expect(relaunched.failure == .wrongPassword)
 	}
 
+	@Test func changingThePasswordFromTheAppKeepsEveryNote() async throws {
+		let (model, directory) = try await realLibrary(password: "old password")
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let edited = try #require(model.selection)
+		model.edit(edited, "typed just before the change")
+		let saved = snapshot(model.notes)
+
+		#expect(await model.changePassword(from: "old password", to: "new password ✓") == nil)
+		await model.lock()
+
+		let relaunched = try await launch(in: directory, password: "new password ✓")
+		#expect(snapshot(relaunched.notes) == saved)
+		await relaunched.lock()
+		await relaunched.submit(password: "old password")
+		#expect(relaunched.failure == .wrongPassword)
+	}
+
 	@Test func setUpAfterACrashKeepsTheOrphanedNotes() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
