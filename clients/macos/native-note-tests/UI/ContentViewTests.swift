@@ -131,7 +131,7 @@ struct ContentViewTests {
 		}
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["kayak"])
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
 		defer { offscreen.close() }
 

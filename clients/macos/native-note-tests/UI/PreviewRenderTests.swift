@@ -25,8 +25,10 @@ struct PreviewRenderTests {
 	@Test func settingsScreens() {
 		render(SettingsView(model: .previewingFirstRun), width: 440, height: 300)
 		render(SettingsView(model: .previewing([])), width: 440, height: 300)
-		render(SecuritySettings(touchIDAvailable: true, touchIDEnabled: true, setTouchID: { _ in }, changePassword: { _, _ in nil }), width: 440, height: 300)
+		render(SecuritySettings(touchIDAvailable: true, touchIDEnabled: true, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }), width: 440, height: 300)
+		render(SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }), width: 440, height: 300)
 		render(ChangePasswordView(turnsTouchIDOff: true, change: { _, _ in nil }, done: {}), width: 360, height: 300)
+		render(TurnOnTouchIDView(turnOn: { _ in nil }, done: {}), width: 360, height: 160)
 	}
 
 	@Test func noteRows() {

@@ -8,16 +8,21 @@ nonisolated enum KeyDerivation {
 	static let localDb = "native-note/localdb/v1"
 	static let machineId = "native-note/machine-id/v1"
 
-	static func derive(ikm: Data, salt: Data = Data(), info: String, length: Int = 32) -> Data {
+	static func derive(ikm: SymmetricKey, salt: Data = Data(), info: String, length: Int = 32) -> SymmetricKey {
 		HKDF<SHA256>.deriveKey(
-			inputKeyMaterial: SymmetricKey(data: ikm),
+			inputKeyMaterial: ikm,
 			salt: salt,
 			info: Data(info.utf8),
 			outputByteCount: length
-		).withUnsafeBytes { Data($0) }
+		)
 	}
 
-	static func localDbKey(argonOut: Data, machineId: Data, localSalt: Data) -> Data {
-		derive(ikm: argonOut + machineId, salt: localSalt, info: localDb)
+	static func localDbKey(argonOut: SymmetricKey, machineId: SymmetricKey?, localSalt: Data) -> SymmetricKey {
+		let argonCount = argonOut.bitCount / 8
+		return SecretBytes.withScratch(byteCount: argonCount + (machineId?.bitCount ?? 0) / 8) { ikm in
+			argonOut.withUnsafeBytes { ikm.copyMemory(from: $0) }
+			machineId?.withUnsafeBytes { UnsafeMutableRawBufferPointer(rebasing: ikm[argonCount...]).copyMemory(from: $0) }
+			return derive(ikm: SymmetricKey(data: UnsafeRawBufferPointer(ikm)), salt: localSalt, info: localDb)
+		}
 	}
 }

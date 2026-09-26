@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -13,13 +14,13 @@ struct Argon2VectorTests {
 			)
 
 			let out = try Argon2.hash(
-				password: Data((try #require(vector.string("password"))).utf8),
+				password: try #require(vector.string("password")),
 				salt: try vector.require("salt"),
 				parameters: parameters,
 				length: try #require(vector.int("length"))
 			)
 
-			#expect(out == (try vector.require("output")), "case \(vector.name)")
+			#expect(out == SymmetricKey(data: try vector.require("output")), "case \(vector.name)")
 		}
 	}
 }

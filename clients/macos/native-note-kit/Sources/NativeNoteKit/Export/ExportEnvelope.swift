@@ -69,7 +69,7 @@ nonisolated enum ExportEnvelope {
 	}
 
 	static func key(passphrase: String, salt: Data, parameters: Argon2.Parameters) throws -> SymmetricKey {
-		SymmetricKey(data: try Argon2.hash(password: Data(passphrase.utf8), salt: salt, parameters: parameters))
+		try Argon2.hash(password: passphrase, salt: salt, parameters: parameters)
 	}
 
 	private static func word(_ bytes: Data, at offset: Int) -> UInt32 {

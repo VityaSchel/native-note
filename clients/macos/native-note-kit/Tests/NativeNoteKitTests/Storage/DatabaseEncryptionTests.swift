@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -10,7 +11,7 @@ struct DatabaseEncryptionTests {
 		_ = try await openStore(at: url)
 
 		await #expect(throws: SQLiteError.wrongKey) {
-			_ = try await NoteStore.open(url: url, key: Data(repeating: 0x42, count: 32))
+			_ = try await NoteStore.open(url: url, key: SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 		}
 	}
 
@@ -42,7 +43,7 @@ struct DatabaseEncryptionTests {
 
 		for count in [0, 16, 31, 33, 64] {
 			#expect(throws: SQLiteError.keyMustBe32Bytes(count: count)) {
-				_ = try SQLiteConnection(url: url, rawKey: Data(repeating: 0x41, count: count))
+				_ = try SQLiteConnection(url: url, rawKey: SymmetricKey(data: Data(repeating: 0x41, count: count)))
 			}
 		}
 	}
@@ -52,7 +53,7 @@ struct DatabaseEncryptionTests {
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 		try Data("not a database at all, but long enough to look like one".utf8).write(to: url)
-		let hex = databaseKey.map { String(format: "%02x", $0) }.joined()
+		let hex = databaseKey.withUnsafeBytes { $0.map { String(format: "%02x", $0) }.joined() }
 
 		var thrown = ""
 		do {
@@ -69,7 +70,7 @@ struct DatabaseEncryptionTests {
 	@Test func rekeyReplacesTheKeyAndRetiresTheOldOne() async throws {
 		let url = temporaryDatabase()
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-		let replacement = Data(repeating: 0x43, count: 32)
+		let replacement = SymmetricKey(data: Data(repeating: 0x43, count: 32))
 		let note = sampleNote(body: "survives a password change")
 
 		let notes = try await openStore(at: url)
@@ -91,7 +92,7 @@ struct DatabaseEncryptionTests {
 		let notes = try await openStore(at: url)
 
 		await #expect(throws: SQLiteError.keyMustBe32Bytes(count: 16)) {
-			_ = try await notes.rekey(from: databaseKey, to: Data(repeating: 0x43, count: 16))
+			_ = try await notes.rekey(from: databaseKey, to: SymmetricKey(data: Data(repeating: 0x43, count: 16)))
 		}
 		#expect(try await notes.liveNotes().isEmpty)
 	}

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 
@@ -67,8 +68,8 @@ import Observation
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
 	private let exportParameters: Argon2.Parameters
 	private let keyStore: any UnlockKeyStore
-	private var unlockedKey: Data?
 	private var unlockParameters: UnlockParameters?
+	private var passwordChangesInFlight = 0
 	private var store: NoteStore?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
@@ -143,7 +144,6 @@ import Observation
 		failingSaves = [:]
 		searchFailing = false
 		conflicts = []
-		unlockedKey = nil
 		unlockParameters = nil
 		refreshBiometricUnlock()
 		await scheduler.flushAll()
@@ -247,22 +247,38 @@ import Observation
 		MachineKey.isAvailable
 	}
 
-	@discardableResult
-	public func enableBiometricUnlock() async -> Bool {
-		guard phase == .unlocked, let unlockedKey, keyStore.isAvailable else { return false }
+	public func enableBiometricUnlock(password: String) async -> Failure? {
+		guard phase == .unlocked, let store, let unlockParameters else {
+			return .unexpected("Unlock Native Note to turn on Touch ID unlock.")
+		}
+		guard keyStore.isAvailable else { return .unexpected("Touch ID is not available on this Mac.") }
 		defer { refreshBiometricUnlock() }
+		let isStillCurrent = { self.store === store && self.unlockParameters == unlockParameters && self.passwordChangesInFlight == 0 }
+		let key: SymmetricKey
 		do {
-			try keyStore.save(unlockedKey)
+			key = try await Unlock.provenKey(password: password, parameters: unlockParameters, in: directory)
+		} catch {
+			return Failure(error)
+		}
+		guard isStillCurrent() else {
+			try? keyStore.delete()
+			return nil
+		}
+		do {
+			try keyStore.save(key)
 			let confirmed = try await keyStore.load(reason: "turn on Touch ID unlock")
-			guard let confirmed, confirmed == self.unlockedKey else {
+			guard let confirmed, isStillCurrent() else {
 				try? keyStore.delete()
-				return false
+				return nil
 			}
-			return true
+			guard confirmed == key else {
+				try? keyStore.delete()
+				return .unexpected("Touch ID unlock could not be turned on. Try again.")
+			}
+			return nil
 		} catch {
 			try? keyStore.delete()
-			failure = .unexpected("Touch ID unlock could not be turned on. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
-			return false
+			return .unexpected("Touch ID unlock could not be turned on. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
 		}
 	}
 
@@ -279,7 +295,11 @@ import Observation
 		guard phase == .unlocked, let store, let unlockParameters else {
 			return .unexpected("Unlock Native Note to change the password.")
 		}
-		defer { refreshBiometricUnlock() }
+		passwordChangesInFlight += 1
+		defer {
+			passwordChangesInFlight -= 1
+			refreshBiometricUnlock()
+		}
 		do {
 			let changed = try await Unlock.changePassword(
 				from: current,
@@ -290,10 +310,7 @@ import Observation
 				storedKey: keyStore,
 				calibrate: calibrate
 			)
-			if self.store === store {
-				unlockedKey = changed.key
-				self.unlockParameters = changed.parameters
-			}
+			if self.store === store { self.unlockParameters = changed.parameters }
 			return nil
 		} catch {
 			return Failure(error)
@@ -302,7 +319,7 @@ import Observation
 
 	public func unlockWithBiometrics() async {
 		offersBiometricUnlock = false
-		let key: Data?
+		let key: SymmetricKey?
 		do {
 			key = try await promptForStoredKey()
 		} catch {
@@ -317,7 +334,7 @@ import Observation
 		}
 	}
 
-	private func promptForStoredKey() async throws -> Data? {
+	private func promptForStoredKey() async throws -> SymmetricKey? {
 		isPromptingBiometrics = true
 		defer { isPromptingBiometrics = false }
 		return try await keyStore.load(reason: "unlock your notes")
@@ -478,7 +495,6 @@ import Observation
 			let opened = unlocked.store
 			let loaded = try await opened.liveNotes()
 			store = opened
-			unlockedKey = unlocked.key
 			unlockParameters = unlocked.parameters
 			let carried = failingSaves.values.map(\.note)
 			notes = loaded

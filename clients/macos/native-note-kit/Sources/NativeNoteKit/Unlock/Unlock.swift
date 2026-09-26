@@ -15,15 +15,10 @@ nonisolated enum Unlock {
 	struct Unlocked {
 		let store: NoteStore
 		let parameters: UnlockParameters
-		let key: Data
 	}
 
-	static func localDbKey(password: String, parameters: UnlockParameters) throws -> Data {
-		let argonOut = try Argon2.hash(
-			password: Data(password.utf8),
-			salt: parameters.localSalt,
-			parameters: parameters.argon
-		)
+	static func localDbKey(password: String, parameters: UnlockParameters) throws -> SymmetricKey {
+		let argonOut = try Argon2.hash(password: password, salt: parameters.localSalt, parameters: parameters.argon)
 		let machineId = try parameters.enclaveKey.map { representation in
 			do {
 				return try MachineKey(representation: representation).machineId()
@@ -31,11 +26,17 @@ nonisolated enum Unlock {
 				throw Failure.boundToAnotherMac
 			}
 		}
-		return KeyDerivation.localDbKey(
-			argonOut: argonOut,
-			machineId: machineId ?? Data(),
-			localSalt: parameters.localSalt
-		)
+		return KeyDerivation.localDbKey(argonOut: argonOut, machineId: machineId, localSalt: parameters.localSalt)
+	}
+
+	@concurrent static func provenKey(password: String, parameters: UnlockParameters, in directory: URL) async throws -> SymmetricKey {
+		let key = try await BlockingWork.run { try localDbKey(password: password, parameters: parameters) }
+		do {
+			_ = try await NoteStore.open(url: AppLock.databaseFile(in: directory), key: key)
+		} catch SQLiteError.wrongKey {
+			throw Failure.wrongPassword
+		}
+		return key
 	}
 
 	static func makeParameters() throws -> UnlockParameters {
@@ -65,7 +66,7 @@ nonisolated enum Unlock {
 		}
 		let store = try await NoteStore.create(url: database, key: key)
 		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
-		return Unlocked(store: store, parameters: parameters, key: key)
+		return Unlocked(store: store, parameters: parameters)
 	}
 
 	@concurrent static func open(password: String, in directory: URL) async throws -> Unlocked {
@@ -88,7 +89,7 @@ nonisolated enum Unlock {
 				let key = try await BlockingWork.run { try localDbKey(password: password, parameters: parameters) }
 				let store = try await NoteStore.open(url: database, key: key)
 				try AppLock.keep(file, in: directory)
-				return Unlocked(store: store, parameters: parameters, key: key)
+				return Unlocked(store: store, parameters: parameters)
 			} catch SQLiteError.wrongKey {
 				continue
 			}
@@ -96,7 +97,7 @@ nonisolated enum Unlock {
 		throw unreadable ?? Failure.wrongPassword
 	}
 
-	@concurrent static func open(key: Data, in directory: URL) async throws -> Unlocked {
+	@concurrent static func open(key: SymmetricKey, in directory: URL) async throws -> Unlocked {
 		guard !AppLock.parameterFiles(in: directory).isEmpty else { throw Failure.neverSetUp }
 		let database = AppLock.databaseFile(in: directory)
 		let size = (try? FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int) ?? 0
@@ -107,7 +108,7 @@ nonisolated enum Unlock {
 		} catch SQLiteError.wrongKey {
 			throw Failure.storedKeyRejected
 		}
-		return Unlocked(store: store, parameters: try AppLock.read(from: AppLock.currentFile(in: directory)), key: key)
+		return Unlocked(store: store, parameters: try AppLock.read(from: AppLock.currentFile(in: directory)))
 	}
 
 	@discardableResult
@@ -120,13 +121,7 @@ nonisolated enum Unlock {
 		storedKey: (any UnlockKeyStore)? = nil,
 		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() }
 	) async throws -> Unlocked {
-		let database = AppLock.databaseFile(in: directory)
-		let oldKey = try await BlockingWork.run { try localDbKey(password: oldPassword, parameters: parameters) }
-		do {
-			_ = try await NoteStore.open(url: database, key: oldKey)
-		} catch SQLiteError.wrongKey {
-			throw Failure.wrongPassword
-		}
+		let oldKey = try await provenKey(password: oldPassword, parameters: parameters, in: directory)
 
 		var next = parameters
 		next.localSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
@@ -141,6 +136,6 @@ nonisolated enum Unlock {
 		}
 		try? storedKey?.delete()
 		try AppLock.promoteRekey(in: directory)
-		return Unlocked(store: store, parameters: next, key: newKey)
+		return Unlocked(store: store, parameters: next)
 	}
 }

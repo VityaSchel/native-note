@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 actor NoteStore {
@@ -6,19 +7,19 @@ actor NoteStore {
 	private let url: URL
 	private var opened: SQLiteConnection?
 
-	static func create(url: URL, key: Data) async throws -> NoteStore {
+	static func create(url: URL, key: SymmetricKey) async throws -> NoteStore {
 		try await connect(url: url, key: key, create: true)
 	}
 
-	static func open(url: URL, key: Data) async throws -> NoteStore {
+	static func open(url: URL, key: SymmetricKey) async throws -> NoteStore {
 		try await connect(url: url, key: key, create: false)
 	}
 
-	private static func connect(url: URL, key: Data, create: Bool) async throws -> NoteStore {
+	private static func connect(url: URL, key: SymmetricKey, create: Bool) async throws -> NoteStore {
 		try await Task.detached(priority: .userInitiated) { try NoteStore(url: url, key: key, create: create) }.value
 	}
 
-	private init(url: URL, key: Data, create: Bool) throws {
+	private init(url: URL, key: SymmetricKey, create: Bool) throws {
 		let connection = try SQLiteConnection(url: url, rawKey: key, create: create)
 		try Schema.migrate(connection)
 		self.url = url
@@ -61,7 +62,7 @@ actor NoteStore {
 		try statement.step()
 	}
 
-	func rekey(from oldKey: Data, to newKey: Data) throws -> Bool {
+	func rekey(from oldKey: SymmetricKey, to newKey: SymmetricKey) throws -> Bool {
 		try connection.rekey(to: newKey)
 		do {
 			_ = try SQLiteConnection(url: url, rawKey: newKey, create: false)

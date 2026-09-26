@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -31,7 +32,13 @@ func fill(_ model: AppModel, with bodies: [String]) async throws {
 	await model.flushPendingSaves()
 }
 
-func workspaceKey() async throws -> Data {
+@MainActor
+func turnOnTouchID(_ model: AppModel, password: String = workspacePassword) async throws {
+	try #require(await model.enableBiometricUnlock(password: password) == nil)
+	try #require(model.isBiometricUnlockEnabled)
+}
+
+func workspaceKey() async throws -> SymmetricKey {
 	try await Task.detached { try Unlock.localDbKey(password: workspacePassword, parameters: .fast) }.value
 }
 

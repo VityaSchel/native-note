@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import LocalAuthentication
 import Security
@@ -11,7 +12,7 @@ private let touchIDReady = KeychainUnlockKeyStore(directory: URL(fileURLWithPath
 
 private final class TouchAcceptedKeychain: UnlockKeyStore {
 	private let keychain: KeychainUnlockKeyStore
-	private let saved = Mutex<Data?>(nil)
+	private let saved = Mutex<SymmetricKey?>(nil)
 
 	init(directory: URL) {
 		keychain = KeychainUnlockKeyStore(directory: directory)
@@ -21,12 +22,12 @@ private final class TouchAcceptedKeychain: UnlockKeyStore {
 
 	func hasKey() -> Bool { keychain.hasKey() }
 
-	func save(_ key: Data) throws {
+	func save(_ key: SymmetricKey) throws {
 		try keychain.save(key)
 		saved.withLock { $0 = key }
 	}
 
-	func load(reason: String) async throws -> Data? {
+	func load(reason: String) async throws -> SymmetricKey? {
 		saved.withLock { $0 }
 	}
 
@@ -55,7 +56,7 @@ struct TouchIDKeychainTests {
 		let keys = KeychainUnlockKeyStore(directory: directory)
 		defer { try? keys.delete() }
 
-		try keys.save(Data(repeating: 7, count: 32))
+		try keys.save(SymmetricKey(data: Data(repeating: 7, count: 32)))
 
 		#expect(lookUp(directory, [kSecAttrAccessible as String: kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly]) == errSecInteractionNotAllowed)
 		#expect(lookUp(directory, [kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked]) == errSecItemNotFound)
@@ -67,7 +68,7 @@ struct TouchIDKeychainTests {
 		let keys = KeychainUnlockKeyStore(directory: directory)
 		defer { try? keys.delete() }
 
-		try keys.save(Data((0 ..< 32).map { UInt8($0) }))
+		try keys.save(SymmetricKey(data: Data((0 ..< 32).map { UInt8($0) })))
 
 		#expect(keys.hasKey())
 		#expect(throws: KeychainFailure(status: errSecInteractionNotAllowed)) {
@@ -82,8 +83,8 @@ struct TouchIDKeychainTests {
 		let keys = KeychainUnlockKeyStore(directory: temporaryDirectory())
 		defer { try? keys.delete() }
 
-		try keys.save(Data(repeating: 1, count: 32))
-		try keys.save(Data(repeating: 2, count: 32))
+		try keys.save(SymmetricKey(data: Data(repeating: 1, count: 32)))
+		try keys.save(SymmetricKey(data: Data(repeating: 2, count: 32)))
 
 		#expect(keys.hasKey())
 	}
@@ -93,7 +94,7 @@ struct TouchIDKeychainTests {
 		let second = KeychainUnlockKeyStore(directory: temporaryDirectory())
 		defer { try? first.delete() }
 
-		try first.save(Data(repeating: 1, count: 32))
+		try first.save(SymmetricKey(data: Data(repeating: 1, count: 32)))
 
 		#expect(first.hasKey())
 		#expect(!second.hasKey())
@@ -108,13 +109,29 @@ struct TouchIDKeychainTests {
 		await model.submit(password: "correct horse")
 		try #require(model.phase == .unlocked)
 
-		#expect(await model.enableBiometricUnlock())
+		let failure = await model.enableBiometricUnlock(password: "correct horse")
+		try #require(failure == nil)
 		await model.lock()
 		#expect(model.canUnlockWithBiometrics)
 		#expect(KeychainUnlockKeyStore(directory: directory).hasKey())
 
 		model.disableBiometricUnlock()
 		#expect(!model.canUnlockWithBiometrics)
+		#expect(!KeychainUnlockKeyStore(directory: directory).hasKey())
+	}
+
+	@Test func aWrongPasswordPutsNothingInTheKeychain() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
+		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
+		model.start()
+		await model.submit(password: "correct horse")
+		try #require(model.phase == .unlocked)
+
+		#expect(await model.enableBiometricUnlock(password: "correct horses") == .wrongPassword)
+
+		#expect(!model.isBiometricUnlockEnabled)
 		#expect(!KeychainUnlockKeyStore(directory: directory).hasKey())
 	}
 
@@ -125,7 +142,8 @@ struct TouchIDKeychainTests {
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		model.start()
 		await model.submit(password: "correct horse")
-		#expect(await model.enableBiometricUnlock())
+		let failure = await model.enableBiometricUnlock(password: "correct horse")
+		try #require(failure == nil)
 		await model.lock()
 
 		await model.eraseLibrary()

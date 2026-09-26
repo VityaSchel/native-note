@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 @testable import NativeNoteKit
@@ -25,9 +26,9 @@ func makeDirectory(for url: URL) throws {
 	)
 }
 
-let databaseKey = Data(repeating: 0x41, count: 32)
+let databaseKey = SymmetricKey(data: Data(repeating: 0x41, count: 32))
 
-func openStore(at url: URL, key: Data = databaseKey) async throws -> NoteStore {
+func openStore(at url: URL, key: SymmetricKey = databaseKey) async throws -> NoteStore {
 	try makeDirectory(for: url)
 	return try await NoteStore.create(url: url, key: key)
 }

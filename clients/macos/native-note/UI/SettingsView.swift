@@ -14,9 +14,8 @@ struct SettingsView: View {
 				SecuritySettings(
 					touchIDAvailable: model.isBiometricUnlockAvailable,
 					touchIDEnabled: model.isBiometricUnlockEnabled,
-					setTouchID: { on in
-						if on { await model.enableBiometricUnlock() } else { model.disableBiometricUnlock() }
-					},
+					turnOnTouchID: model.enableBiometricUnlock(password:),
+					turnOffTouchID: model.disableBiometricUnlock,
 					changePassword: model.changePassword(from:to:)
 				)
 			} else {
@@ -31,18 +30,48 @@ struct SettingsView: View {
 }
 
 struct SecuritySettings: View {
+	enum Sheet: Identifiable {
+		case turnOnTouchID
+		case changePassword
+
+		var id: Self { self }
+	}
+
 	let touchIDAvailable: Bool
 	let touchIDEnabled: Bool
-	let setTouchID: (Bool) async -> Void
+	let turnOnTouchID: (String) async -> AppModel.Failure?
+	let turnOffTouchID: () -> Void
 	let changePassword: (String, String) async -> AppModel.Failure?
 
-	@State private var changingPassword = false
+	@State private var sheet: Sheet?
+
+	var body: some View {
+		SecurityForm(touchIDAvailable: touchIDAvailable, touchIDEnabled: touchIDEnabled, turnOffTouchID: turnOffTouchID) { sheet = $0 }
+			.sheet(item: $sheet) { content(for: $0) { sheet = nil } }
+	}
+
+	@ViewBuilder
+	func content(for sheet: Sheet, done: @escaping () -> Void) -> some View {
+		switch sheet {
+		case .turnOnTouchID:
+			TurnOnTouchIDView(turnOn: turnOnTouchID, done: done)
+		case .changePassword:
+			ChangePasswordView(turnsTouchIDOff: touchIDEnabled, change: changePassword, done: done)
+		}
+	}
+}
+
+struct SecurityForm: View {
+	let touchIDAvailable: Bool
+	let touchIDEnabled: Bool
+	let turnOffTouchID: () -> Void
+	let present: (SecuritySettings.Sheet) -> Void
 
 	var body: some View {
 		Form {
 			if touchIDAvailable {
 				Section {
-					Toggle(isOn: Binding(get: { touchIDEnabled }, set: { on in Task { await setTouchID(on) } })) {
+					Toggle(isOn: Binding(get: { touchIDEnabled }, set: { on in if on { present(.turnOnTouchID) } else { turnOffTouchID() } })) {
 						Text("Unlock with Touch ID")
 						Text("Use your fingerprint instead of typing the password.")
 					}
@@ -56,7 +85,7 @@ struct SecuritySettings: View {
 			}
 			Section("Password") {
 				LabeledContent {
-					Button("Change Password…") { changingPassword = true }
+					Button("Change Password…") { present(.changePassword) }
 				} label: {
 					Text("Unlock password")
 					Text("Opens your notes on this Mac. It cannot be recovered.")
@@ -64,18 +93,15 @@ struct SecuritySettings: View {
 			}
 		}
 		.formStyle(.grouped)
-		.sheet(isPresented: $changingPassword) {
-			ChangePasswordView(turnsTouchIDOff: touchIDEnabled, change: changePassword) { changingPassword = false }
-		}
 	}
 }
 
 #Preview("Settings") {
-	SecuritySettings(touchIDAvailable: true, touchIDEnabled: true, setTouchID: { _ in }, changePassword: { _, _ in nil })
+	SecuritySettings(touchIDAvailable: true, touchIDEnabled: true, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil })
 		.frame(width: 440)
 }
 
 #Preview("Settings, no Touch ID") {
-	SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, setTouchID: { _ in }, changePassword: { _, _ in nil })
+	SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil })
 		.frame(width: 440)
 }

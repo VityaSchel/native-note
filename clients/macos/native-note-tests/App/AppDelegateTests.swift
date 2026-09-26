@@ -95,7 +95,7 @@ struct AppDelegateTests {
 		let (model, directory) = try await unlockedModel { [alarm] directory in
 			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
 		}
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		return (model, directory)
 	}

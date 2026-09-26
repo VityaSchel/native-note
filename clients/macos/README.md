@@ -32,7 +32,7 @@ SQLCipher uses the **CommonCrypto** backend, not a bundled OpenSSL — `PRAGMA c
 
 Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee.
 
-Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics), so a new fingerprint cannot unlock it. It needs a team-signed build and is turned on in Settings.
+Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics), so a new fingerprint cannot unlock it. It needs a team-signed build and is turned on in Settings with the password.
 
 ### Entitlements
 

@@ -143,6 +143,6 @@ The bundle ID is `dev.hloth.nativenote` rather than `dev.hloth.native-note` beca
 
 Read [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) before touching crypto, key storage, or the request path.
 
-Never log secrets or plaintext. In the Rust server, wrap key material in a type whose `Debug` prints `[redacted]`; the generator's published fixture keys stay bare. In Swift, key material reaches no log or error; its one string form is the raw-key literal in `SQLiteConnection.applyRawKey`.
+Never log secrets or plaintext. In the Rust server, wrap key material in a type whose `Debug` prints `[redacted]`; the generator's published fixture keys stay bare. In Swift, key material stays in `SymmetricKey`, reaches no log or error, and its one text form is the raw-key literal buffer that `SQLiteConnection.withRawKeyLiteral` wipes after use.
 
 Report vulnerabilities per [SECURITY.md](SECURITY.md) rather than in a public issue.

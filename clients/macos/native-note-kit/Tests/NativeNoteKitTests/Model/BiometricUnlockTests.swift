@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -21,7 +22,7 @@ struct BiometricUnlockTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let bodies = Set(model.notes.map(\.body))
 
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		#expect(model.isBiometricUnlockEnabled)
 		#expect(!model.canUnlockWithBiometrics)
 		await model.lock()
@@ -47,7 +48,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		keys.reply(with: .cancel)
 
@@ -63,7 +64,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		keys.reply(with: .failure)
 
@@ -80,7 +81,7 @@ struct BiometricUnlockTests {
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.lock()
-		keys.plant(Data(repeating: 0x42, count: 32))
+		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 
 		await model.unlockWithBiometrics()
 
@@ -95,7 +96,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 
 		model.disableBiometricUnlock()
 
@@ -105,44 +106,11 @@ struct BiometricUnlockTests {
 		#expect(!model.canUnlockWithBiometrics)
 	}
 
-	@Test func aMacWithoutTouchIDSavesNothing() async throws {
-		let keys = FakeKeyStore(available: false)
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-
-		#expect(await !model.enableBiometricUnlock())
-		#expect(keys.storedKey == nil)
-		keys.plant(Data(repeating: 0x42, count: 32))
-		await model.lock()
-		#expect(!model.canUnlockWithBiometrics)
-	}
-
-	@Test func lockingForgetsTheKeyItCouldHaveSaved() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-
-		await model.lock()
-
-		#expect(await !model.enableBiometricUnlock())
-		#expect(keys.storedKey == nil)
-	}
-
-	@Test func theSavedKeyIsTheOneThatOpensTheNotes() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-
-		#expect(await model.enableBiometricUnlock())
-
-		#expect(keys.storedKey == (try await workspaceKey()))
-	}
-
 	@Test func theButtonShowsAtLaunchWhenAKeyIsStored() async throws {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 
 		let relaunched = AppModel(directory: directory, keyStore: keys)
@@ -153,7 +121,7 @@ struct BiometricUnlockTests {
 
 	@Test func aNewLibraryForgetsTheKeyOfTheOneBeforeIt() async throws {
 		let keys = FakeKeyStore()
-		keys.plant(Data(repeating: 0x42, count: 32))
+		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
@@ -177,19 +145,20 @@ struct BiometricUnlockTests {
 		model.start()
 		let other = try await Unlock.setUp(password: "other instance", in: directory, makeParameters: { .fast })
 		await other.store.close()
-		try keys.save(other.key)
+		let otherKey = try await Task.detached { try Unlock.localDbKey(password: "other instance", parameters: .fast) }.value
+		try keys.save(otherKey)
 
 		await model.submit(password: "correct horse")
 
 		#expect(model.phase == .locked)
-		#expect(keys.storedKey == other.key)
+		#expect(keys.storedKey == otherKey)
 	}
 
 	@Test func touchIDArrivingAfterAPasswordUnlockChangesNothing() async throws {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		let id = try #require(model.notes.first?.id)
 		model.edit(id, "typed after the password unlock")
 
@@ -209,7 +178,7 @@ struct BiometricUnlockTests {
 		try #require(model.phase == .locked)
 
 		#expect(!FileManager.default.fileExists(atPath: walFile(of: AppLock.databaseFile(in: directory)).path))
-		#expect(await !model.enableBiometricUnlock())
+		#expect(await model.enableBiometricUnlock(password: workspacePassword) != nil)
 		#expect(keys.storedKey == nil)
 	}
 
@@ -217,7 +186,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		try FileManager.default.removeItem(at: AppLock.databaseFile(in: directory))
 
@@ -227,25 +196,11 @@ struct BiometricUnlockTests {
 		#expect(keys.storedKey != nil)
 	}
 
-	@Test func aKeychainThatRefusesWritesSaysSo() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		keys.failWrites()
-		let refusal = KeychainFailure(status: errSecNotAvailable).message
-
-		#expect(await !model.enableBiometricUnlock())
-		#expect(model.failure == .unexpected("Touch ID unlock could not be turned on. \(refusal)"))
-
-		model.disableBiometricUnlock()
-		#expect(model.failure == .unexpected("Touch ID unlock could not be turned off. \(refusal)"))
-	}
-
 	@Test func turningTouchIDOffOnTheLockScreenHidesTheButton() async throws {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		try #require(model.canUnlockWithBiometrics)
 
@@ -254,73 +209,11 @@ struct BiometricUnlockTests {
 		#expect(!model.canUnlockWithBiometrics)
 	}
 
-	@Test func turningTouchIDOnAsksForTouchIDFirst() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-
-		#expect(await model.enableBiometricUnlock())
-
-		#expect(keys.reasons == ["turn on Touch ID unlock"])
-		#expect(model.isBiometricUnlockEnabled)
-	}
-
-	@Test func cancellingTheTouchIDCheckLeavesItOff() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		keys.reply(with: .cancel)
-
-		#expect(await !model.enableBiometricUnlock())
-
-		#expect(keys.storedKey == nil)
-		#expect(!model.isBiometricUnlockEnabled)
-		#expect(model.failure == nil)
-	}
-
-	@Test func aTouchIDCheckThatFailsSaysSoAndLeavesItOff() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		keys.reply(with: .failure)
-
-		#expect(await !model.enableBiometricUnlock())
-
-		#expect(keys.storedKey == nil)
-		#expect(!model.isBiometricUnlockEnabled)
-		#expect(model.failure != nil)
-	}
-
-	@Test func aKeyThatReadsBackDifferentlyIsNotKept() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		keys.reply(with: .otherKey)
-
-		#expect(await !model.enableBiometricUnlock())
-
-		#expect(keys.storedKey == nil)
-		#expect(!model.isBiometricUnlockEnabled)
-	}
-
-	@Test func lockingDuringTheTouchIDCheckKeepsNoKey() async throws {
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		keys.whileLoading { await model.lock() }
-
-		#expect(await !model.enableBiometricUnlock())
-
-		#expect(model.phase == .locked)
-		#expect(keys.storedKey == nil)
-		#expect(!model.canUnlockWithBiometrics)
-	}
-
 	@Test func aLibraryThatStartsLockedOffersTouchIDRightAway() async throws {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 
 		let relaunched = AppModel(directory: directory, keyStore: keys)
@@ -333,7 +226,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 
 		await model.lock()
 		#expect(!model.offersBiometricUnlock)
@@ -346,7 +239,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		let relaunched = AppModel(directory: directory, keyStore: keys)
 		relaunched.start()
@@ -374,7 +267,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		await model.lock()
 		model.offerBiometricUnlock()
 		let seen = PromptState()

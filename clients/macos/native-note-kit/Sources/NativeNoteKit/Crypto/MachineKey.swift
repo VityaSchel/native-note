@@ -16,11 +16,9 @@ nonisolated struct MachineKey {
 
 	var representation: Data { key.dataRepresentation }
 
-	func machineId() throws -> Data {
-		KeyDerivation.derive(ikm: try agreeWithItself(), info: KeyDerivation.machineId)
-	}
-
-	private func agreeWithItself() throws -> Data {
-		try key.sharedSecretFromKeyAgreement(with: key.publicKey).withUnsafeBytes { Data($0) }
+	func machineId() throws -> SymmetricKey {
+		try key.sharedSecretFromKeyAgreement(with: key.publicKey).withUnsafeBytes {
+			KeyDerivation.derive(ikm: SymmetricKey(data: $0), info: KeyDerivation.machineId)
+		}
 	}
 }

@@ -52,7 +52,9 @@ machineId  = hardwareBinding()
 localDbKey = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-note/localdb/v1", 32)
 ```
 
-`localDbKey` is passed as a **raw key** (`PRAGMA key = "x'<64 hex>'"`), not a passphrase.
+`localDbKey` is passed as a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, not a passphrase. It opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
+
+The app keeps no copy of `localDbKey` while unlocked; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and the scratch buffers the app fills with key or password bytes are wiped after use. The password string is not wiped.
 
 #### `hardwareBinding`
 
@@ -81,7 +83,7 @@ Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alon
 
 1. Confirm the current password with a fresh open
 2. Write the new unlock parameters, with a fresh salt and recalibrated `argonParams`, to a pending file, keeping the current one
-3. Run `PRAGMA rekey`
+3. Rekey with `sqlite3_rekey_v2`
 4. Verify a fresh open with the new key; if it fails, reconnect the store with the old key, delete the pending file and keep the old password
 5. Replace the current key file with the pending one
 
@@ -95,7 +97,7 @@ The unlock screen offers to erase the library and start over, behind a confirmat
 
 Optional, off by default. When enabled, `localDbKey` is stored in the platform's key store linked to the current biometric enrollment, so the OS invalidates it if the enrolled set changes.
 
-Turning it on stores the key, then reads it back behind a biometric prompt. A cancelled or failed prompt, a key that reads back differently, or a lock while the prompt is up deletes it and leaves the option off. Turning it off asks nothing.
+Turning it on asks for the password, derives the key and confirms it opens the database, stores it, then reads it back behind a biometric prompt. A wrong password stores nothing. A cancelled or failed prompt, a key that reads back differently, or a lock or password change before the prompt is answered deletes it and leaves the option off. Turning it off asks nothing.
 
 The unlock screen always offers the password form. When biometric unlock is enabled it also offers a biometric button beside it:
 

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Synchronization
 
@@ -12,7 +13,7 @@ final class FakeKeyStore: UnlockKeyStore {
 	}
 
 	private struct State {
-		var key: Data?
+		var key: SymmetricKey?
 		var reply = Reply.key
 		var failsWrites = false
 		var reasons: [String] = []
@@ -26,7 +27,7 @@ final class FakeKeyStore: UnlockKeyStore {
 		state = Mutex(State(available: available))
 	}
 
-	var storedKey: Data? { state.withLock { $0.key } }
+	var storedKey: SymmetricKey? { state.withLock { $0.key } }
 
 	var reasons: [String] { state.withLock { $0.reasons } }
 
@@ -42,7 +43,7 @@ final class FakeKeyStore: UnlockKeyStore {
 		state.withLock { $0.failsWrites = true }
 	}
 
-	func plant(_ key: Data) {
+	func plant(_ key: SymmetricKey) {
 		state.withLock { $0.key = key }
 	}
 
@@ -50,14 +51,14 @@ final class FakeKeyStore: UnlockKeyStore {
 
 	func hasKey() -> Bool { storedKey != nil }
 
-	func save(_ key: Data) throws {
+	func save(_ key: SymmetricKey) throws {
 		try state.withLock {
 			guard !$0.failsWrites else { throw KeychainFailure(status: errSecNotAvailable) }
 			$0.key = key
 		}
 	}
 
-	func load(reason: String) async throws -> Data? {
+	func load(reason: String) async throws -> SymmetricKey? {
 		let hook = state.withLock {
 			$0.reasons.append(reason)
 			return $0.whileLoading
@@ -68,7 +69,7 @@ final class FakeKeyStore: UnlockKeyStore {
 		case .key: return key
 		case .cancel: return nil
 		case .failure: throw KeychainFailure(status: errSecItemNotFound)
-		case .otherKey: return Data(repeating: 0xEE, count: 32)
+		case .otherKey: return SymmetricKey(data: Data(repeating: 0xEE, count: 32))
 		}
 	}
 

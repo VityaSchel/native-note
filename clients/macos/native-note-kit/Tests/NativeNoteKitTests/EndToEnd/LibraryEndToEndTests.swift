@@ -19,8 +19,8 @@ struct LibraryEndToEndTests {
 		})
 	}
 
-	func launch(in directory: URL, password: String) async throws -> AppModel {
-		let model = AppModel(directory: directory)
+	func launch(in directory: URL, password: String, keyStore: (any UnlockKeyStore)? = nil) async throws -> AppModel {
+		let model = AppModel(directory: directory, keyStore: keyStore)
 		model.start()
 		await model.submit(password: password)
 		try #require(model.phase == .unlocked, "\(String(describing: model.failure))")
@@ -172,6 +172,30 @@ struct LibraryEndToEndTests {
 		await relaunched.lock()
 		await relaunched.submit(password: "old password")
 		#expect(relaunched.failure == .wrongPassword)
+	}
+
+	@Test func touchIDTurnedOnWithThePasswordUnlocksTheRelaunchedLibrary() async throws {
+		let keys = FakeKeyStore()
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = try await launch(in: directory, password: "correct horse battery", keyStore: keys)
+		try await fill(model, with: corpus)
+		let saved = snapshot(model.notes)
+
+		#expect(await model.enableBiometricUnlock(password: "correct horse batter") == .wrongPassword)
+		#expect(keys.storedKey == nil)
+		try await turnOnTouchID(model, password: "correct horse battery")
+		await model.close()
+
+		let relaunched = AppModel(directory: directory, keyStore: keys)
+		relaunched.start()
+		#expect(relaunched.canUnlockWithBiometrics)
+		await relaunched.unlockWithBiometrics()
+
+		#expect(relaunched.phase == .unlocked)
+		#expect(relaunched.failure == nil)
+		#expect(snapshot(relaunched.notes) == saved)
+		#expect(keys.reasons == ["turn on Touch ID unlock", "unlock your notes"])
 	}
 
 	@Test func setUpAfterACrashKeepsTheOrphanedNotes() async throws {

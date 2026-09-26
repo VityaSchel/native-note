@@ -23,7 +23,7 @@ struct LibraryEraseTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
+		try await turnOnTouchID(model)
 		for name in ["notes-set-aside-20260101T000000Z-1.db", "notes-set-aside-20260101T000000Z-1.db-wal"] {
 			FileManager.default.createFile(atPath: directory.appending(path: name).path, contents: Data("old notes".utf8))
 		}

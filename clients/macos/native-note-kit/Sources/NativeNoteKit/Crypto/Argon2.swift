@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import argon2
 
@@ -14,25 +15,26 @@ nonisolated enum Argon2 {
 
 	static let floor = Parameters(m: 256 * 1024, t: 3, p: 4)
 
-	static func hash(password: Data, salt: Data, parameters: Parameters, length: Int = 32) throws -> Data {
+	static func hash(password: String, salt: Data, parameters: Parameters, length: Int = 32) throws -> SymmetricKey {
 		#if DEBUG
 			dispatchPrecondition(condition: .notOnQueue(.main))
 		#endif
-		var out = [UInt8](repeating: 0, count: length)
-		let code = password.withUnsafeBytes { password in
-			salt.withUnsafeBytes { salt in
-				argon2id_hash_raw(
-					parameters.t, parameters.m, parameters.p,
-					password.baseAddress, password.count,
-					salt.baseAddress, salt.count,
-					&out, length
-				)
+		return try SecretBytes.withUTF8(of: password) { password in
+			try SecretBytes.withScratch(byteCount: length) { out in
+				let code = salt.withUnsafeBytes { salt in
+					argon2id_hash_raw(
+						parameters.t, parameters.m, parameters.p,
+						password.baseAddress, password.count,
+						salt.baseAddress, salt.count,
+						out.baseAddress, length
+					)
+				}
+				guard code == ARGON2_OK.rawValue else {
+					throw Failure.rejected(code: code, message: String(cString: argon2_error_message(code)))
+				}
+				return SymmetricKey(data: UnsafeRawBufferPointer(out))
 			}
 		}
-		guard code == ARGON2_OK.rawValue else {
-			throw Failure.rejected(code: code, message: String(cString: argon2_error_message(code)))
-		}
-		return Data(out)
 	}
 
 	static func calibrateMemory(
@@ -67,7 +69,7 @@ nonisolated enum Argon2 {
 
 	private static func timedHash(_ parameters: Parameters) throws -> TimeInterval {
 		let started = DispatchTime.now().uptimeNanoseconds
-		_ = try hash(password: Data("native-note calibration".utf8), salt: Data(repeating: 0, count: 16), parameters: parameters)
+		_ = try hash(password: "native-note calibration", salt: Data(repeating: 0, count: 16), parameters: parameters)
 		return Double(DispatchTime.now().uptimeNanoseconds - started) / 1e9
 	}
 }

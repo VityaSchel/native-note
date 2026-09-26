@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import LocalAuthentication
 import Security
@@ -5,8 +6,8 @@ import Security
 nonisolated public protocol UnlockKeyStore: Sendable {
 	var isAvailable: Bool { get }
 	func hasKey() -> Bool
-	func save(_ key: Data) throws
-	func load(reason: String) async throws -> Data?
+	func save(_ key: SymmetricKey) throws
+	func load(reason: String) async throws -> SymmetricKey?
 	func delete() throws
 }
 
@@ -43,20 +44,34 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		return status == errSecSuccess || status == errSecInteractionNotAllowed
 	}
 
-	func save(_ key: Data) throws {
+	func save(_ key: SymmetricKey) throws {
 		var error: Unmanaged<CFError>?
 		guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, &error) else {
 			throw error.map { $0.takeRetainedValue() as Error } ?? KeychainFailure(status: errSecParam)
 		}
 		try delete()
-		var item = baseQuery
-		item[kSecValueData as String] = key
-		item[kSecAttrAccessControl as String] = access
-		let status = SecItemAdd(item as CFDictionary, nil)
-		guard status == errSecSuccess else { throw KeychainFailure(status: status) }
+		try Self.withItemValue(of: key) { value in
+			var item = baseQuery
+			item[kSecValueData as String] = value
+			item[kSecAttrAccessControl as String] = access
+			let status = SecItemAdd(item as CFDictionary, nil)
+			guard status == errSecSuccess else { throw KeychainFailure(status: status) }
+		}
 	}
 
-	func load(reason: String) async throws -> Data? {
+	static func withItemValue<T>(of key: SymmetricKey, _ body: (CFMutableData) throws -> T) rethrows -> T {
+		let value: CFMutableData = CFDataCreateMutable(nil, key.bitCount / 8)
+		key.withUnsafeBytes { CFDataAppendBytes(value, $0.baseAddress?.assumingMemoryBound(to: UInt8.self), $0.count) }
+		defer { SecretBytes.wipe(UnsafeMutableRawBufferPointer(start: CFDataGetMutableBytePtr(value), count: CFDataGetLength(value))) }
+		return try body(value)
+	}
+
+	static func key(from item: AnyObject?) throws -> SymmetricKey {
+		guard let value = item as? NSData else { throw KeychainFailure(status: errSecDecode) }
+		return SymmetricKey(data: UnsafeRawBufferPointer(start: value.bytes, count: value.length))
+	}
+
+	func load(reason: String) async throws -> SymmetricKey? {
 		try await withCheckedThrowingContinuation { continuation in
 			DispatchQueue.global(qos: .userInitiated).async {
 				continuation.resume(with: Result { try read(reason: reason, interactive: true) })
@@ -64,7 +79,7 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		}
 	}
 
-	func read(reason: String, interactive: Bool) throws -> Data? {
+	func read(reason: String, interactive: Bool) throws -> SymmetricKey? {
 		let context = LAContext()
 		context.localizedReason = reason
 		context.interactionNotAllowed = !interactive
@@ -75,8 +90,7 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		let status = SecItemCopyMatching(query as CFDictionary, &result)
 		switch status {
 		case errSecSuccess:
-			guard let key = result as? Data else { throw KeychainFailure(status: errSecDecode) }
-			return key
+			return try Self.key(from: result)
 		case errSecUserCanceled, errSecAuthFailed:
 			return nil
 		default:

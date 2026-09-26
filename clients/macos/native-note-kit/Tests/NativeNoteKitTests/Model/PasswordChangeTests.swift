@@ -1,23 +1,12 @@
 import Foundation
-import Synchronization
 import Testing
 
 @testable import NativeNoteKit
 
-private final class CalibrationGate: Sendable {
-	private let entered = Mutex(false)
-	private let release = DispatchSemaphore(value: 0)
-
-	var isHolding: Bool { entered.withLock { $0 } }
-
-	func hold() -> Argon2.Parameters {
-		entered.withLock { $0 = true }
-		release.wait()
+private extension Gate {
+	func holdCalibration() -> Argon2.Parameters {
+		hold()
 		return UnlockParameters.fast.argon
-	}
-
-	func open() {
-		release.signal()
 	}
 }
 
@@ -111,14 +100,14 @@ struct PasswordChangeTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		#expect(await model.enableBiometricUnlock())
-		#expect(model.isBiometricUnlockEnabled)
+		try await turnOnTouchID(model)
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
 		#expect(!model.isBiometricUnlockEnabled)
 		#expect(keys.storedKey == nil)
 
-		#expect(await model.enableBiometricUnlock())
+		#expect(await model.enableBiometricUnlock(password: workspacePassword) == .wrongPassword)
+		try await turnOnTouchID(model, password: "a new password")
 		await model.lock()
 		await model.unlockWithBiometrics()
 		#expect(model.phase == .unlocked)
@@ -126,14 +115,13 @@ struct PasswordChangeTests {
 	}
 
 	@Test func lockingDuringTheChangeKeepsTheOldPassword() async throws {
-		let gate = CalibrationGate()
-		let (model, directory) = try await library(calibrate: gate.hold)
+		let gate = Gate()
+		defer { gate.open() }
+		let (model, directory) = try await library(calibrate: gate.holdCalibration)
 		defer { try? FileManager.default.removeItem(at: directory) }
 
 		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
-		for _ in 0 ..< 2_000 where !gate.isHolding {
-			try await Task.sleep(for: .milliseconds(5))
-		}
+		try await gate.untilHolding()
 		try #require(gate.isHolding)
 		await model.lock()
 		gate.open()
@@ -141,5 +129,51 @@ struct PasswordChangeTests {
 		#expect(await change.value != nil)
 		#expect(await relaunch(directory, password: workspacePassword).phase == .unlocked)
 		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+	}
+
+	@Test func aPasswordChangeDuringTheTouchIDCheckLeavesNoStaleKey() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let staleKey = try await workspaceKey()
+		keys.whileLoading {
+			#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
+			keys.plant(staleKey)
+		}
+
+		#expect(await model.enableBiometricUnlock(password: workspacePassword) == nil)
+
+		#expect(keys.storedKey == nil)
+		#expect(!model.isBiometricUnlockEnabled)
+		await model.lock()
+		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
+	}
+
+	@Test func aPasswordChangeStillRunningWhenTouchIDAnswersLeavesNoKey() async throws {
+		let gate = Gate()
+		defer { gate.open() }
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys, calibrate: gate.holdCalibration)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let promptIsUp = AsyncStream<Void>.makeStream()
+		let change = Task {
+			for await _ in promptIsUp.stream { break }
+			return await model.changePassword(from: workspacePassword, to: "a new password")
+		}
+		keys.whileLoading {
+			promptIsUp.continuation.yield()
+			try? await gate.untilHolding()
+		}
+
+		#expect(await model.enableBiometricUnlock(password: workspacePassword) == nil)
+
+		#expect(gate.isHolding)
+		#expect(keys.storedKey == nil)
+		#expect(!model.isBiometricUnlockEnabled)
+		gate.open()
+		#expect(await change.value == nil)
+		#expect(keys.storedKey == nil)
+		await model.lock()
+		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
 	}
 }

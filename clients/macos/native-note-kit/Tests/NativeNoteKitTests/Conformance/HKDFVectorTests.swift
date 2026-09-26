@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 
@@ -19,9 +20,9 @@ struct HKDFVectorTests {
 				try vector.require("argonOut") + vector.require("machineId")
 			}
 
-			let okm = KeyDerivation.derive(ikm: ikm, salt: salt, info: info, length: length)
+			let okm = KeyDerivation.derive(ikm: SymmetricKey(data: ikm), salt: salt, info: info, length: length)
 
-			#expect(okm == (try vector.require("okm")), "label \(vector.name)")
+			#expect(okm == SymmetricKey(data: try vector.require("okm")), "label \(vector.name)")
 		}
 	}
 
@@ -41,11 +42,11 @@ struct HKDFVectorTests {
 		let vector = try #require(try Vectors.load(.hkdf).first { $0.name == "localDbKey" })
 
 		let key = KeyDerivation.localDbKey(
-			argonOut: try vector.require("argonOut"),
-			machineId: try vector.require("machineId"),
+			argonOut: SymmetricKey(data: try vector.require("argonOut")),
+			machineId: SymmetricKey(data: try vector.require("machineId")),
 			localSalt: try vector.require("salt")
 		)
 
-		#expect(key == (try vector.require("okm")))
+		#expect(key == SymmetricKey(data: try vector.require("okm")))
 	}
 }

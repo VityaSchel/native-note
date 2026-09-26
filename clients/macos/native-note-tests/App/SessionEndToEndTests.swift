@@ -122,4 +122,45 @@ struct SessionEndToEndTests {
 		await relaunched.submit(password: password)
 		#expect(relaunched.failure == .wrongPassword)
 	}
+
+	@Test func turningOnTouchIDThroughItsFormThenUnlockingWithATouch() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let keys = FakeKeyStore()
+		let model = AppModel(directory: directory, keyStore: keys)
+		model.start()
+		await model.submit(password: password)
+		try #require(model.phase == .unlocked, "\(String(describing: model.failure))")
+		for text in typed {
+			await model.createNote()
+			model.edit(try #require(model.selection), text)
+		}
+		var closed = false
+		let form = OffscreenWindow(TurnOnTouchIDView(turnOn: model.enableBiometricUnlock(password:)) { closed = true }, width: 360, height: 160)
+		defer { form.close() }
+		let field = try field("Password", in: form)
+
+		try type("staple battery horse", into: field, of: form)
+		field.currentEditor()?.insertNewline(nil)
+		await form.pump(turns: 20_000) { field.stringValue.isEmpty }
+		#expect(!closed)
+		#expect(!model.isBiometricUnlockEnabled)
+		#expect(keys.storedKey == nil)
+
+		try type(password, into: field, of: form)
+		field.currentEditor()?.insertNewline(nil)
+		await form.pump(turns: 20_000) { closed }
+		try #require(closed)
+		#expect(model.isBiometricUnlockEnabled)
+		#expect(keys.reasons == ["turn on Touch ID unlock"])
+		await model.lock()
+
+		let relaunched = AppModel(directory: directory, keyStore: keys)
+		relaunched.start()
+		#expect(relaunched.canUnlockWithBiometrics)
+		await relaunched.unlockWithBiometrics()
+		#expect(relaunched.phase == .unlocked, "\(String(describing: relaunched.failure))")
+		#expect(Set(relaunched.notes.map(\.body)) == Set(typed))
+		#expect(keys.reasons == ["turn on Touch ID unlock", "unlock your notes"])
+	}
 }

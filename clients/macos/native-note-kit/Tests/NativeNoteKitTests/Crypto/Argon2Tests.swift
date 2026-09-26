@@ -92,7 +92,7 @@ struct Argon2Tests {
 	@Test func rejectsParametersBelowTheAlgorithmMinimum() {
 		#expect(throws: Argon2.Failure.self) {
 			try Argon2.hash(
-				password: Data("x".utf8),
+				password: "x",
 				salt: Data(repeating: 0, count: 16),
 				parameters: Argon2.Parameters(m: 1, t: 0, p: 1)
 			)
