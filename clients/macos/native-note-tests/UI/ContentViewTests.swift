@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import Testing
 
 @testable import NativeNote
@@ -81,6 +82,29 @@ struct ContentViewTests {
 
 		#expect(model.notes.count == 1)
 		#expect(model.selectedNote?.body == "")
+		#expect(await model.flushPendingSaves())
+	}
+
+	private func noteList(in offscreen: OffscreenWindow<ContentView>) throws -> NSTableView {
+		try #require(offscreen.views(of: NSTableView.self).max { $0.numberOfRows < $1.numberOfRows })
+	}
+
+	@Test func theFirstNoteInAnEmptyLibraryGetsAFullRow() async throws {
+		let (model, directory, offscreen) = try await library([])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		defer { offscreen.close() }
+
+		await model.createNote()
+		model.edit(try #require(model.selection), "test\n123\n123")
+		await offscreen.pump { (try? noteList(in: offscreen).numberOfRows) == 2 }
+		await model.createNote()
+		model.edit(try #require(model.selection), "2t\ntesta")
+		await offscreen.pump { (try? noteList(in: offscreen).numberOfRows) == 3 }
+
+		let list = try noteList(in: offscreen)
+		let row = NSHostingView(rootView: NoteRow(note: try #require(model.selectedNote), now: .now)).fittingSize.height
+		#expect(list.rect(ofRow: 1).height >= row, "row 1 is \(list.rect(ofRow: 1).height) pt, a row needs \(row) pt")
+		#expect(list.rect(ofRow: 2).height >= row, "row 2 is \(list.rect(ofRow: 2).height) pt, a row needs \(row) pt")
 		#expect(await model.flushPendingSaves())
 	}
 

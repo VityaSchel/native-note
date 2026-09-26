@@ -27,6 +27,8 @@ struct NoteListView: View {
 			}
 		}
 		.listStyle(.inset)
+		// SwiftUI sizes the first row added to an empty list at the default height and never measures it again.
+		.id(groups.isEmpty)
 		.onDeleteCommand(perform: selection.map { id in { delete(id) } })
 		.contextMenu(forSelectionType: UUID.self) { ids in
 			if let id = ids.first {
