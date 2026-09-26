@@ -1,12 +1,39 @@
 import Foundation
 import LocalAuthentication
 import Security
+import Synchronization
 import Testing
 
 @testable import NativeNote
 @testable import NativeNoteKit
 
 private let touchIDReady = KeychainUnlockKeyStore(directory: URL(fileURLWithPath: "/dev/null")).isAvailable
+
+private final class TouchAcceptedKeychain: UnlockKeyStore {
+	private let keychain: KeychainUnlockKeyStore
+	private let saved = Mutex<Data?>(nil)
+
+	init(directory: URL) {
+		keychain = KeychainUnlockKeyStore(directory: directory)
+	}
+
+	var isAvailable: Bool { keychain.isAvailable }
+
+	func hasKey() -> Bool { keychain.hasKey() }
+
+	func save(_ key: Data) throws {
+		try keychain.save(key)
+		saved.withLock { $0 = key }
+	}
+
+	func load(reason: String) async throws -> Data? {
+		saved.withLock { $0 }
+	}
+
+	func delete() throws {
+		try keychain.delete()
+	}
+}
 
 @MainActor @Suite(.serialized, .enabled(if: touchIDReady))
 struct TouchIDKeychainTests {
@@ -75,7 +102,7 @@ struct TouchIDKeychainTests {
 	@Test func aLibraryTurnsTouchIDOnAndOffUpToThePrompt() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
 		model.start()
 		await model.submit(password: "correct horse")
@@ -95,7 +122,7 @@ struct TouchIDKeychainTests {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		model.start()
 		await model.submit(password: "correct horse")
 		#expect(await model.enableBiometricUnlock())

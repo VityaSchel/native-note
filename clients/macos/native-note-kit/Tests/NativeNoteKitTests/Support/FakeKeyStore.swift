@@ -8,12 +8,15 @@ final class FakeKeyStore: UnlockKeyStore {
 		case key
 		case cancel
 		case failure
+		case otherKey
 	}
 
 	private struct State {
 		var key: Data?
 		var reply = Reply.key
 		var failsWrites = false
+		var reasons: [String] = []
+		var whileLoading: (@Sendable () async -> Void)?
 		let available: Bool
 	}
 
@@ -24,6 +27,12 @@ final class FakeKeyStore: UnlockKeyStore {
 	}
 
 	var storedKey: Data? { state.withLock { $0.key } }
+
+	var reasons: [String] { state.withLock { $0.reasons } }
+
+	func whileLoading(_ body: @escaping @Sendable () async -> Void) {
+		state.withLock { $0.whileLoading = body }
+	}
 
 	func reply(with reply: Reply) {
 		state.withLock { $0.reply = reply }
@@ -49,11 +58,17 @@ final class FakeKeyStore: UnlockKeyStore {
 	}
 
 	func load(reason: String) async throws -> Data? {
+		let hook = state.withLock {
+			$0.reasons.append(reason)
+			return $0.whileLoading
+		}
+		await hook?()
 		let (key, reply) = state.withLock { ($0.key, $0.reply) }
 		switch reply {
 		case .key: return key
 		case .cancel: return nil
 		case .failure: throw KeychainFailure(status: errSecItemNotFound)
+		case .otherKey: return Data(repeating: 0xEE, count: 32)
 		}
 	}
 

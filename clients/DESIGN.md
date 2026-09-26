@@ -93,6 +93,8 @@ The unlock screen offers to erase the library and start over, behind a confirmat
 
 Optional, off by default. When enabled, `localDbKey` is stored in the platform's key store linked to the current biometric enrollment, so the OS invalidates it if the enrolled set changes.
 
+Turning it on stores the key, then reads it back behind a biometric prompt. A cancelled or failed prompt, a key that reads back differently, or a lock while the prompt is up deletes it and leaves the option off. Turning it off asks nothing.
+
 The unlock screen always offers the password form. When biometric unlock is enabled it also offers a biometric button beside it:
 
 - Prompt dismissed, cancelled or failed to authenticate — silently return to the unlock screen. The user can press the button again or type the password.

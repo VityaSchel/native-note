@@ -20,6 +20,7 @@ import Observation
 	public private(set) var conflicts: [NoteConflict] = []
 	public private(set) var isImporting = false
 	public private(set) var canUnlockWithBiometrics = false
+	public private(set) var isBiometricUnlockEnabled = false
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -202,8 +203,8 @@ import Observation
 		start()
 	}
 
-	public var isBiometricUnlockEnabled: Bool {
-		keyStore.hasKey()
+	public var isBiometricUnlockAvailable: Bool {
+		keyStore.isAvailable
 	}
 
 	public static var hasSecureEnclave: Bool {
@@ -213,10 +214,17 @@ import Observation
 	@discardableResult
 	public func enableBiometricUnlock() async -> Bool {
 		guard phase == .unlocked, let unlockedKey, keyStore.isAvailable else { return false }
+		defer { refreshBiometricUnlock() }
 		do {
 			try keyStore.save(unlockedKey)
+			let confirmed = try await keyStore.load(reason: "turn on Touch ID unlock")
+			guard let confirmed, confirmed == self.unlockedKey else {
+				try? keyStore.delete()
+				return false
+			}
 			return true
 		} catch {
+			try? keyStore.delete()
 			failure = .unexpected("Touch ID unlock could not be turned on. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
 			return false
 		}
@@ -254,7 +262,8 @@ import Observation
 	}
 
 	private func refreshBiometricUnlock() {
-		canUnlockWithBiometrics = phase == .locked && keyStore.isAvailable && keyStore.hasKey()
+		isBiometricUnlockEnabled = keyStore.hasKey()
+		canUnlockWithBiometrics = phase == .locked && keyStore.isAvailable && isBiometricUnlockEnabled
 	}
 
 	public static func isEncryptedExport(at url: URL) -> Bool {
@@ -416,7 +425,7 @@ import Observation
 			if let unsavedReason { failure = .unsaved(unsavedReason) }
 			if !search.isEmpty { await runSearch() }
 			phase = .unlocked
-			canUnlockWithBiometrics = false
+			refreshBiometricUnlock()
 			return nil
 		} catch {
 			if case Unlock.Failure.alreadySetUp = error { phase = .locked }

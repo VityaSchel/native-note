@@ -9,6 +9,9 @@ struct NativeNoteApp: App {
 		Window("Native Note", id: "library") {
 			ContentView(exchange: delegate.exchange)
 		}
+		Settings {
+			SettingsView(model: delegate.model)
+		}
 		.commands {
 			CommandGroup(replacing: .newItem) {
 				Button("New Note") { Task { await delegate.model.createNote() } }

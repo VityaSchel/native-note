@@ -22,6 +22,12 @@ struct PreviewRenderTests {
 		render(UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}, hasSecureEnclave: false))
 	}
 
+	@Test func settingsScreens() {
+		render(SettingsView(model: .previewingFirstRun), width: 440, height: 300)
+		render(SettingsView(model: .previewing([])), width: 440, height: 300)
+		render(SecuritySettings(touchIDAvailable: true, touchIDEnabled: true, setTouchID: { _ in }), width: 440, height: 300)
+	}
+
 	@Test func noteRows() {
 		render(
 			List {

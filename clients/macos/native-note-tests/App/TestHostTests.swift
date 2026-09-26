@@ -19,6 +19,14 @@ struct TestHostTests {
 		#expect(item.keyEquivalentModifierMask == .command)
 	}
 
+	@Test func settingsIsCommandComma() throws {
+		let app = try #require(NSApp.mainMenu?.items.first?.submenu)
+		let settings = try #require(app.items.first { $0.keyEquivalent == "," })
+
+		#expect(settings.title == "Settings…")
+		#expect(settings.keyEquivalentModifierMask == .command)
+	}
+
 	@Test func lockIsControlCommandL() throws {
 		let item = try #require(try fileMenu().item(withTitle: "Lock"))
 
