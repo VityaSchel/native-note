@@ -104,6 +104,21 @@ struct LibraryExchangeTests {
 		#expect(exchange.isIdle)
 	}
 
+	@Test func commandsWaitForUnlockAndForTheOpenSheet() async throws {
+		let (model, directory) = try await library(["Shopping"])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let exchange = LibraryExchange(model: model)
+		#expect(exchange.acceptsCommands)
+
+		exchange.isExporting = true
+		#expect(!exchange.acceptsCommands)
+		exchange.dismiss(.export)
+		#expect(exchange.acceptsCommands)
+
+		await model.lock()
+		#expect(!exchange.acceptsCommands)
+	}
+
 	@Test func closingASheetFromOutsideDismissesIt() {
 		let exchange = LibraryExchange(model: .previewing([]))
 		exchange.isExporting = true

@@ -10,11 +10,16 @@ struct NativeNoteApp: App {
 			ContentView(exchange: delegate.exchange)
 		}
 		.commands {
+			CommandGroup(replacing: .newItem) {
+				Button("New Note") { Task { await delegate.model.createNote() } }
+					.keyboardShortcut("n")
+					.disabled(!delegate.exchange.acceptsCommands)
+			}
 			CommandGroup(replacing: .importExport) {
 				Button("Export…") { delegate.exchange.isExporting = true }
-					.disabled(delegate.model.phase != .unlocked || !delegate.exchange.isIdle)
+					.disabled(!delegate.exchange.acceptsCommands)
 				Button("Import…") { delegate.exchange.chooseImport() }
-					.disabled(delegate.model.phase != .unlocked || !delegate.exchange.isIdle)
+					.disabled(!delegate.exchange.acceptsCommands)
 			}
 		}
 	}

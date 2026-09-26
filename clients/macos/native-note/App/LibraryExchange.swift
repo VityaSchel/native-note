@@ -42,6 +42,10 @@ import Observation
 		!isImporting && sheet == nil
 	}
 
+	var acceptsCommands: Bool {
+		model.phase == .unlocked && isIdle
+	}
+
 	var passphraseRefused: Bool {
 		model.failure == .wrongExportPassphrase
 	}

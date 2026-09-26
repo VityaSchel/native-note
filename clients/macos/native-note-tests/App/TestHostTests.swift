@@ -8,12 +8,24 @@ struct TestHostTests {
 		#expect(!NSApp.isActive)
 	}
 
-	@Test func exportAndImportWaitForUnlock() throws {
-		let file = try #require(NSApp.mainMenu?.items.first { $0.submenu?.item(withTitle: "Export…") != nil }?.submenu)
+	private func fileMenu() throws -> NSMenu {
+		try #require(NSApp.mainMenu?.items.first { $0.submenu?.item(withTitle: "Export…") != nil }?.submenu)
+	}
+
+	@Test func newNoteIsCommandN() throws {
+		let item = try #require(try fileMenu().item(withTitle: "New Note"))
+
+		#expect(item.keyEquivalent == "n")
+		#expect(item.keyEquivalentModifierMask == .command)
+	}
+
+	@Test func libraryCommandsWaitForUnlock() throws {
+		let file = try fileMenu()
 
 		file.update()
 
-		#expect(file.item(withTitle: "Export…")?.isEnabled == false)
-		#expect(file.item(withTitle: "Import…")?.isEnabled == false)
+		for title in ["New Note", "Export…", "Import…"] {
+			#expect(file.item(withTitle: title)?.isEnabled == false, "\(title)")
+		}
 	}
 }
