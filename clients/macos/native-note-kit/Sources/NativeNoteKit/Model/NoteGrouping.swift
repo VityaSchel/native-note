@@ -7,7 +7,11 @@ nonisolated public struct NoteGroup: Identifiable, Equatable {
 	public var id: String { title }
 }
 
-nonisolated enum NoteGrouping {
+nonisolated public enum NoteGrouping {
+	private enum Bucket {
+		case today, yesterday, previousWeek, thisYear, earlier
+	}
+
 	static func groups(for notes: [Note], now: Date, calendar: Calendar = .current) -> [NoteGroup] {
 		var grouped: [(title: String, notes: [Note])] = []
 		for note in notes.sorted(by: { $0.updatedAt > $1.updatedAt }) {
@@ -22,21 +26,55 @@ nonisolated enum NoteGrouping {
 	}
 
 	static func title(for date: Date, now: Date, calendar: Calendar = .current) -> String {
+		switch bucket(for: date, now: now, calendar: calendar) {
+		case .today: "Today"
+		case .yesterday: "Yesterday"
+		case .previousWeek: "Previous 7 days"
+		case .thisYear: monthNames.monthSymbols[calendar.component(.month, from: date) - 1]
+		case .earlier: String(calendar.component(.year, from: date))
+		}
+	}
+
+	public static func dateLabel(for date: Date, now: Date, calendar: Calendar = .current) -> String {
+		switch bucket(for: date, now: now, calendar: calendar) {
+		case .today:
+			date.formatted(
+				Date.FormatStyle(
+					date: .omitted,
+					time: .shortened,
+					locale: calendar.locale ?? .autoupdatingCurrent,
+					calendar: calendar,
+					timeZone: calendar.timeZone
+				)
+			)
+		case .yesterday:
+			"Yesterday"
+		case .previousWeek:
+			calendar.standaloneWeekdaySymbols[calendar.component(.weekday, from: date) - 1]
+		case .thisYear, .earlier:
+			date.formatted(
+				Date.VerbatimFormatStyle(
+					format: "\(year: .defaultDigits).\(month: .twoDigits).\(day: .twoDigits)",
+					timeZone: calendar.timeZone,
+					calendar: calendar
+				)
+			)
+		}
+	}
+
+	private static func bucket(for date: Date, now: Date, calendar: Calendar) -> Bucket {
 		let startOfToday = calendar.startOfDay(for: now)
-		if date >= startOfToday { return "Today" }
+		if date >= startOfToday { return .today }
 
 		if let yesterday = calendar.date(byAdding: .day, value: -1, to: startOfToday), date >= yesterday {
-			return "Yesterday"
+			return .yesterday
 		}
 
 		if let weekAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday), date >= weekAgo {
-			return "Previous 7 days"
+			return .previousWeek
 		}
 
-		let year = calendar.component(.year, from: date)
-		guard year == calendar.component(.year, from: now) else { return String(year) }
-
-		return monthNames.monthSymbols[calendar.component(.month, from: date) - 1]
+		return calendar.component(.year, from: date) == calendar.component(.year, from: now) ? .thisYear : .earlier
 	}
 
 	private static let monthNames: DateFormatter = {

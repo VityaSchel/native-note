@@ -2,8 +2,10 @@ import Foundation
 
 #if DEBUG
 	extension Note {
+		public static let sampleNow = Date(timeIntervalSince1970: 1_786_000_000)
+
 		public static func sample(_ number: Int, _ body: String, minutesAgo: Int) -> Note {
-			let moment = Date(timeIntervalSince1970: 1_786_000_000 - Double(minutesAgo) * 60)
+			let moment = sampleNow.addingTimeInterval(-Double(minutesAgo) * 60)
 			let id = UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", number))!
 			return Note(id: id, body: body, createdAt: moment, updatedAt: moment)
 		}

@@ -33,6 +33,38 @@ struct NoteGroupingTests {
 		#expect(NoteGrouping.title(for: daysAgo(400), now: now, calendar: calendar) == "2025")
 	}
 
+	@Test func datesEachNoteByDistanceFromNow() {
+		#expect(NoteGrouping.dateLabel(for: daysAgo(1), now: now, calendar: calendar) == "Yesterday")
+		#expect(NoteGrouping.dateLabel(for: daysAgo(3), now: now, calendar: calendar) == "Tuesday")
+		#expect(NoteGrouping.dateLabel(for: daysAgo(7), now: now, calendar: calendar) == "Friday")
+		#expect(NoteGrouping.dateLabel(for: daysAgo(8), now: now, calendar: calendar) == "2026.08.06")
+		#expect(NoteGrouping.dateLabel(for: daysAgo(30), now: now, calendar: calendar) == "2026.07.15")
+		#expect(NoteGrouping.dateLabel(for: daysAgo(400), now: now, calendar: calendar) == "2025.07.10")
+	}
+
+	@Test func datesTodaysNotesByTheClockInTheCalendarsLocale() {
+		var british = calendar
+		british.locale = Locale(identifier: "en_GB")
+		var american = calendar
+		american.locale = Locale(identifier: "en_US")
+		let evening = today(hour: 21)
+
+		#expect(NoteGrouping.dateLabel(for: evening, now: evening, calendar: british) == "21:00")
+		#expect(NoteGrouping.dateLabel(for: evening, now: evening, calendar: american).hasSuffix("PM"))
+	}
+
+	@Test func datesByTheCalendarsTimeZone() {
+		var tokyo = calendar
+		tokyo.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+		let lateYesterdayInUTC = today(hour: 0).addingTimeInterval(-1_800)
+		let lastEveningOfJulyInUTC = calendar.date(from: DateComponents(year: 2026, month: 7, day: 31, hour: 20))!
+
+		#expect(NoteGrouping.dateLabel(for: lateYesterdayInUTC, now: now, calendar: calendar) == "Yesterday")
+		#expect(NoteGrouping.dateLabel(for: lateYesterdayInUTC, now: now, calendar: tokyo) != "Yesterday")
+		#expect(NoteGrouping.dateLabel(for: lastEveningOfJulyInUTC, now: now, calendar: calendar) == "2026.07.31")
+		#expect(NoteGrouping.dateLabel(for: lastEveningOfJulyInUTC, now: now, calendar: tokyo) == "2026.08.01")
+	}
+
 	@Test func treatsTheSameDayAsTodayRegardlessOfClockTime() {
 		let earlier = today(hour: 1)
 

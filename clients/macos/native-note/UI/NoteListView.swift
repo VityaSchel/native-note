@@ -3,6 +3,7 @@ import SwiftUI
 
 struct NoteListView: View {
 	let groups: [NoteGroup]
+	var now = Date.now
 	@Binding var selection: UUID?
 	@Binding var search: String
 
@@ -18,7 +19,7 @@ struct NoteListView: View {
 					ForEach(group.notes) { note in
 						// Containing the row dodges a macOS previews trap on custom views used directly as List rows.
 						// https://developer.apple.com/forums/thread/803429
-						ZStack(alignment: .leading) { NoteRow(note: note) }
+						ZStack(alignment: .leading) { NoteRow(note: note, now: now) }
 							.tag(note.id)
 					}
 				}
@@ -40,7 +41,7 @@ struct NoteListView: View {
 		@Previewable @State var search = ""
 
 		NavigationStack {
-			NoteListView(groups: NoteGroup.samples, selection: $selection, search: $search)
+			NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: $selection, search: $search)
 		}
 		.frame(width: 300, height: 460)
 	}

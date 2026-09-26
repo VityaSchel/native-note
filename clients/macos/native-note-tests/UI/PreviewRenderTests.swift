@@ -24,8 +24,8 @@ struct PreviewRenderTests {
 	@Test func noteRows() {
 		render(
 			List {
-				ZStack(alignment: .leading) { NoteRow(note: .sample(1, "Shopping\nquartz, bread, and a new kettle", minutesAgo: 5)) }
-				ZStack(alignment: .leading) { NoteRow(note: .sample(3, "", minutesAgo: 200)) }
+				ZStack(alignment: .leading) { NoteRow(note: .sample(1, "Shopping\nquartz, bread, and a new kettle", minutesAgo: 5), now: Note.sampleNow) }
+				ZStack(alignment: .leading) { NoteRow(note: .sample(3, "", minutesAgo: 200), now: Note.sampleNow) }
 			}
 		)
 	}

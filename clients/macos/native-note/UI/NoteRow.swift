@@ -2,7 +2,10 @@ import NativeNoteKit
 import SwiftUI
 
 struct NoteRow: View {
+	static let titleFont = Font.title3.weight(.bold)
+
 	let note: Note
+	let now: Date
 
 	private var preview: String {
 		note.body
@@ -20,14 +23,18 @@ struct NoteRow: View {
 		preview.isEmpty ? "No additional text" : preview
 	}
 
+	var dateLabel: String {
+		NoteGrouping.dateLabel(for: note.updatedAt, now: now)
+	}
+
 	var body: some View {
 		VStack(alignment: .leading, spacing: 2) {
 			Text(displayTitle)
-				.font(.body.weight(.semibold))
+				.font(Self.titleFont)
 				.lineLimit(1)
 
 			HStack(spacing: 6) {
-				Text(note.updatedAt, format: .dateTime.hour().minute())
+				Text(dateLabel)
 					.font(.callout)
 				Text(displayPreview)
 					.font(.callout)
@@ -42,8 +49,11 @@ struct NoteRow: View {
 #if DEBUG
 	#Preview("Row") {
 		List {
-			ZStack(alignment: .leading) { NoteRow(note: .sample(1, "Shopping\nquartz, bread, and a new kettle", minutesAgo: 5)) }
-			ZStack(alignment: .leading) { NoteRow(note: .sample(3, "", minutesAgo: 200)) }
+			ZStack(alignment: .leading) { NoteRow(note: .sample(1, "Shopping\nquartz, bread, and a new kettle", minutesAgo: 5), now: Note.sampleNow) }
+			ZStack(alignment: .leading) { NoteRow(note: .sample(3, "", minutesAgo: 200), now: Note.sampleNow) }
+			ZStack(alignment: .leading) { NoteRow(note: .sample(4, "Reading list\nRFC 9106", minutesAgo: 1_500), now: Note.sampleNow) }
+			ZStack(alignment: .leading) { NoteRow(note: .sample(5, "Trip plan\nferry at 07:20", minutesAgo: 5_000), now: Note.sampleNow) }
+			ZStack(alignment: .leading) { NoteRow(note: .sample(6, "Trip plan\nferry at 07:20", minutesAgo: 40_000), now: Note.sampleNow) }
 		}
 		.frame(width: 300)
 	}
