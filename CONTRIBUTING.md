@@ -92,6 +92,22 @@ Tests never present windows, sheets, or alerts. Call view logic directly or host
 
 Every feature gets unit tests and headless end-to-end tests. End-to-end tests run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`, so the package run takes about two minutes. The force-quit test kills `NativeNoteTypist` while it types: everything typed before the 300 ms save window plus 100 ms must survive. The typing tests hold a keystroke on 1,000 notes to 20 times one in a plain text view and 3 times one on 10 notes, and a save to 100 ms at the 95th percentile.
 
+Power loss is checked in a macOS VM that `clients/macos/power-loss` runs on Apple's Virtualization framework, with the library on a disk the harness serves over NBD. On macOS 27 that attachment forwards none of the guest's flushes or barriers, so the disk is an ordered prefix: acknowledged writes are durable, the first change after a cut is torn at a seeded 4 KiB boundary, and the rest is dropped. It catches saves acknowledged before they are durable, broken ordering and failed recovery, not an SSD losing its volatile cache, and it assumes Virtualization keeps the guest's write order.
+
+After each cut the volume must mount, `integrity_check` must pass, and every acknowledged character, and nothing untyped, must be on disk. Cuts alternate between 0.2–6 s and 20–60 s into typing, and `run` counts those that land after a WAL checkpoint. Every early-ack control run must lose acknowledged text. The VM lives in `~/Library/Application Support/NativeNotePowerLoss/`, where `install` needs the macOS restore image (`.ipsw`).
+
+```sh
+cd clients/macos/power-loss
+swift test
+harness="$(./build.sh)"
+"$harness" install
+"$harness" setup
+"$harness" run --count 20
+"$harness" run --count 5 --control early-ack
+```
+
+`--seed` replays a run. `diagnose` shows what the NBD server receives for `fsync` and `F_FULLFSYNC`, to recheck once Virtualization forwards flushes.
+
 Coverage is off in the shared scheme. Measure the package with `swift test --enable-code-coverage`, and the hosted tests with the sandbox off, since a sandboxed host writes no coverage data:
 
 ```sh

@@ -15,11 +15,11 @@ private enum ForceQuit {
 }
 
 extension LibraryEndToEndTests {
-	private func typed(_ length: Int) -> String {
+	func typed(_ length: Int) -> String {
 		String((0 ..< length).map { ForceQuit.alphabet[$0 % ForceQuit.alphabet.count] })
 	}
 
-	private func typist() throws -> URL {
+	func typist() throws -> URL {
 		let built = sequence(first: Bundle.module.bundleURL) { $0.pathComponents.count > 1 ? $0.deletingLastPathComponent() : nil }
 			.map { $0.appending(path: "NativeNoteTypist") }
 			.first { FileManager.default.isExecutableFile(atPath: $0.path) }
@@ -30,7 +30,7 @@ extension LibraryEndToEndTests {
 		let output = Pipe()
 		let process = Process()
 		process.executableURL = try typist()
-		process.arguments = [directory.path, workspacePassword]
+		process.arguments = ["type", directory.path, workspacePassword]
 		process.standardOutput = output
 		let exited = AsyncStream<Void> { continuation in
 			process.terminationHandler = { _ in continuation.finish() }

@@ -90,8 +90,8 @@ import Observation
 		self.init(directory: AppLock.directory)
 	}
 
-	public convenience init(libraryAt directory: URL) {
-		self.init(directory: directory)
+	public convenience init(libraryAt directory: URL, keyStore: (any UnlockKeyStore)? = nil, bindsToThisMac: Bool = true) {
+		self.init(directory: directory, makeParameters: bindsToThisMac ? Unlock.makeParameters : Unlock.makeUnboundParameters, keyStore: keyStore)
 	}
 
 	init(

@@ -40,10 +40,18 @@ nonisolated enum Unlock {
 	}
 
 	static func makeParameters() throws -> UnlockParameters {
+		try parameters(boundToThisMac: MachineKey.isAvailable)
+	}
+
+	static func makeUnboundParameters() throws -> UnlockParameters {
+		try parameters(boundToThisMac: false)
+	}
+
+	private static func parameters(boundToThisMac: Bool) throws -> UnlockParameters {
 		UnlockParameters(
 			localSalt: SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) },
 			argon: try Argon2.calibrateMemory(),
-			enclaveKey: MachineKey.isAvailable ? try MachineKey().representation : nil
+			enclaveKey: boundToThisMac ? try MachineKey().representation : nil
 		)
 	}
 
