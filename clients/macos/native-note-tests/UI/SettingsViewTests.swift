@@ -1,4 +1,5 @@
 import AppKit
+import LocalAuthenticationEmbeddedUI
 import SwiftUI
 import Testing
 
@@ -43,9 +44,11 @@ struct SettingsViewTests {
 	}
 
 	private func library(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
-		try await unlockedModel { [alarm] directory in
+		let (model, directory) = try await unlockedModel { [alarm] directory in
 			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
 		}
+		model.appBecameActive()
+		return (model, directory)
 	}
 
 	private func placeholders(_ fields: [NSSecureTextField]) -> [String] {
@@ -178,7 +181,18 @@ struct SettingsViewTests {
 		#expect(!model.isBiometricUnlockEnabled)
 		#expect(keys.reasons.isEmpty)
 
+		let sensor = Sensor()
+		sensor.watch(keys, in: offscreen.window)
 		try submitPasswordInSheet(workspacePassword, of: offscreen)
+		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
+
+		let glyph = try #require(offscreen.sheetViews(of: LAAuthenticationView.self).first)
+		#expect(glyph.context === model.touchID.listeningContext)
+		#expect(glyph.window === offscreen.sheet)
+		#expect(sensor.readsThroughAGlyphInTheWindow == [true])
+		#expect(toggle.state == .off)
+
+		sensor.touch()
 		await offscreen.pump(turns: 4_000) { offscreen.sheet == nil && toggle.state == .on }
 
 		#expect(offscreen.sheet == nil)
@@ -192,15 +206,13 @@ struct SettingsViewTests {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)
 		defer { try? FileManager.default.removeItem(at: directory) }
-		let (answer, answered) = AsyncStream<Void>.makeStream()
-		keys.whileLoading {
-			for await _ in answer { break }
-		}
 		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300, catchesSheets: true)
 		defer { offscreen.close() }
+		let sensor = Sensor()
+		sensor.watch(keys, in: offscreen.window)
 		_ = try await switchTouchIDOn(in: offscreen)
 		try submitPasswordInSheet(workspacePassword, of: offscreen)
-		await offscreen.pump(turns: 4_000) { !keys.reasons.isEmpty }
+		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 		try #require(offscreen.sheet != nil)
 		try #require(keys.storedKey != nil)
 
@@ -209,13 +221,14 @@ struct SettingsViewTests {
 
 		#expect(offscreen.sheet == nil)
 		#expect(offscreen.views(of: NSSwitch.self).isEmpty)
+		#expect(keys.storedKey == nil)
 
-		answered.yield()
-		await offscreen.pump { keys.storedKey == nil }
+		sensor.touch()
+		offscreen.pump(for: 0.05)
 
 		#expect(keys.storedKey == nil)
 		#expect(!model.isBiometricUnlockEnabled)
-		#expect(!model.canUnlockWithBiometrics)
+		#expect(model.touchID == .hidden)
 	}
 
 	@Test func switchingTouchIDOffInSettingsTurnsItOffForTheLibrary() async throws {
@@ -237,6 +250,99 @@ struct SettingsViewTests {
 		#expect(keys.reasons == ["turn on Touch ID unlock"])
 		#expect(toggle.state == .off)
 		#expect(offscreen.sheet == nil)
+	}
+
+	private func sized(_ model: AppModel) -> (NSHostingController<SettingsView>, NSWindow) {
+		let controller = NSHostingController(rootView: SettingsView(model: model))
+		controller.sizingOptions = [.preferredContentSize, .minSize, .maxSize]
+		let window = NSWindow(contentRect: .zero, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+		window.contentViewController = controller
+		return (controller, window)
+	}
+
+	private func settle(_ window: NSWindow, until done: () -> Bool) async {
+		for _ in 0 ..< 400 where !done() {
+			spin(window)
+			await Task.yield()
+		}
+	}
+
+	private func spin(_ window: NSWindow) {
+		window.contentView?.layoutSubtreeIfNeeded()
+		RunLoop.current.run(until: Date().addingTimeInterval(0.005))
+	}
+
+	private func content(of window: NSWindow) -> NSSize {
+		window.contentRect(forFrameRect: window.frame).size
+	}
+
+	private func isAbout(_ size: NSSize, _ expected: NSSize) -> Bool {
+		abs(size.width - expected.width) <= 1 && abs(size.height - expected.height) <= 1
+	}
+
+	private func scrollViews(in root: NSView) -> [NSScrollView] {
+		var found: [NSScrollView] = []
+		var pending = [root]
+		while let view = pending.popLast() {
+			if let scroll = view as? NSScrollView { found.append(scroll) }
+			pending.append(contentsOf: view.subviews)
+		}
+		return found
+	}
+
+	@Test func theSettingsWindowSizesToTheFormAndToTheLockedMessageAndCannotBeResizedAway() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let (controller, window) = sized(model)
+		defer { window.contentViewController = nil }
+		await settle(window) { controller.preferredContentSize.height > 0 && !scrollViews(in: controller.view).isEmpty }
+
+		let unlocked = controller.preferredContentSize
+		let form = try #require(scrollViews(in: controller.view).first)
+		#expect(unlocked.width == SettingsView.width)
+		#expect(unlocked.height != SettingsView.lockedHeight)
+		#expect(isAbout(window.contentMinSize, unlocked))
+		#expect(isAbout(window.contentMaxSize, unlocked))
+		#expect(isAbout(content(of: window), unlocked))
+		#expect(try #require(form.documentView).frame.height <= form.contentSize.height + 0.5)
+		#expect(form.contentSize.height >= unlocked.height - 1)
+
+		await model.lock()
+		await settle(window) { controller.preferredContentSize != unlocked }
+
+		let locked = NSSize(width: SettingsView.width, height: SettingsView.lockedHeight)
+		#expect(controller.preferredContentSize == locked)
+		#expect(isAbout(window.contentMinSize, locked))
+		#expect(isAbout(window.contentMaxSize, locked))
+		#expect(isAbout(content(of: window), locked))
+		window.setContentSize(NSSize(width: 700, height: 120))
+		await settle(window) { false }
+		#expect(isAbout(content(of: window), locked))
+
+		await model.submit(password: workspacePassword)
+		await settle(window) { controller.preferredContentSize == unlocked }
+
+		#expect(model.phase == .unlocked)
+		#expect(controller.preferredContentSize == unlocked)
+		#expect(isAbout(content(of: window), unlocked))
+		let reopened = try #require(scrollViews(in: controller.view).first)
+		#expect(try #require(reopened.documentView).frame.height <= reopened.contentSize.height + 0.5)
+	}
+
+	@Test func theLockedMessageAndTheFormEachHaveOneSize() {
+		func range(_ model: AppModel) -> (NSSize, NSSize) {
+			let host = NSHostingView(rootView: SettingsView(model: model))
+			return (host.fittingSize, host.intrinsicContentSize)
+		}
+
+		let (lockedFit, lockedIntrinsic) = range(.previewingFirstRun)
+		#expect(lockedFit == NSSize(width: SettingsView.width, height: SettingsView.lockedHeight))
+		#expect(lockedIntrinsic == lockedFit)
+		let (formFit, formIntrinsic) = range(.previewing([]))
+		#expect(formFit.width == SettingsView.width)
+		#expect(isAbout(formIntrinsic, formFit))
+		#expect(formFit.height != SettingsView.lockedHeight)
 	}
 
 	@Test func lockingTakesTheSettingsAway() async throws {

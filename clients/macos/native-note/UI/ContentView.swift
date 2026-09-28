@@ -19,12 +19,15 @@ struct ContentView: View {
 				UnlockView(
 					isSetup: model.phase == .needsSetup,
 					failure: model.failure,
-					submit: model.submit(password:),
+					submit: { password in
+						await model.submit(password: password)
+						return model.failure
+					},
 					dismissFailure: model.dismissFailure,
-					unlockWithBiometrics: model.canUnlockWithBiometrics ? { await model.unlockWithBiometrics() } : nil,
+					touchID: TouchIDControls(model),
+					shake: model.shake,
 					eraseLibrary: { Task { await model.eraseLibrary() } },
-					hasSecureEnclave: AppModel.hasSecureEnclave,
-					promptsTouchID: model.offersBiometricUnlock
+					hasSecureEnclave: AppModel.hasSecureEnclave
 				)
 			case .unlocked:
 				library

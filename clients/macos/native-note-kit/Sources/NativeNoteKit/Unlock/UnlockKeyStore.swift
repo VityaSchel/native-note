@@ -3,12 +3,32 @@ import Foundation
 import LocalAuthentication
 import Security
 
+nonisolated public enum BiometricAvailability: Sendable, Equatable {
+	case available
+	case lockedOut
+	case unavailable
+}
+
+nonisolated public enum StoredKeyRead: Sendable, Equatable {
+	case key(SymmetricKey)
+	case missed
+	case lockedOut
+	case cancelled
+	case unavailable
+}
+
 nonisolated public protocol UnlockKeyStore: Sendable {
-	var isAvailable: Bool { get }
+	var availability: BiometricAvailability { get }
 	func hasKey() -> Bool
 	func save(_ key: SymmetricKey) throws
-	func load(reason: String) async throws -> SymmetricKey?
+	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead
 	func delete() throws
+}
+
+extension UnlockKeyStore {
+	nonisolated public var isAvailable: Bool {
+		availability == .available
+	}
 }
 
 nonisolated struct KeychainFailure: Error, Equatable {
@@ -28,10 +48,26 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		account = "localDbKey:" + directory.standardizedFileURL.path
 	}
 
-	var isAvailable: Bool {
-		guard let task = SecTaskCreateFromSelf(nil) else { return false }
-		return SecTaskCopyValueForEntitlement(task, Self.accessGroupEntitlement as CFString, nil) != nil
-			&& LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
+	var availability: BiometricAvailability {
+		guard let task = SecTaskCreateFromSelf(nil), SecTaskCopyValueForEntitlement(task, Self.accessGroupEntitlement as CFString, nil) != nil else {
+			return .unavailable
+		}
+		var error: NSError?
+		let canEvaluate = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+		return Self.availability(canEvaluate: canEvaluate, error: error)
+	}
+
+	static func availability(canEvaluate: Bool, error: Error?) -> BiometricAvailability {
+		if canEvaluate { return .available }
+		return (error as? LAError)?.code == .biometryLockout ? .lockedOut : .unavailable
+	}
+
+	static func accessControl() throws -> SecAccessControl {
+		var error: Unmanaged<CFError>?
+		guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, &error) else {
+			throw error.map { $0.takeRetainedValue() as Error } ?? KeychainFailure(status: errSecParam)
+		}
+		return access
 	}
 
 	func hasKey() -> Bool {
@@ -45,10 +81,7 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 	}
 
 	func save(_ key: SymmetricKey) throws {
-		var error: Unmanaged<CFError>?
-		guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, .biometryCurrentSet, &error) else {
-			throw error.map { $0.takeRetainedValue() as Error } ?? KeychainFailure(status: errSecParam)
-		}
+		let access = try Self.accessControl()
 		try delete()
 		try Self.withItemValue(of: key) { value in
 			var item = baseQuery
@@ -71,28 +104,55 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		return SymmetricKey(data: UnsafeRawBufferPointer(start: value.bytes, count: value.length))
 	}
 
-	func load(reason: String) async throws -> SymmetricKey? {
-		try await withCheckedThrowingContinuation { continuation in
-			DispatchQueue.global(qos: .userInitiated).async {
-				continuation.resume(with: Result { try read(reason: reason, interactive: true) })
-			}
+	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead {
+		try await Self.read(through: context, copy: { try copyKey(through: $0) }) {
+			_ = try await $0.evaluateAccessControl($1, operation: .useItem, localizedReason: reason)
 		}
 	}
 
-	func read(reason: String, interactive: Bool) throws -> SymmetricKey? {
-		let context = LAContext()
-		context.localizedReason = reason
-		context.interactionNotAllowed = !interactive
+	static func read(
+		through context: LAContext,
+		copy: (LAContext) throws -> StoredKeyRead,
+		evaluate: (LAContext, SecAccessControl) async throws -> Void
+	) async throws -> StoredKeyRead {
+		defer { context.invalidate() }
+		do {
+			try await evaluate(context, try accessControl())
+		} catch {
+			return try outcome(ofEvaluation: error)
+		}
+		return try copy(context)
+	}
+
+	static func outcome(ofEvaluation error: Error) throws -> StoredKeyRead {
+		guard let refusal = error as? LAError else { throw error }
+		switch refusal.code {
+		case .authenticationFailed:
+			return .missed
+		case .biometryLockout:
+			return .lockedOut
+		case .biometryNotAvailable, .biometryNotEnrolled, .biometryNotPaired, .biometryDisconnected, .passcodeNotSet:
+			return .unavailable
+		default:
+			return .cancelled
+		}
+	}
+
+	func copyKey(
+		through context: LAContext,
+		matching copyMatching: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus = SecItemCopyMatching
+	) throws -> StoredKeyRead {
+		context.interactionNotAllowed = true
 		var query = baseQuery
 		query[kSecReturnData as String] = true
 		query[kSecUseAuthenticationContext as String] = context
 		var result: AnyObject?
-		let status = SecItemCopyMatching(query as CFDictionary, &result)
+		let status = copyMatching(query as CFDictionary, &result)
 		switch status {
 		case errSecSuccess:
-			return try Self.key(from: result)
+			return .key(try Self.key(from: result))
 		case errSecUserCanceled, errSecAuthFailed:
-			return nil
+			return .cancelled
 		default:
 			throw KeychainFailure(status: status)
 		}

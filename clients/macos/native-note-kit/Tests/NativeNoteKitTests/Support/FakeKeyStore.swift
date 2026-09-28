@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import LocalAuthentication
 import Synchronization
 
 @testable import NativeNoteKit
@@ -7,9 +8,12 @@ import Synchronization
 final class FakeKeyStore: UnlockKeyStore {
 	enum Reply: Sendable {
 		case key
-		case cancel
-		case failure
 		case otherKey
+		case miss
+		case cancel
+		case lockout
+		case unavailable
+		case failure
 	}
 
 	private struct State {
@@ -18,18 +22,21 @@ final class FakeKeyStore: UnlockKeyStore {
 		var failsWrites = false
 		var reasons: [String] = []
 		var whileLoading: (@Sendable () async -> Void)?
-		let available: Bool
+		var availability: BiometricAvailability
 	}
 
 	private let state: Mutex<State>
+	nonisolated(unsafe) private var askedThrough: [LAContext] = []
 
 	init(available: Bool = true) {
-		state = Mutex(State(available: available))
+		state = Mutex(State(availability: available ? .available : .unavailable))
 	}
 
 	var storedKey: SymmetricKey? { state.withLock { $0.key } }
 
 	var reasons: [String] { state.withLock { $0.reasons } }
+
+	@MainActor var contexts: [LAContext] { askedThrough }
 
 	func whileLoading(_ body: @escaping @Sendable () async -> Void) {
 		state.withLock { $0.whileLoading = body }
@@ -37,6 +44,15 @@ final class FakeKeyStore: UnlockKeyStore {
 
 	func reply(with reply: Reply) {
 		state.withLock { $0.reply = reply }
+	}
+
+	func becomes(_ availability: BiometricAvailability) {
+		state.withLock { $0.availability = availability }
+	}
+
+	@MainActor func forgetReads() {
+		askedThrough = []
+		state.withLock { $0.reasons = [] }
 	}
 
 	func failWrites() {
@@ -47,7 +63,7 @@ final class FakeKeyStore: UnlockKeyStore {
 		state.withLock { $0.key = key }
 	}
 
-	var isAvailable: Bool { state.withLock { $0.available } }
+	var availability: BiometricAvailability { state.withLock { $0.availability } }
 
 	func hasKey() -> Bool { storedKey != nil }
 
@@ -58,7 +74,8 @@ final class FakeKeyStore: UnlockKeyStore {
 		}
 	}
 
-	func load(reason: String) async throws -> SymmetricKey? {
+	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead {
+		askedThrough.append(context)
 		let hook = state.withLock {
 			$0.reasons.append(reason)
 			return $0.whileLoading
@@ -66,10 +83,15 @@ final class FakeKeyStore: UnlockKeyStore {
 		await hook?()
 		let (key, reply) = state.withLock { ($0.key, $0.reply) }
 		switch reply {
-		case .key: return key
-		case .cancel: return nil
+		case .key:
+			guard let key else { throw KeychainFailure(status: errSecItemNotFound) }
+			return .key(key)
+		case .otherKey: return .key(SymmetricKey(data: Data(repeating: 0xEE, count: 32)))
+		case .miss: return .missed
+		case .cancel: return .cancelled
+		case .lockout: return .lockedOut
+		case .unavailable: return .unavailable
 		case .failure: throw KeychainFailure(status: errSecItemNotFound)
-		case .otherKey: return SymmetricKey(data: Data(repeating: 0xEE, count: 32))
 		}
 	}
 

@@ -5,7 +5,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	let model: AppModel
 	let exchange: LibraryExchange
 	private let confirmQuitLosingEdits: @MainActor (String) -> Bool
-	private var returningFromTouchID = false
 
 	init(model: AppModel, confirmQuitLosingEdits: @escaping @MainActor (String) -> Bool = AppDelegate.askToQuitLosingEdits) {
 		self.model = model
@@ -39,16 +38,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationWillResignActive(_ notification: Notification) {
-		returningFromTouchID = model.isPromptingBiometrics
+		model.appResignedActive()
 		flushPendingSaves()
 	}
 
 	func applicationDidBecomeActive(_ notification: Notification) {
-		guard !returningFromTouchID else {
-			returningFromTouchID = false
-			return
-		}
-		model.offerBiometricUnlock()
+		model.appBecameActive()
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

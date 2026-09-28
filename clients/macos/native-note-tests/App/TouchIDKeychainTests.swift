@@ -18,7 +18,7 @@ private final class TouchAcceptedKeychain: UnlockKeyStore {
 		keychain = KeychainUnlockKeyStore(directory: directory)
 	}
 
-	var isAvailable: Bool { keychain.isAvailable }
+	var availability: BiometricAvailability { keychain.availability }
 
 	func hasKey() -> Bool { keychain.hasKey() }
 
@@ -27,8 +27,9 @@ private final class TouchAcceptedKeychain: UnlockKeyStore {
 		saved.withLock { $0 = key }
 	}
 
-	func load(reason: String) async throws -> SymmetricKey? {
-		saved.withLock { $0 }
+	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead {
+		guard let key = saved.withLock({ $0 }) else { throw KeychainFailure(status: errSecItemNotFound) }
+		return .key(key)
 	}
 
 	func delete() throws {
@@ -72,7 +73,7 @@ struct TouchIDKeychainTests {
 
 		#expect(keys.hasKey())
 		#expect(throws: KeychainFailure(status: errSecInteractionNotAllowed)) {
-			try keys.read(reason: "check the key needs Touch ID", interactive: false)
+			try keys.copyKey(through: LAContext())
 		}
 
 		try keys.delete()
@@ -100,7 +101,7 @@ struct TouchIDKeychainTests {
 		#expect(!second.hasKey())
 	}
 
-	@Test func aLibraryTurnsTouchIDOnAndOffUpToThePrompt() async throws {
+	@Test func aLibraryTurnsTouchIDOnAndOffUpToTheTouch() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
@@ -109,14 +110,13 @@ struct TouchIDKeychainTests {
 		await model.submit(password: "correct horse")
 		try #require(model.phase == .unlocked)
 
-		let failure = await model.enableBiometricUnlock(password: "correct horse")
-		try #require(failure == nil)
+		try #require(await enableTouchID(model, password: "correct horse") == nil)
 		await model.lock()
-		#expect(model.canUnlockWithBiometrics)
+		#expect(model.touchID.listeningContext != nil)
 		#expect(KeychainUnlockKeyStore(directory: directory).hasKey())
 
 		model.disableBiometricUnlock()
-		#expect(!model.canUnlockWithBiometrics)
+		#expect(model.touchID == .hidden)
 		#expect(!KeychainUnlockKeyStore(directory: directory).hasKey())
 	}
 
@@ -142,8 +142,7 @@ struct TouchIDKeychainTests {
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		model.start()
 		await model.submit(password: "correct horse")
-		let failure = await model.enableBiometricUnlock(password: "correct horse")
-		try #require(failure == nil)
+		try #require(await enableTouchID(model, password: "correct horse") == nil)
 		await model.lock()
 
 		await model.eraseLibrary()

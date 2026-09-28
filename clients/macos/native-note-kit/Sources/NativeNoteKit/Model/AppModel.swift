@@ -1,5 +1,8 @@
+import AppKit
 import CryptoKit
 import Foundation
+import LocalAuthentication
+import LocalAuthenticationEmbeddedUI
 import Observation
 
 @Observable public final class AppModel {
@@ -20,10 +23,9 @@ import Observation
 	public private(set) var failure: Failure?
 	public private(set) var conflicts: [NoteConflict] = []
 	public private(set) var isImporting = false
-	public private(set) var canUnlockWithBiometrics = false
 	public private(set) var isBiometricUnlockEnabled = false
-	public private(set) var offersBiometricUnlock = false
-	public private(set) var isPromptingBiometrics = false
+	public private(set) var touchID = TouchID.hidden
+	public private(set) var shake = Shake()
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -68,6 +70,7 @@ import Observation
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
 	private let exportParameters: Argon2.Parameters
 	private let keyStore: any UnlockKeyStore
+	private let shakeTimer: SaveScheduler.Sleep
 	private var unlockParameters: UnlockParameters?
 	private var passwordChangesInFlight = 0
 	private var store: NoteStore?
@@ -75,6 +78,13 @@ import Observation
 	private var failingSaves: [UUID: FailingSave] = [:]
 	private var searchFailing = false
 	private var matches: [UUID]?
+	private var biometrics = BiometricAvailability.unavailable
+	private var isActive = false
+	private var isCheckingPassword = false
+	private var isOpeningWithTouchID = false
+	private var touchIDStop: TouchID.Stop?
+	private var evaluating: LAContext?
+	private var confirmation: CheckedContinuation<StoredKeyRead, Error>?
 
 	public convenience init() {
 		self.init(directory: AppLock.directory)
@@ -91,7 +101,8 @@ import Observation
 		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() },
 		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search,
 		exportParameters: Argon2.Parameters = Argon2.floor,
-		keyStore: (any UnlockKeyStore)? = nil
+		keyStore: (any UnlockKeyStore)? = nil,
+		shakeTimer: @escaping SaveScheduler.Sleep = { try await Task.sleep(for: $0) }
 	) {
 		self.directory = directory
 		self.scheduler = scheduler
@@ -100,17 +111,13 @@ import Observation
 		self.searchNotes = searchNotes
 		self.exportParameters = exportParameters
 		self.keyStore = keyStore ?? KeychainUnlockKeyStore(directory: directory)
+		self.shakeTimer = shakeTimer
 	}
 
 	public func start() {
 		phase = AppLock.parameterFiles(in: directory).isEmpty ? .needsSetup : .locked
+		touchIDStop = nil
 		refreshBiometricUnlock()
-		offerBiometricUnlock()
-	}
-
-	public func offerBiometricUnlock() {
-		guard canUnlockWithBiometrics, !isPromptingBiometrics else { return }
-		offersBiometricUnlock = true
 	}
 
 	func setUp(password: String) async {
@@ -122,7 +129,13 @@ import Observation
 	}
 
 	func unlock(password: String) async {
-		await openLibrary { try await Unlock.open(password: password, in: self.directory) }
+		guard !isOpeningWithTouchID else { return }
+		isCheckingPassword = true
+		settleTouchID()
+		let error = await openLibrary { try await Unlock.open(password: password, in: self.directory) }
+		if let error, Failure(error) == .wrongPassword { startShake() }
+		isCheckingPassword = false
+		settleTouchID()
 	}
 
 	public func submit(password: String) async {
@@ -135,8 +148,9 @@ import Observation
 
 	public func lock() async {
 		let closing = store
+		cancelTurningOnTouchID()
 		phase = .locked
-		offersBiometricUnlock = false
+		touchIDStop = nil
 		selection = nil
 		notes = []
 		store = nil
@@ -157,6 +171,7 @@ import Observation
 	}
 
 	public func close() async {
+		cancelTurningOnTouchID()
 		await scheduler.flushAll()
 		let open = [store, retiring].compactMap(\.self)
 		store = nil
@@ -221,7 +236,7 @@ import Observation
 	}
 
 	public func eraseLibrary() async {
-		guard phase == .locked else { return }
+		guard phase == .locked, !isOpeningWithTouchID else { return }
 		let retired = retiring
 		retiring = nil
 		await retired?.close()
@@ -266,8 +281,16 @@ import Observation
 		}
 		do {
 			try keyStore.save(key)
-			let confirmed = try await keyStore.load(reason: "turn on Touch ID unlock")
-			guard let confirmed, isStillCurrent() else {
+			let read = try await touchToConfirm()
+			guard case let .key(confirmed) = read else {
+				try? keyStore.delete()
+				switch read {
+				case .lockedOut: return .unexpected("Touch ID unlock could not be turned on. Touch ID is locked.")
+				case .unavailable: return .unexpected("Touch ID unlock could not be turned on. Touch ID is not available.")
+				case .key, .missed, .cancelled: return nil
+				}
+			}
+			guard isStillCurrent() else {
 				try? keyStore.delete()
 				return nil
 			}
@@ -317,38 +340,156 @@ import Observation
 		}
 	}
 
-	public func unlockWithBiometrics() async {
-		offersBiometricUnlock = false
-		let key: SymmetricKey?
+	public func appBecameActive() {
+		isActive = true
+		refreshBiometricUnlock()
+	}
+
+	public func appResignedActive() {
+		isActive = false
+		if touchIDStop == .cancel { touchIDStop = nil }
+		settleTouchID()
+	}
+
+	public func tryTouchIDAgain() {
+		guard case .needsClick = touchID else { return }
+		touchIDStop = nil
+		settleTouchID()
+	}
+
+	public func cancelTurningOnTouchID() {
+		guard confirmation != nil else { return }
+		try? keyStore.delete()
+		finishConfirmation(.success(.cancelled))
+	}
+
+	public func listen(through glyph: LAAuthenticationView) async {
+		guard case let .listening(context) = touchID, glyph.context === context, glyph.window != nil, evaluating !== context else { return }
+		evaluating = context
+		let confirming = confirmation != nil
+		let read: Result<StoredKeyRead, Error>
 		do {
-			key = try await promptForStoredKey()
+			read = .success(try await keyStore.read(through: context, reason: confirming ? "turn on Touch ID unlock" : "unlock your notes"))
 		} catch {
-			forgetStoredKey(explaining: "Touch ID could not read the unlock key. Unlock with your password.")
-			return
+			read = .failure(error)
 		}
-		guard let key, phase == .locked else { return }
-		if let error = await openLibrary({ try await Unlock.open(key: key, in: self.directory) }),
-			case Unlock.Failure.storedKeyRejected = error
-		{
-			forgetStoredKey(explaining: Failure.reason(for: error))
+		if evaluating === context { evaluating = nil }
+		guard touchID == .listening(context) else { return }
+		if confirming {
+			confirm(with: read)
+		} else {
+			await unlock(with: read)
 		}
 	}
 
-	private func promptForStoredKey() async throws -> SymmetricKey? {
-		isPromptingBiometrics = true
-		defer { isPromptingBiometrics = false }
-		return try await keyStore.load(reason: "unlock your notes")
+	private func unlock(with read: Result<StoredKeyRead, Error>) async {
+		switch read {
+		case let .success(.key(key)):
+			isOpeningWithTouchID = true
+			settleTouchID()
+			let error = await openLibrary { try await Unlock.open(key: key, in: self.directory) }
+			isOpeningWithTouchID = false
+			guard let error else {
+				settleTouchID()
+				return
+			}
+			if case Unlock.Failure.storedKeyRejected = error {
+				forgetStoredKey(explaining: Failure.reason(for: error))
+			} else {
+				waitForClick(after: .failure)
+			}
+		case .success(.missed):
+			if keyStore.availability == .lockedOut { biometrics = .lockedOut }
+			startShake()
+		case .success(.cancelled):
+			waitForClick(after: .cancel)
+		case .success(.lockedOut):
+			biometrics = .lockedOut
+			touchIDStop = nil
+			settleTouchID()
+		case .success(.unavailable):
+			biometrics = .unavailable
+			settleTouchID()
+		case .failure:
+			forgetStoredKey(explaining: "Touch ID could not read the unlock key. Unlock with your password.")
+		}
+	}
+
+	private func confirm(with read: Result<StoredKeyRead, Error>) {
+		switch read {
+		case .success(.missed):
+			waitForClick(after: .miss)
+		case .success(.cancelled):
+			waitForClick(after: .cancel)
+		default:
+			finishConfirmation(read)
+		}
+	}
+
+	private func touchToConfirm() async throws -> StoredKeyRead {
+		guard confirmation == nil else { return .cancelled }
+		return try await withCheckedThrowingContinuation { continuation in
+			confirmation = continuation
+			touchIDStop = nil
+			settleTouchID()
+		}
+	}
+
+	private func finishConfirmation(_ read: Result<StoredKeyRead, Error>) {
+		guard let confirmation else { return }
+		self.confirmation = nil
+		touchIDStop = nil
+		settleTouchID()
+		confirmation.resume(with: read)
+	}
+
+	private func startShake() {
+		guard !shake.isRunning else { return }
+		shake.count += 1
+		shake.isRunning = true
+		settleTouchID()
+		Task { [shakeTimer] in
+			try? await shakeTimer(Shake.duration)
+			shake.isRunning = false
+			settleTouchID()
+		}
+	}
+
+	private func waitForClick(after stop: TouchID.Stop) {
+		touchIDStop = stop
+		settleTouchID()
 	}
 
 	private func forgetStoredKey(explaining message: String) {
-		try? keyStore.delete()
+		if (try? keyStore.delete()) == nil { touchIDStop = .failure }
 		refreshBiometricUnlock()
 		failure = .unexpected(message)
 	}
 
 	private func refreshBiometricUnlock() {
-		isBiometricUnlockEnabled = keyStore.hasKey()
-		canUnlockWithBiometrics = phase == .locked && keyStore.isAvailable && isBiometricUnlockEnabled
+		isBiometricUnlockEnabled = confirmation == nil && keyStore.hasKey()
+		biometrics = keyStore.availability
+		settleTouchID()
+	}
+
+	private func settleTouchID() {
+		let next = nextTouchID()
+		guard next != touchID else { return }
+		if case let .listening(context) = touchID { context.invalidate() }
+		touchID = next
+	}
+
+	private func nextTouchID() -> TouchID {
+		let confirming = confirmation != nil
+		guard confirming || (phase == .locked && isBiometricUnlockEnabled && biometrics != .unavailable) else { return .hidden }
+		if isOpeningWithTouchID { return .working }
+		if !confirming, biometrics == .lockedOut { return .lockedOut }
+		if let touchIDStop { return .needsClick(after: touchIDStop) }
+		if isCheckingPassword { return .paused(.checkingPassword) }
+		if !confirming, shake.isRunning { return .paused(.shaking) }
+		if !isActive { return .paused(.inBackground) }
+		if case .listening = touchID { return touchID }
+		return .listening(LAContext())
 	}
 
 	public static func isEncryptedExport(at url: URL) -> Bool {

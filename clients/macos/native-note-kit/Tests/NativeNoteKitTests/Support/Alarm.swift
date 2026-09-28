@@ -9,6 +9,7 @@ actor Alarm {
 	}
 
 	private(set) var started = 0
+	private(set) var requested: [Duration] = []
 	private var sleepers: [Sleeper] = []
 
 	var sleeping: Int { sleepers.count }
@@ -17,8 +18,9 @@ actor Alarm {
 		{ try await self.sleep(for: $0) }
 	}
 
-	func sleep(for _: Duration) async throws {
+	func sleep(for duration: Duration) async throws {
 		started += 1
+		requested.append(duration)
 		let number = started
 		await withTaskCancellationHandler {
 			await withCheckedContinuation { continuation in

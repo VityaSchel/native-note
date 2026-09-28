@@ -16,17 +16,21 @@ struct SettingsView: View {
 					touchIDEnabled: model.isBiometricUnlockEnabled,
 					turnOnTouchID: model.enableBiometricUnlock(password:),
 					turnOffTouchID: model.disableBiometricUnlock,
-					changePassword: model.changePassword(from:to:)
+					changePassword: model.changePassword(from:to:),
+					touchID: TouchIDControls(model)
 				)
+				.fixedSize(horizontal: false, vertical: true)
 			} else {
 				ContentUnavailableView(Self.lockedMessage, systemImage: "lock")
-					.frame(minHeight: 240)
+					.frame(height: Self.lockedHeight)
 			}
 		}
-		.frame(width: 440)
+		.frame(width: Self.width)
 	}
 
 	static let lockedMessage = "Unlock Native Note to change settings."
+	static let width: CGFloat = 440
+	static let lockedHeight: CGFloat = 240
 }
 
 struct SecuritySettings: View {
@@ -42,6 +46,7 @@ struct SecuritySettings: View {
 	let turnOnTouchID: (String) async -> AppModel.Failure?
 	let turnOffTouchID: () -> Void
 	let changePassword: (String, String) async -> AppModel.Failure?
+	var touchID = TouchIDControls()
 
 	@State private var sheet: Sheet?
 
@@ -54,7 +59,7 @@ struct SecuritySettings: View {
 	func content(for sheet: Sheet, done: @escaping () -> Void) -> some View {
 		switch sheet {
 		case .turnOnTouchID:
-			TurnOnTouchIDView(turnOn: turnOnTouchID, done: done)
+			TurnOnTouchIDView(turnOn: turnOnTouchID, done: done, touchID: touchID)
 		case .changePassword:
 			ChangePasswordView(turnsTouchIDOff: touchIDEnabled, change: changePassword, done: done)
 		}

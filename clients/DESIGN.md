@@ -95,19 +95,38 @@ The unlock screen offers to erase the library and start over, behind a confirmat
 
 #### Unlocking with biometrics
 
-Optional, off by default. When enabled, `localDbKey` is stored in the platform's key store linked to the current biometric enrollment, so the OS invalidates it if the enrolled set changes.
+Optional, off by default. When enabled, `localDbKey` is stored in the platform's key store linked to the current biometric enrollment, so the OS invalidates it if the enrolled set changes. The OS does the fingerprint check against the key's access control; the app never decides a match itself.
 
-Turning it on asks for the password, derives the key and confirms it opens the database, stores it, then reads it back behind a biometric prompt. A wrong password stores nothing. A cancelled or failed prompt, a key that reads back differently, or a lock or password change before the prompt is answered deletes it and leaves the option off. Turning it off asks nothing.
+The biometric prompt lives inside the app's window, never in a system alert. On macOS it is [`LAAuthenticationView`](https://developer.apple.com/documentation/localauthenticationembeddedui/laauthenticationview), and pairing comes before evaluation: the view is created with its `LAContext` and is in the window before that context evaluates the key's access control. The key is then read through the same context with interaction not allowed, and the context is invalidated after the read, whatever the outcome. Each attempt gets a fresh context.
 
-The unlock screen always offers the password form. When biometric unlock is enabled it also offers a biometric button beside it:
+When biometric unlock is enabled, the screen listens for a touch whenever it is in front: at launch, on returning to the app, and right after the user locks. A touch with an enrolled finger unlocks without a click. While listening, the paired view stays in the window at full opacity, behind the password field and covered by the field's opaque background; it is never hidden, because the OS refuses a touch through a hidden view. It is not an accessibility element. The screen says whether Touch ID can be used:
 
-- Prompt dismissed, cancelled or failed to authenticate — silently return to the unlock screen. The user can press the button again or type the password.
-- Read or decryption fails — show an error, forget the stored key, then return to the same unlock screen.
-- The stored key no longer opens the database — the same.
+- Usable: listening, in the background, while a password is checked, while the field shakes, and while the library opens after a touch. A finger that does not match keeps it usable.
+- Stopped on this screen: a lockout (macOS locks Touch ID Mac-wide after five misses in a row), an attempt the OS ends while the app is in front, or a library that fails to open after a touch.
 
-Changing the password deletes the stored key, and so does setting up a new library in the same place. While a biometric prompt is up, the password form waits.
+Listening continues while the user types. It stops while another app is active, so that app's biometric prompts keep working, while a password is checked, and while the field shakes. VoiceOver announces a wrong password and a stop of Touch ID. While the library opens after a touch, the field is disabled.
 
-The unlock screen opens the biometric prompt by itself when the app starts locked and when the user returns to the locked app, so a touch unlocks without a click. It does not right after the user locks, and a return caused by the prompt itself does not count.
+A wrong password and a finger that does not match shake the field. A shake asked for while one runs is ignored.
+
+LocalAuthentication reports a finger that does not match only when an attempt ends with failed authentication, and that is the only trigger for its shake; a lockout does not shake. Nothing listens while the field shakes: after a wrong password listening resumes when the shake ends, not when the check ends, and after a miss a fresh attempt listens when the shake ends, without a click. A resting wrong finger can therefore use up the attempts until macOS locks Touch ID.
+
+The lock screen offers no retry click. Three stops end on the next return to the app: a lockout the OS has lifted, an attempt the OS ended, and an attempt whose view left the window.
+
+Other outcomes:
+
+- Biometrics become unavailable: the screen drops Touch ID until the next return to the app.
+- Reading the key fails: show an error and forget the stored key.
+- The stored key no longer opens the database: the same.
+- A stored key that cannot be forgotten stays, and Touch ID stops on this screen.
+- The library fails to load for another reason: show the error, keep the key and stop Touch ID on this screen.
+
+A new unlock screen listens again unless the OS still has biometrics locked out or another app is in front.
+
+Turning it on asks for the password, derives the key and confirms it opens the database, stores it, then listens in the same sheet for a touch that reads it back. Listening in the sheet also stops while another app is active. In the sheet, a wrong finger or an attempt the OS ends waits for a click to try again. A wrong password stores nothing. Anything else short of a matching touch deletes the key and leaves the option off: cancelling, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quitting, or a lock or password change before the touch. The option shows on only once the touch confirms it. Turning it off asks nothing.
+
+Changing the password deletes the stored key, and so does setting up a new library in the same place.
+
+The Settings window, where Touch ID unlock is turned on and off, offers its settings only while the library is unlocked.
 
 ## Recovery flow
 

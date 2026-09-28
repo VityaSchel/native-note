@@ -85,10 +85,15 @@ final class SheetCatchingWindow: NSWindow {
 	}
 
 	override func beginSheet(_ sheet: NSWindow, completionHandler handler: ((NSApplication.ModalResponse) -> Void)? = nil) {
-		caught.append((sheet, handler))
+		catchSheet(sheet, handler)
 	}
 
 	override func beginCriticalSheet(_ sheet: NSWindow, completionHandler handler: ((NSApplication.ModalResponse) -> Void)? = nil) {
+		catchSheet(sheet, handler)
+	}
+
+	private func catchSheet(_ sheet: NSWindow, _ handler: ((NSApplication.ModalResponse) -> Void)?) {
+		guard !caught.contains(where: { $0.sheet === sheet }) else { return }
 		caught.append((sheet, handler))
 	}
 

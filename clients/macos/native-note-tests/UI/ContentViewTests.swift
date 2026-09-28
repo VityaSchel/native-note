@@ -132,19 +132,26 @@ struct ContentViewTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["kayak"])
 		try await turnOnTouchID(model)
+		keys.forgetReads()
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
 		defer { offscreen.close() }
+		let sensor = Sensor()
+		sensor.watch(keys, in: offscreen.window)
 
+		model.appResignedActive()
 		await model.lock()
 		offscreen.pump(for: 0.2)
 		#expect(model.phase == .locked)
-		#expect(keys.reasons == ["turn on Touch ID unlock"])
+		#expect(keys.contexts.isEmpty)
 
-		model.offerBiometricUnlock()
+		model.appBecameActive()
+		await offscreen.pump { sensor.isWaiting }
+		sensor.touch()
 		await offscreen.pump { model.phase == .unlocked }
 
 		#expect(model.phase == .unlocked)
-		#expect(keys.reasons.last == "unlock your notes")
+		#expect(keys.reasons == ["unlock your notes"])
+		#expect(sensor.readsThroughAGlyphInTheWindow == [true])
 		#expect(model.notes.map(\.body) == ["kayak"])
 	}
 

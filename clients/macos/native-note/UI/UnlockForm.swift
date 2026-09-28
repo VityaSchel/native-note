@@ -2,7 +2,11 @@ import NativeNoteKit
 
 struct UnlockForm {
 	var password = "" {
-		didSet { if password != oldValue { mismatched = false } }
+		didSet {
+			guard password != oldValue else { return }
+			mismatched = false
+			rejected = false
+		}
 	}
 
 	var confirmation = "" {
@@ -11,15 +15,15 @@ struct UnlockForm {
 
 	private(set) var mismatched = false
 	private(set) var working = false
+	private(set) var rejected = false
+	private var submitted: String?
 
 	var canSubmit: Bool {
 		!password.isEmpty && !working
 	}
 
-	func inlineMessage(for failure: AppModel.Failure?) -> String? {
-		if mismatched { return "The passwords do not match." }
-		if case .wrongPassword = failure { return "Wrong password." }
-		return nil
+	var inlineMessage: String? {
+		mismatched ? "The passwords do not match." : nil
 	}
 
 	mutating func submit(confirming: Bool) -> String? {
@@ -31,18 +35,24 @@ struct UnlockForm {
 
 		mismatched = false
 		working = true
+		submitted = password
 		return password
 	}
 
-	mutating func begin() -> Bool {
-		guard !working else { return false }
-		working = true
-		return true
-	}
-
-	mutating func finish() {
+	mutating func finish(_ failure: AppModel.Failure?) {
 		working = false
+		let sent = submitted
+		submitted = nil
+		guard failure != .wrongPassword else {
+			rejected = password == sent
+			return
+		}
 		password = ""
 		confirmation = ""
+	}
+
+	mutating func takeRejection() -> Bool {
+		defer { rejected = false }
+		return rejected
 	}
 }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import LocalAuthentication
 import SwiftUI
 import Testing
 
@@ -14,12 +15,15 @@ private func render(_ view: some View, width: CGFloat = 380, height: CGFloat = 6
 @MainActor
 struct PreviewRenderTests {
 	@Test func unlockScreens() {
-		render(UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}))
-		render(UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in }, dismissFailure: {}))
-		render(UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}))
-		render(UnlockView(isSetup: false, failure: nil, submit: { _ in }, dismissFailure: {}, unlockWithBiometrics: {}))
-		render(UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in }, dismissFailure: {}, eraseLibrary: {}))
-		render(UnlockView(isSetup: true, failure: nil, submit: { _ in }, dismissFailure: {}, hasSecureEnclave: false))
+		render(UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {}))
+		render(UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in nil }, dismissFailure: {}))
+		render(UnlockView(isSetup: true, failure: nil, submit: { _ in nil }, dismissFailure: {}))
+		for state in [AppModel.TouchID.listening(LAContext()), .paused(.inBackground), .paused(.checkingPassword), .paused(.shaking), .needsClick(after: .cancel), .lockedOut, .working] {
+			render(UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: state), eraseLibrary: {}))
+		}
+		render(UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .paused(.shaking)), shake: AppModel.Shake(count: 1, isRunning: true), eraseLibrary: {}))
+		render(UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in nil }, dismissFailure: {}, eraseLibrary: {}))
+		render(UnlockView(isSetup: true, failure: nil, submit: { _ in nil }, dismissFailure: {}, hasSecureEnclave: false))
 	}
 
 	@Test func settingsScreens() {

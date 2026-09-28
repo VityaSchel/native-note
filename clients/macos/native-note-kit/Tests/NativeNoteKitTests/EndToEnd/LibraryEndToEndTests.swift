@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthenticationEmbeddedUI
 import Testing
 
 @testable import NativeNoteKit
@@ -185,17 +186,35 @@ struct LibraryEndToEndTests {
 		#expect(await model.enableBiometricUnlock(password: "correct horse batter") == .wrongPassword)
 		#expect(keys.storedKey == nil)
 		try await turnOnTouchID(model, password: "correct horse battery")
+		await model.lock()
+		keys.reply(with: .miss)
+		let missed = ContinuousClock.now
+		#expect(await touch(model))
+		#expect(model.touchID == .paused(.shaking))
+		for _ in 0 ..< 400 where model.touchID.listeningContext == nil {
+			try await Task.sleep(for: .milliseconds(5))
+		}
+		#expect(ContinuousClock.now - missed >= AppModel.Shake.duration)
+		#expect(model.shake == AppModel.Shake(count: 1, isRunning: false))
+		keys.reply(with: .key)
+		#expect(await touch(model))
+		#expect(model.phase == .unlocked)
+		#expect(snapshot(model.notes) == saved)
 		await model.close()
 
 		let relaunched = AppModel(directory: directory, keyStore: keys)
 		relaunched.start()
-		#expect(relaunched.canUnlockWithBiometrics)
-		await relaunched.unlockWithBiometrics()
+		#expect(relaunched.touchID == .paused(.inBackground))
+		relaunched.appBecameActive()
+		let glyph = PairedGlyph(try #require(relaunched.touchID.listeningContext))
+		await relaunched.listen(through: glyph.view)
 
 		#expect(relaunched.phase == .unlocked)
 		#expect(relaunched.failure == nil)
 		#expect(snapshot(relaunched.notes) == saved)
-		#expect(keys.reasons == ["turn on Touch ID unlock", "unlock your notes"])
+		#expect(keys.reasons == ["turn on Touch ID unlock", "unlock your notes", "unlock your notes", "unlock your notes"])
+		#expect(keys.contexts.last === glyph.view.context)
+		#expect(keys.contexts.allSatisfy(isInvalidated))
 	}
 
 	@Test func setUpAfterACrashKeepsTheOrphanedNotes() async throws {

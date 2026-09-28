@@ -109,7 +109,7 @@ struct PasswordChangeTests {
 		#expect(await model.enableBiometricUnlock(password: workspacePassword) == .wrongPassword)
 		try await turnOnTouchID(model, password: "a new password")
 		await model.lock()
-		await model.unlockWithBiometrics()
+		#expect(await touch(model))
 		#expect(model.phase == .unlocked)
 		#expect(model.failure == nil)
 	}
@@ -141,7 +141,7 @@ struct PasswordChangeTests {
 			keys.plant(staleKey)
 		}
 
-		#expect(await model.enableBiometricUnlock(password: workspacePassword) == nil)
+		#expect(await enableTouchID(model) == nil)
 
 		#expect(keys.storedKey == nil)
 		#expect(!model.isBiometricUnlockEnabled)
@@ -165,7 +165,7 @@ struct PasswordChangeTests {
 			try? await gate.untilHolding()
 		}
 
-		#expect(await model.enableBiometricUnlock(password: workspacePassword) == nil)
+		#expect(await enableTouchID(model) == nil)
 
 		#expect(gate.isHolding)
 		#expect(keys.storedKey == nil)

@@ -4,6 +4,7 @@ Dependencies:
 
 - CryptoKit
 - LocalAuthentication
+- LocalAuthenticationEmbeddedUI
 - Security
 - [SQLCipher.swift](https://github.com/sqlcipher/SQLCipher.swift) — revision `205df55` (`4.17.0`), a prebuilt XCFramework published by Zetetic
 - [phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) — revision `f57e61e`, built from source

@@ -20,7 +20,7 @@ struct UnlockFormTests {
 
 		#expect(form.submit(confirming: true) == nil)
 		#expect(form.mismatched)
-		#expect(form.inlineMessage(for: nil) == "The passwords do not match.")
+		#expect(form.inlineMessage == "The passwords do not match.")
 		#expect(!form.working)
 	}
 
@@ -42,23 +42,6 @@ struct UnlockFormTests {
 		_ = form.submit(confirming: true)
 		form.password = "y"
 		#expect(!form.mismatched)
-	}
-
-	@Test func aTouchIDAttemptHoldsTheFormUntilItFinishes() {
-		var form = UnlockForm()
-		form.password = "correct horse"
-
-		let first = form.begin()
-		let second = form.begin()
-		let submitted = form.submit(confirming: false)
-
-		#expect(first)
-		#expect(!second)
-		#expect(!form.canSubmit)
-		#expect(submitted == nil)
-
-		form.finish()
-		#expect(!form.working)
 	}
 
 	@Test func unlockIgnoresTheConfirmationField() {
@@ -86,7 +69,7 @@ struct UnlockFormTests {
 		form.confirmation = "correct horse"
 		_ = form.submit(confirming: true)
 
-		form.finish()
+		form.finish(nil)
 
 		#expect(form.password.isEmpty)
 		#expect(form.confirmation.isEmpty)
@@ -95,21 +78,81 @@ struct UnlockFormTests {
 		#expect(form.canSubmit)
 	}
 
-	@Test func onlyAWrongPasswordShowsInline() {
-		let form = UnlockForm()
+	@Test func nothingButAMismatchShowsInline() {
+		var form = UnlockForm()
+		#expect(form.inlineMessage == nil)
 
-		#expect(form.inlineMessage(for: .wrongPassword) == "Wrong password.")
-		#expect(form.inlineMessage(for: .unsaved("disk I/O error")) == nil)
-		#expect(form.inlineMessage(for: .unexpected("The notes database is closed.")) == nil)
-		#expect(form.inlineMessage(for: nil) == nil)
+		form.password = "a"
+		_ = form.submit(confirming: false)
+		form.finish(.wrongPassword)
+
+		#expect(form.inlineMessage == nil)
 	}
 
-	@Test func aMismatchOutranksAWrongPassword() {
+	@Test func aWrongPasswordKeepsTheTextToBeSelected() {
 		var form = UnlockForm()
-		form.password = "a"
-		form.confirmation = "b"
-		_ = form.submit(confirming: true)
 
-		#expect(form.inlineMessage(for: .wrongPassword) == "The passwords do not match.")
+		for _ in 0 ..< 2 {
+			form.password = "a guess"
+			_ = form.submit(confirming: false)
+			form.finish(.wrongPassword)
+
+			#expect(form.password == "a guess")
+			#expect(form.rejected)
+			#expect(!form.working)
+			#expect(form.canSubmit)
+			let first = form.takeRejection()
+			let second = form.takeRejection()
+			#expect(first)
+			#expect(!second)
+			#expect(!form.rejected)
+		}
+	}
+
+	@Test func editingARejectedPasswordDropsTheSelection() {
+		var form = UnlockForm()
+		form.password = "a guess"
+		_ = form.submit(confirming: false)
+		form.finish(.wrongPassword)
+
+		form.password = "a guess"
+		#expect(form.rejected)
+		form.password = "a guess!"
+
+		#expect(!form.rejected)
+		let taken = form.takeRejection()
+		#expect(!taken)
+	}
+
+	@Test func textTypedWhileThePasswordIsCheckedIsNotTheRejectedPassword() {
+		var form = UnlockForm()
+		form.password = "a guess"
+		_ = form.submit(confirming: false)
+
+		form.password = "co"
+		form.finish(.wrongPassword)
+
+		#expect(form.password == "co")
+		#expect(!form.rejected)
+		let taken = form.takeRejection()
+		#expect(!taken)
+
+		_ = form.submit(confirming: false)
+		form.finish(.wrongPassword)
+		#expect(form.password == "co")
+		#expect(form.rejected)
+	}
+
+	@Test func successAndOtherFailuresClearTheField() {
+		var form = UnlockForm()
+
+		for reply in [AppModel.Failure?.none, .unexpected("The notes database is closed."), .unsaved("disk I/O error"), .wrongExportPassphrase] {
+			form.password = "correct horse"
+			_ = form.submit(confirming: false)
+			form.finish(reply)
+
+			#expect(form.password.isEmpty)
+			#expect(!form.rejected)
+		}
 	}
 }

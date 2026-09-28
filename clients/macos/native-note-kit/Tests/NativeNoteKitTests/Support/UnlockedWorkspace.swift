@@ -34,7 +34,7 @@ func fill(_ model: AppModel, with bodies: [String]) async throws {
 
 @MainActor
 func turnOnTouchID(_ model: AppModel, password: String = workspacePassword) async throws {
-	try #require(await model.enableBiometricUnlock(password: password) == nil)
+	try #require(await enableTouchID(model, password: password) == nil)
 	try #require(model.isBiometricUnlockEnabled)
 }
 

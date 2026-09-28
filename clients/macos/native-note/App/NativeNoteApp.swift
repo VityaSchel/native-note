@@ -12,6 +12,7 @@ struct NativeNoteApp: App {
 		Settings {
 			SettingsView(model: delegate.model)
 		}
+		.windowResizability(.contentSize)
 		.commands {
 			CommandGroup(replacing: .newItem) {
 				Button("New Note") { Task { await delegate.model.createNote() } }

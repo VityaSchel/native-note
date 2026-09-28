@@ -35,7 +35,7 @@ struct LibraryEraseTests {
 		#expect(model.failure == nil)
 		#expect(try remaining(in: directory).isEmpty)
 		#expect(keys.storedKey == nil)
-		#expect(!model.canUnlockWithBiometrics)
+		#expect(model.touchID == .hidden)
 	}
 
 	@Test func aNewLibraryStartsEmptyAfterAnErase() async throws {
@@ -111,7 +111,7 @@ struct LibraryEraseTests {
 
 		#expect(model.phase == .needsSetup)
 		#expect(model.failure != nil)
-		#expect(!model.canUnlockWithBiometrics)
+		#expect(model.touchID == .hidden)
 		#expect(AppLock.parameterFiles(in: directory).isEmpty)
 	}
 
