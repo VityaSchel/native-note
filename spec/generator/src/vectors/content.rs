@@ -11,8 +11,12 @@ const UPDATED_AT: i64 = 1_786_183_500_000;
 const DELETED_AT: i64 = 1_786_186_800_000;
 
 pub fn sample_note(body: &str) -> Content {
+	sample_note_as(uuid_bytes(), body)
+}
+
+pub fn sample_note_as(uuid: [u8; 16], body: &str) -> Content {
 	Content::Note {
-		uuid: uuid_bytes(),
+		uuid,
 		created_at: CREATED_AT,
 		updated_at: UPDATED_AT,
 		body: body.to_string(),

@@ -130,67 +130,43 @@ The Settings window, where Touch ID unlock is turned on and off, offers its sett
 
 ## Recovery flow
 
-Only applicable for when server and e2ee sync are configured. [Recovery key](../docs/PROTOCOL.md#recovery-key) is used to decrypt server-stored [Content key](../docs/PROTOCOL.md#content-key) blob. Recovery key only restores Content key, so on its own it's not enough to configure a new device for sync.
+Only applicable when a sync server is configured. The [Recovery key](../docs/PROTOCOL.md#recovery-key) decrypts the server-stored [Content key](../docs/PROTOCOL.md#content-key) blob; on its own it is not enough to configure a device for sync.
 
-Three forms of recovery credential:
+The recovery credential is the Recovery key as 24 BIP39 words, English wordlist. The API key and the server URL are not part of it. The word checksum is only a UI check; the real check is GCM verification.
 
-- QR code carrying the pairing credential as raw bytes, in QR byte mode
-- Saved file carrying the same 64 bytes verbatim
-- 24 words mnemonic, BIP39 encoding, English wordlist, with the API key presented separately as hex. The checksum is only reliable for a UI check, a real check is GCM verification.
-
-QR code and saved file carry the pairing credential. No `v` field, checksum is closed by GCM verification.
-
-```
-apiKey(32) ‖ recoveryKey(32)
-```
-
-Mnemonic carries the Recovery key alone:
-
-```
-256-bit entropy + 8-bit checksum = 264 bits ÷ 11 bits/word = 24 words
-```
-
-Server URL is not encoded in either.
+Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key). When a `put` conflicts and the blob it then gets [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key still in memory, setup routes to restore and rotation reports that another device rotated.
 
 **Setup:**
-1. Fetch `contentKeyEncrypted` from the server and pull `v` from its metadata, if it exists
-2. Generate the Recovery key using cryptographically secure pseudo random number generator
-3. Offer any of three forms for recovery credential to be saved
-   For QR codes: generate and display QR code; do not block screenshots or screen capture
-   For saved file: write file directly to the location user chooses via native filesystem dialog
-   For mnemonic: display three columns of words, selectable/copyable as text and the API key as hex; require three random words to be filled back in to prove they were actually securely stored
-4. Encrypt Content key with Recovery key and append `v = storedV + 1`
-5. Upload the blob and expect the server to confirm `v` wasn't overwritten during this flow
-6. Enable sync
+1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to restore before any words are shown.
+2. Generate the Content key and the Recovery key with a CSPRNG.
+3. Show the 24 words, selectable and copyable as text, and require three random words to be filled back in.
+4. `put` the Content key encrypted under the Recovery key, store the Content key, API key, URL and pin in `meta`, and enable sync.
 
-**Restore:**
-1. Offer three ways to input recovery credential:
-   For QR codes: native in-app camera scan, or choosing an image from the gallery or filesystem. Read the raw bytes, never a decoded string.
-   For saved file: native filesystem dialog.
-   For mnemonic: 24 word inputs with paste-across, wordlist autofill, and immediate checksum validation; API key entered as hex on the same screen.
-   Every path also asks for the server URL, which is not part of the credential.
-2. Authenticate with the API key and fetch `contentKeyEncrypted` from the server URL
-3. Decrypt Content key with Recovery key
-4. Start pulling all notes from `seq = 0` into memory, implement reasonable fail gate on Content key validity
-5. Mandate setting a new [local DB password](#local-db-encryption) for app unlock
+**Rotation:** shows new words the same way as setup, then `put`s the Content key under the new Recovery key. After it reports that another device rotated, rotation asks for the current words; once the fetched blob opens under them and holds this library's Content key, the pin takes its `v` and rotation can run again.
+
+**Restore and add-device** are a join: restore runs it after setting up a library with a new [local DB password](#local-db-encryption), add-device from an unlocked library. A library that already holds a Content key refuses a join.
+1. Take the 24 words, with paste-across, wordlist autofill and immediate checksum validation, the API key as hex, and the server URL. A lost API key is read from the server's [`api-key` file](../server/DESIGN.md#server-storage).
+2. `get` the blob and open it with the Recovery key; nothing is stored unless it opens.
+3. Store the Content key, API key, URL and the `get`'s `v` as the pin in `meta`.
+4. Sync as usual from `seq = 0`. The library's existing notes are dirty, so they push.
 
 ## Pull verification
 
-On every pull a client must check the server's response against its own state.
+Each pulled change, tombstones included, must pass three checks:
 
-- Every note held locally must still be present. A note that vanishes without a valid tombstone means withholding or tampering.
-- No note may move backwards in `v`.
-- Each decrypted `uuid` must re-derive the `blindedId` it arrived under.
-- Every tombstone must decrypt. One that does not was forged by someone holding the API key.
+- It decrypts.
+- Its decrypted `uuid` re-derives the `blindedId` it arrived under.
+- Its `v` is not below the local `v`. Equal is allowed, since a device's own write comes back.
+
+A change that fails a check is reported and not applied, so a local note is removed only by a pulled tombstone that passes all three. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, or a `nextSeq` below the client's `since`, means the server is behind the client: the client reports it and does not retry in a loop.
 
 ## Conflicts
 
-Conflicts surface during sync: the incoming version is in memory, and ours is already on disk. No third copy is created.
+Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text and the original is marked clean; a dirty tombstone there is marked clean without a push.
 
-- **Keep mine** — discard the in-memory server version and re-push ours at `serverV + 1`.
-- **Keep theirs** — write the in-memory server version over our row on disk.
+A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored, after a lost response: it is marked synced, not a conflict.
 
-The prompt never blocks the sync queue; other notes keep syncing. Retries use exponential backoff with jitter so two devices cannot livelock re-pushing at `v + 1` against each other.
+A conflicted push stays dirty until its pull arrives. A failed sync retries at the next scheduled sync.
 
 ## Exports
 

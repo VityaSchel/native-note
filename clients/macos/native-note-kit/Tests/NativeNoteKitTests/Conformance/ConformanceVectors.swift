@@ -19,13 +19,13 @@ private enum Hex {
 enum VectorFile: String, CaseIterable {
 	case argon2, hkdf, export
 	case blinding, content, note, frames, envelope, padding, sync
-	case mnemonic, pairing
+	case mnemonic
 
 	var deferredToPhase: Int? {
 		switch self {
 		case .argon2, .hkdf, .export: nil
 		case .blinding, .content, .note, .frames, .envelope, .padding, .sync: 5
-		case .mnemonic, .pairing: 6
+		case .mnemonic: 6
 		}
 	}
 

@@ -65,6 +65,18 @@
 			"roundTrips": true
 		},
 		{
+			"innerLength": 2097148,
+			"lengthPrefix": "001ffffc",
+			"name": "inner2097148",
+			"paddedLength": 2097152,
+			"roundTrips": true
+		},
+		{
+			"innerLength": 2097149,
+			"name": "rejectAboveLargestBucket",
+			"pads": false
+		},
+		{
 			"name": "rejectNonBucketLength",
 			"padded": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
 			"paddedLength": 128,
@@ -76,5 +88,5 @@
 			"unpads": false
 		}
 	],
-	"description": "padded = len_be32 ‖ inner ‖ zero fill, to the next doubling bucket from 256 B."
+	"description": "padded = len_be32 ‖ inner ‖ zero fill, to the next doubling bucket from 256 B up to the body limit, fixed at 2 MiB."
 }

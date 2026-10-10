@@ -13,9 +13,12 @@ fn sample_write(v: u32) -> Write {
 		blinded_id: seq_array(BLINDED_ID),
 		v,
 		write_id: seq_array(WRITE_ID),
-		deleted: false,
 		payload: seq_bytes(PAYLOAD, 24),
 	}
+}
+
+fn result(status: Status, v: u32, seq: u64) -> WriteResult {
+	WriteResult { status, v, seq }
 }
 
 fn request_case(name: &str, request: Request) -> Value {
@@ -72,33 +75,37 @@ pub fn frames() -> Value {
 	let mut unknown_action = encoded_sync.clone();
 	unknown_action[0] = 0x7f;
 
-	let mut bad_bool = encoded_sync.clone();
-	let deleted_at = 1 + 8 + 4 + 16 + 4 + 16;
-	bad_bool[deleted_at] = 0x02;
-
 	let mut huge_count = encoded_sync.clone();
 	huge_count[9..13].copy_from_slice(&u32::MAX.to_be_bytes());
 
 	let trailing = [encoded_sync.clone(), vec![0]].concat();
 
 	let conflict = Response::Sync {
-		results: vec![WriteResult {
-			blinded_id: seq_array(BLINDED_ID),
-			status: Status::Conflict,
-			v: 1,
-			seq: 0,
-		}],
+		results: vec![result(Status::Conflict, 1, 0)],
 		changes: vec![],
 		next_seq: 1,
 		more: false,
 	};
-	let status_at = 1 + 4 + 16;
+	let status_at = 1 + 4;
 	let mut unknown_status = frame::encode_response(&conflict);
-	unknown_status[status_at] = 0x06;
+	unknown_status[status_at] = 0x04;
 
 	let mut seq_on_conflict = frame::encode_response(&conflict);
 	let seq_at = status_at + 1 + 4;
 	seq_on_conflict[seq_at..seq_at + 8].copy_from_slice(&9u64.to_be_bytes());
+
+	let mut bad_bool = frame::encode_response(&conflict);
+	*bad_bool.last_mut().unwrap() = 0x02;
+
+	let too_large_on_put = frame::encode_response(&Response::PutRecovery {
+		status: Status::TooLarge,
+		v: 1,
+	});
+
+	let encoded_error = frame::encode_response(&Response::Error);
+	let trailing_error = [encoded_error.clone(), vec![0]].concat();
+	let mut unknown_response_action = encoded_error.clone();
+	unknown_response_action[0] = 0xfe;
 
 	file(
 		"Request and response frames. Fixed-width big-endian fields, length-prefixed byte strings, exactly one valid encoding per message.",
@@ -122,18 +129,31 @@ pub fn frames() -> Value {
 			response_case(
 				"syncAccepted",
 				Response::Sync {
-					results: vec![WriteResult {
-						blinded_id: seq_array(BLINDED_ID),
-						status: Status::Accepted,
-						v: 1,
-						seq: 1,
-					}],
+					results: vec![result(Status::Accepted, 1, 1)],
 					changes: vec![],
 					next_seq: 1,
 					more: false,
 				},
 			),
 			response_case("syncConflict", conflict),
+			response_case(
+				"syncConflictAtLastVersion",
+				Response::Sync {
+					results: vec![result(Status::Conflict, u32::MAX, 0)],
+					changes: vec![],
+					next_seq: 1,
+					more: false,
+				},
+			),
+			response_case(
+				"syncTooLarge",
+				Response::Sync {
+					results: vec![result(Status::TooLarge, 1, 0)],
+					changes: vec![],
+					next_seq: 1,
+					more: false,
+				},
+			),
 			response_case(
 				"syncChanges",
 				Response::Sync {
@@ -144,32 +164,15 @@ pub fn frames() -> Value {
 				},
 			),
 			response_case(
-				"syncRefused",
-				Response::Sync {
-					results: [Status::TooLarge, Status::Exhausted, Status::Quota]
-						.into_iter()
-						.map(|status| WriteResult {
-							blinded_id: seq_array(BLINDED_ID),
-							status,
-							v: if status == Status::Exhausted {
-								u32::MAX
-							} else {
-								1
-							},
-							seq: 0,
-						})
-						.collect(),
-					changes: vec![],
-					next_seq: 1,
-					more: false,
-				},
-			),
-			response_case(
 				"getRecoveryResult",
 				Response::GetRecovery {
 					v: 2,
 					blob: seq_bytes(BLOB, 60),
 				},
+			),
+			response_case(
+				"getRecoveryEmpty",
+				Response::GetRecovery { v: 0, blob: vec![] },
 			),
 			response_case(
 				"putRecoveryResult",
@@ -178,18 +181,24 @@ pub fn frames() -> Value {
 					v: 3,
 				},
 			),
+			response_case("error", Response::Error),
 			reject_request(
 				"rejectUnknownAction",
 				unknown_action,
 				DecodeError::UnknownDiscriminant,
 			),
+			reject_request("rejectImpossibleCount", huge_count, DecodeError::Truncated),
+			reject_request("rejectTrailingBytes", trailing, DecodeError::TrailingBytes),
 			reject_request(
+				"rejectErrorAsRequest",
+				encoded_error,
+				DecodeError::UnknownDiscriminant,
+			),
+			reject_response(
 				"rejectNonCanonicalBool",
 				bad_bool,
 				DecodeError::NotCanonical,
 			),
-			reject_request("rejectImpossibleCount", huge_count, DecodeError::Truncated),
-			reject_request("rejectTrailingBytes", trailing, DecodeError::TrailingBytes),
 			reject_response(
 				"rejectSeqOnNonAcceptedResult",
 				seq_on_conflict,
@@ -199,6 +208,21 @@ pub fn frames() -> Value {
 				"rejectUnknownStatus",
 				unknown_status,
 				DecodeError::UnknownDiscriminant,
+			),
+			reject_response(
+				"rejectTooLargeOnPut",
+				too_large_on_put,
+				DecodeError::UnknownDiscriminant,
+			),
+			reject_response(
+				"rejectUnknownResponseAction",
+				unknown_response_action,
+				DecodeError::UnknownDiscriminant,
+			),
+			reject_response(
+				"rejectTrailingBytesAfterError",
+				trailing_error,
+				DecodeError::TrailingBytes,
 			),
 		],
 	)
@@ -224,17 +248,13 @@ pub fn envelope() -> Value {
 	let request = envelope::seal_request(&key, &req_nonce, &request_inner).unwrap();
 	let response = envelope::seal_response(&key, &resp_nonce, &req_nonce, &response_inner).unwrap();
 
-	let mut flipped = request.clone();
-	flipped[0] = 0x02;
-
 	let mut wrong_nonce = req_nonce;
 	wrong_nonce[0] ^= 0x01;
 
 	let truncated = &request[..request.len() - 1];
-	let unwrapped = &request[1..];
 
 	file(
-		"Sealed envelopes. Version is authenticated as AAD; responses additionally bind the request nonce.",
+		"Sealed envelopes. Requests are sealed with an empty AAD; responses bind the request nonce as AAD.",
 		vec![
 			json!({
 				"name": "request",
@@ -242,7 +262,6 @@ pub fn envelope() -> Value {
 				"envelopeKey": hx(&key),
 				"inner": hx(&request_inner),
 				"nonce": hx(&req_nonce),
-				"aad": hx(&[envelope::VERSION]),
 				"frame": hx(&request),
 				"opens": envelope::open_request(&key, &request).is_ok(),
 			}),
@@ -253,11 +272,6 @@ pub fn envelope() -> Value {
 				"requestNonce": hx(&req_nonce),
 				"frame": hx(&response),
 				"opens": envelope::open_response(&key, &req_nonce, &response).is_ok(),
-			}),
-			json!({
-				"name": "rejectFlippedVersion",
-				"frame": hx(&flipped),
-				"opens": envelope::open_request(&key, &flipped).is_ok(),
 			}),
 			json!({
 				"name": "rejectResponseUnderWrongRequestNonce",
@@ -272,9 +286,14 @@ pub fn envelope() -> Value {
 			}),
 			json!({
 				"name": "rejectRequestOpenedAsResponse",
-				"frame": hx(unwrapped),
+				"frame": hx(&request),
 				"requestNonce": hx(&req_nonce),
-				"opens": envelope::open_response(&key, &req_nonce, unwrapped).is_ok(),
+				"opens": envelope::open_response(&key, &req_nonce, &request).is_ok(),
+			}),
+			json!({
+				"name": "rejectResponseOpenedAsRequest",
+				"frame": hx(&response),
+				"opens": envelope::open_request(&key, &response).is_ok(),
 			}),
 		],
 	)

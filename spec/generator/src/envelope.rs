@@ -1,9 +1,9 @@
-use crate::aead::{self, NONCE_LEN, OpenError};
+use crate::aead::{self, NONCE_LEN, OpenError, TAG_LEN};
 
-pub const VERSION: u8 = 0x01;
 const MIN_BUCKET: usize = 256;
-const MAX_BUCKET: usize = 2 * 1024 * 1024;
+pub const MAX_BUCKET: usize = 2 * 1024 * 1024;
 const LEN_PREFIX: usize = 4;
+const SEAL_OVERHEAD: usize = NONCE_LEN + TAG_LEN;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum PadError {
@@ -41,30 +41,21 @@ pub fn unpad(padded: &[u8]) -> Result<Vec<u8>, PadError> {
 	Ok(inner.to_vec())
 }
 
+pub fn admits_request(frame_len: usize) -> bool {
+	frame_len.saturating_sub(SEAL_OVERHEAD) <= MAX_BUCKET
+}
+
 pub fn seal_request(
 	key: &[u8],
 	nonce: &[u8; NONCE_LEN],
 	inner: &[u8],
 ) -> Result<Vec<u8>, PadError> {
-	let padded = pad(inner)?;
-	let mut out = vec![VERSION];
-	out.extend_from_slice(&aead::seal(key, nonce, &padded, &[VERSION]));
-	Ok(out)
+	Ok(aead::seal(key, nonce, &pad(inner)?, &[]))
 }
 
-pub fn open_request(key: &[u8], frame: &[u8]) -> Result<Vec<u8>, OpenError> {
-	let (&version, sealed) = frame.split_first().ok_or(OpenError)?;
-	if version != VERSION {
-		return Err(OpenError);
-	}
-	let padded = aead::open(key, sealed, &[VERSION])?;
-	unpad(&padded).map_err(|_| OpenError)
-}
-
-fn response_aad(request_nonce: &[u8; NONCE_LEN]) -> Vec<u8> {
-	let mut aad = vec![VERSION];
-	aad.extend_from_slice(request_nonce);
-	aad
+pub fn open_request(key: &[u8], frame: &[u8]) -> Result<Result<Vec<u8>, PadError>, OpenError> {
+	let padded = aead::open(key, frame, &[])?;
+	Ok(unpad(&padded))
 }
 
 pub fn seal_response(
@@ -73,13 +64,7 @@ pub fn seal_response(
 	request_nonce: &[u8; NONCE_LEN],
 	inner: &[u8],
 ) -> Result<Vec<u8>, PadError> {
-	let padded = pad(inner)?;
-	Ok(aead::seal(
-		key,
-		nonce,
-		&padded,
-		&response_aad(request_nonce),
-	))
+	Ok(aead::seal(key, nonce, &pad(inner)?, request_nonce))
 }
 
 pub fn open_response(
@@ -87,6 +72,6 @@ pub fn open_response(
 	request_nonce: &[u8; NONCE_LEN],
 	frame: &[u8],
 ) -> Result<Vec<u8>, OpenError> {
-	let padded = aead::open(key, frame, &response_aad(request_nonce))?;
+	let padded = aead::open(key, frame, request_nonce)?;
 	unpad(&padded).map_err(|_| OpenError)
 }

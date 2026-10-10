@@ -36,9 +36,13 @@ pub fn seq_array<const N: usize>(start: u8) -> [u8; N] {
 	std::array::from_fn(|i| start.wrapping_add(i as u8))
 }
 
-fn uuid_bytes() -> [u8; 16] {
-	let hex: String = UUID.chars().filter(|c| *c != '-').collect();
+fn parse_uuid(text: &str) -> [u8; 16] {
+	let hex: String = text.chars().filter(|c| *c != '-').collect();
 	crate::hex::decode(&hex).unwrap().try_into().unwrap()
+}
+
+fn uuid_bytes() -> [u8; 16] {
+	parse_uuid(UUID)
 }
 
 fn file(description: &str, cases: Vec<Value>) -> Value {
@@ -60,7 +64,6 @@ pub fn all() -> Vec<(&'static str, Value)> {
 		("padding.json", padding::padding()),
 		("argon2.json", keys::argon2()),
 		("mnemonic.json", credentials::mnemonic()),
-		("pairing.json", credentials::pairing()),
 		("sync.json", sync::scenario()),
 		("export.json", export::export()),
 	]

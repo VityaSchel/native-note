@@ -26,34 +26,33 @@ All binary is lowercase hex.
 
 A boolean field is an **assertion the implementation must satisfy**, not data to copy:
 
-| Field                    | Meaning                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| `opens`                  | Whether the frame decrypts. `false` means it MUST be rejected                           |
-| `decodes`                | Whether the input parses. `false` means it MUST be rejected                             |
-| `unpads`                 | Whether unpadding succeeds. `false` means it MUST be rejected                           |
-| `roundTrips`             | Encoding then decoding returns the original                                             |
-| `splits`                 | The credential parses back into exactly its two keys. `false` means it MUST be rejected |
-| `matches`                | The rejection produced the specific error named in `error`                              |
-| `opensUnderWrongVersion` | Whether the payload decrypts at `v + 1`. Always `false`: it MUST be rejected            |
+| Field                    | Meaning                                                                      |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `opens`                  | Whether the frame decrypts. `false` means it MUST be rejected                |
+| `decodes`                | Whether the input parses. `false` means it MUST be rejected                  |
+| `pads`                   | Whether padding succeeds. `false` means it MUST be rejected                  |
+| `unpads`                 | Whether unpadding succeeds. `false` means it MUST be rejected                |
+| `roundTrips`             | Encoding then decoding returns the original                                  |
+| `matches`                | The rejection produced the specific error named in `error`                   |
+| `opensUnderWrongVersion` | Whether the payload decrypts at `v + 1`. Always `false`: it MUST be rejected |
 
 Every case whose name starts with `reject` is a negative test. Passing them matters as much as the positive cases — most of them exist because a plausible implementation would silently accept the input.
 
 ## Files
 
-| File            | Covers                                                                                                                                                               |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hkdf.json`     | Every `info` label in the protocol, with `ikm`, `salt`, `length` and expected `okm`. For `localDbKey`, concatenate `argonOut` and `machineId` into `ikm`             |
-| `blinding.json` | `blindingKey` from the Content key, then `blindedId` for a UUID and for one a single bit apart                                                                       |
-| `content.json`  | Note and tombstone encoding, plus unknown version, unknown kind, trailing bytes, truncation, invalid UTF-8                                                           |
-| `note.json`     | Sealed note payloads. `plaintext` is the encoded content; `aad` is the binding                                                                                       |
-| `frames.json`   | Every request and response shape and status byte, plus unknown action and status, non-canonical bool, impossible count, trailing bytes, seq on a non-accepted result |
-| `envelope.json` | Request and response frames, plus flipped version, wrong request nonce, truncation, and a request replayed as a response                                             |
-| `padding.json`  | Bucket boundaries either side of 256, 512 and 1024, plus non-bucket length and dirty fill                                                                            |
-| `argon2.json`   | Argon2id at fixed low-cost parameters. Pins the algorithm, not the production cost                                                                                   |
-| `mnemonic.json` | Wordlist identity, 24-word round-trip, bad checksum, wrong word count, unknown word                                                                                  |
-| `pairing.json`  | The 64-byte pairing credential and its length rejections                                                                                                             |
-| `sync.json`     | Six-step end-to-end scenario over the reference server semantics                                                                                                     |
-| `export.json`   | Passphrase-encrypted export at low-cost parameters, plus wrong passphrase, flipped salt and ciphertext bytes, truncated tag, unknown magic, out-of-bounds parameters |
+| File            | Covers                                                                                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `hkdf.json`     | Every `info` label in the protocol, with `ikm`, `salt`, `length` and expected `okm`. For `localDbKey`, concatenate `argonOut` and `machineId` into `ikm`                                   |
+| `blinding.json` | `blindingKey` from the Content key, then `blindedId` for a UUID and for one a single bit apart                                                                                             |
+| `content.json`  | Note and tombstone encoding, plus unknown version, unknown kind, trailing bytes, truncation, invalid UTF-8                                                                                 |
+| `note.json`     | Sealed note payloads. `plaintext` is the encoded content; `aad` is the binding                                                                                                             |
+| `frames.json`   | Every request and response shape and status byte, plus unknown action and status, `too_large` on a put, non-canonical bool, impossible count, trailing bytes, seq on a non-accepted result |
+| `envelope.json` | Request and response frames, plus wrong request nonce, truncation, a request replayed as a response, and a response replayed as a request                                                  |
+| `padding.json`  | Bucket boundaries either side of 256, 512 and 1024, the largest bucket at 2 MiB and one byte past it, plus non-bucket length and dirty fill                                                |
+| `argon2.json`   | Argon2id at fixed low-cost parameters. Pins the algorithm, not the production cost                                                                                                         |
+| `mnemonic.json` | Wordlist identity, 24-word round-trip, bad checksum, wrong word count, unknown word                                                                                                        |
+| `sync.json`     | Five-step end-to-end scenario over the reference server semantics                                                                                                                          |
+| `export.json`   | Passphrase-encrypted export at low-cost parameters, plus wrong passphrase, flipped salt and ciphertext bytes, truncated tag, unknown magic, out-of-bounds parameters                       |
 
 ## Notes on specific files
 
@@ -65,7 +64,7 @@ Every case whose name starts with `reject` is a negative test. Passing them matt
 
 **`frames.json`** marks each case's `direction`, `request` or `response`: the decoder it goes through.
 
-**`sync.json`** exercises protocol semantics rather than framing — the version rule, `seq` assignment, conflict reporting and tombstones. Each step carries the encoded `request` and `response` a client would seal, with a readable `outcome` alongside. Envelope framing is covered by `envelope.json`; the two compose.
+**`sync.json`** exercises protocol semantics rather than framing — the version rule, `seq` assignment, conflict reporting, the losing edit kept as a new note, and tombstones. Each step carries the encoded `request` and `response` a client would seal, with a readable `outcome` alongside. Envelope framing is covered by `envelope.json`; the two compose.
 
 Step 2 is the case worth implementing against first: two devices produce `v = 1` for the same note while offline, and the second is rejected with the server's current `v` rather than overwriting.
 

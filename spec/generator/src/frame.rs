@@ -4,20 +4,17 @@ use crate::note::BlindedId;
 const ACTION_SYNC: u8 = 0x01;
 const ACTION_GET_RECOVERY: u8 = 0x02;
 const ACTION_PUT_RECOVERY: u8 = 0x03;
+const ACTION_ERROR: u8 = 0xff;
 
 const STATUS_ACCEPTED: u8 = 0x01;
 const STATUS_CONFLICT: u8 = 0x02;
 const STATUS_TOO_LARGE: u8 = 0x03;
-const STATUS_EXHAUSTED: u8 = 0x04;
-const STATUS_QUOTA: u8 = 0x05;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
 	Accepted,
 	Conflict,
 	TooLarge,
-	Exhausted,
-	Quota,
 }
 
 impl Status {
@@ -26,8 +23,6 @@ impl Status {
 			Status::Accepted => "accepted",
 			Status::Conflict => "conflict",
 			Status::TooLarge => "too_large",
-			Status::Exhausted => "exhausted",
-			Status::Quota => "quota",
 		}
 	}
 
@@ -36,8 +31,6 @@ impl Status {
 			Status::Accepted => STATUS_ACCEPTED,
 			Status::Conflict => STATUS_CONFLICT,
 			Status::TooLarge => STATUS_TOO_LARGE,
-			Status::Exhausted => STATUS_EXHAUSTED,
-			Status::Quota => STATUS_QUOTA,
 		}
 	}
 
@@ -46,8 +39,6 @@ impl Status {
 			STATUS_ACCEPTED => Ok(Status::Accepted),
 			STATUS_CONFLICT => Ok(Status::Conflict),
 			STATUS_TOO_LARGE => Ok(Status::TooLarge),
-			STATUS_EXHAUSTED => Ok(Status::Exhausted),
-			STATUS_QUOTA => Ok(Status::Quota),
 			_ => Err(DecodeError::UnknownDiscriminant),
 		}
 	}
@@ -58,13 +49,11 @@ pub struct Write {
 	pub blinded_id: BlindedId,
 	pub v: u32,
 	pub write_id: [u8; 16],
-	pub deleted: bool,
 	pub payload: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteResult {
-	pub blinded_id: BlindedId,
 	pub status: Status,
 	pub v: u32,
 	pub seq: u64,
@@ -93,13 +82,13 @@ pub enum Response {
 		status: Status,
 		v: u32,
 	},
+	Error,
 }
 
 fn put_write(w: &mut Writer, write: &Write) {
 	w.raw(&write.blinded_id)
 		.u32(write.v)
 		.raw(&write.write_id)
-		.bool(write.deleted)
 		.bytes(&write.payload);
 }
 
@@ -107,13 +96,11 @@ fn get_write(r: &mut Reader) -> Result<Write, DecodeError> {
 	let blinded_id = r.array()?;
 	let v = r.u32()?;
 	let write_id = r.array()?;
-	let deleted = r.bool()?;
 	let payload = r.bytes()?.to_vec();
 	Ok(Write {
 		blinded_id,
 		v,
 		write_id,
-		deleted,
 		payload,
 	})
 }
@@ -180,10 +167,7 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
 		} => {
 			w.u8(ACTION_SYNC).count(results.len());
 			for result in results {
-				w.raw(&result.blinded_id)
-					.u8(result.status.code())
-					.u32(result.v)
-					.u64(result.seq);
+				w.u8(result.status.code()).u32(result.v).u64(result.seq);
 			}
 			w.count(changes.len());
 			for change in changes {
@@ -197,24 +181,21 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
 		Response::PutRecovery { status, v } => {
 			w.u8(ACTION_PUT_RECOVERY).u8(status.code()).u32(*v);
 		}
+		Response::Error => {
+			w.u8(ACTION_ERROR);
+		}
 	}
 	w.into_bytes()
 }
 
 fn get_result(r: &mut Reader) -> Result<WriteResult, DecodeError> {
-	let blinded_id = r.array()?;
 	let status = Status::from_code(r.u8()?)?;
 	let v = r.u32()?;
 	let seq = r.u64()?;
 	if status != Status::Accepted && seq != 0 {
 		return Err(DecodeError::NotCanonical);
 	}
-	Ok(WriteResult {
-		blinded_id,
-		status,
-		v,
-		seq,
-	})
+	Ok(WriteResult { status, v, seq })
 }
 
 pub fn decode_response(input: &[u8]) -> Result<Response, DecodeError> {
@@ -239,9 +220,13 @@ pub fn decode_response(input: &[u8]) -> Result<Response, DecodeError> {
 		}
 		ACTION_PUT_RECOVERY => {
 			let status = Status::from_code(r.u8()?)?;
+			if status == Status::TooLarge {
+				return Err(DecodeError::UnknownDiscriminant);
+			}
 			let v = r.u32()?;
 			Response::PutRecovery { status, v }
 		}
+		ACTION_ERROR => Response::Error,
 		_ => return Err(DecodeError::UnknownDiscriminant),
 	};
 	r.finish()?;

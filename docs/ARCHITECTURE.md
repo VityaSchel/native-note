@@ -73,7 +73,7 @@ Known limitations, out of scope:
 - Code execution as the user on an unlocked machine — the content key is in memory
 - Compromise of a device holding the content key
 - Traffic analysis over plain HTTP — timing, counts, request size
-- Malicious server withholding, against a restoring client — restoring from scratch has nothing to compare against
+- Malicious server withholding notes — until the [authenticated manifest](./ROADMAP.md)
 - Secure erasure of deleted content — not achievable on SSD or copy-on-write storage
 - Loss of the mnemonic and every device
 - Denial of service

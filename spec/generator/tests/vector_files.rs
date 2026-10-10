@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use native_note_vectors::content::{self, Content};
-use native_note_vectors::frame::{self, Request, Response, Status};
+use native_note_vectors::frame::{self, Request, Response};
 use native_note_vectors::vectors::{self, CONTENT_KEY, seq_bytes};
 use native_note_vectors::{hex, kdf, mnemonic, note};
 use serde_json::Value;
@@ -65,7 +65,7 @@ fn every_case_satisfies_its_own_assertions() {
 					assert_eq!(value, true, "{file} {name}: {field}");
 				}
 			}
-			for field in ["decodes", "opens", "unpads", "splits"] {
+			for field in ["decodes", "opens", "pads", "unpads"] {
 				if let Some(value) = case.get(field) {
 					assert_eq!(value, !negative, "{file} {name}: {field}");
 				}
@@ -114,12 +114,20 @@ fn sync_scenario_payloads_decrypt_to_their_declared_shape() {
 
 	let mut checked = 0;
 	for case in doc["cases"].as_array().unwrap() {
-		let encoded = hex::decode(case["request"].as_str().unwrap()).unwrap();
-		let Request::Sync { writes, .. } = frame::decode_request(&encoded).unwrap() else {
+		let request = hex::decode(case["request"].as_str().unwrap()).unwrap();
+		let Request::Sync { writes, .. } = frame::decode_request(&request).unwrap() else {
 			panic!("scenario requests are all sync");
 		};
+		let response = hex::decode(case["response"].as_str().unwrap()).unwrap();
+		let Response::Sync {
+			results, changes, ..
+		} = frame::decode_response(&response).unwrap()
+		else {
+			panic!("scenario responses are all sync");
+		};
+		assert_eq!(results.len(), writes.len(), "{}", case["name"]);
 
-		for write in &writes {
+		for write in writes.iter().chain(&changes) {
 			let plaintext = note::open(
 				&content_key,
 				&write.write_id,
@@ -133,11 +141,6 @@ fn sync_scenario_payloads_decrypt_to_their_declared_shape() {
 			assert_eq!(
 				note::blinded_id(&blinding_key, decoded.uuid()),
 				write.blinded_id
-			);
-			assert_eq!(
-				decoded.is_tombstone(),
-				write.deleted,
-				"deleted flag must match content kind"
 			);
 			assert!(matches!(
 				decoded,
@@ -158,26 +161,8 @@ fn sync_scenario_payloads_decrypt_to_their_declared_shape() {
 			checked += 1;
 		}
 	}
-	assert_eq!(checked, 4, "scenario should carry four writes");
-}
-
-#[test]
-fn exhausted_results_carry_the_maximum_version() {
-	let doc: Value =
-		serde_json::from_str(&fs::read_to_string(vectors_dir().join("frames.json")).unwrap())
-			.unwrap();
-	let mut exhausted = 0;
-	for case in doc["cases"].as_array().unwrap() {
-		if case["direction"] != "response" || case.get("error").is_some() {
-			continue;
-		}
-		let encoded = hex::decode(case["encoded"].as_str().unwrap()).unwrap();
-		if let Ok(Response::Sync { results, .. }) = frame::decode_response(&encoded) {
-			for result in results.iter().filter(|r| r.status == Status::Exhausted) {
-				assert_eq!(result.v, u32::MAX, "{}", case["name"]);
-				exhausted += 1;
-			}
-		}
-	}
-	assert!(exhausted > 0, "no exhausted result in frames.json");
+	assert_eq!(
+		checked, 9,
+		"scenario should carry four writes and five changes"
+	);
 }

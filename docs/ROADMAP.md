@@ -4,3 +4,5 @@
 - **Notebooks, tags, pins, trash.**
 - **Import `.md` and `.txt` files**, the formats most note apps export.
 - **Authenticated manifest against withholding.** A canonical list of `{blindedId, v}` for every live note, sealed under a content-key-derived key, with its own version counter.
+- **Convergence after a manual server restore**, for a client that finds the server [behind it](../clients/DESIGN.md#pull-verification).
+- **QR code and saved file for the recovery credential**, carrying the API key with the Recovery key.

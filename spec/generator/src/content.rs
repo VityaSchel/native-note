@@ -78,8 +78,4 @@ impl Content {
 			Content::Note { uuid, .. } | Content::Tombstone { uuid, .. } => uuid,
 		}
 	}
-
-	pub fn is_tombstone(&self) -> bool {
-		matches!(self, Content::Tombstone { .. })
-	}
 }

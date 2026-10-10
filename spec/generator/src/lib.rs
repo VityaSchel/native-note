@@ -8,6 +8,5 @@ pub mod hex;
 pub mod kdf;
 pub mod mnemonic;
 pub mod note;
-pub mod pairing;
 pub mod server;
 pub mod vectors;

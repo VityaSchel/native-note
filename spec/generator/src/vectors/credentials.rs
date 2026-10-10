@@ -1,8 +1,8 @@
 use serde_json::{Value, json};
 
-use super::{API_KEY, RECOVERY_KEY, file, seq_array};
+use super::{RECOVERY_KEY, file, seq_array};
 use crate::hex::encode as hx;
-use crate::{mnemonic, pairing};
+use crate::mnemonic;
 
 pub fn mnemonic() -> Value {
 	let entropy: [u8; 32] = seq_array(RECOVERY_KEY);
@@ -47,37 +47,6 @@ pub fn mnemonic() -> Value {
 				"name": "rejectUnknownWord",
 				"mnemonic": unknown.join(" "),
 				"decodes": mnemonic::decode(&unknown).is_ok(),
-			}),
-		],
-	)
-}
-
-pub fn pairing() -> Value {
-	let api_key: [u8; 32] = seq_array(API_KEY);
-	let recovery_key: [u8; 32] = seq_array(RECOVERY_KEY);
-	let blob = pairing::encode(&api_key, &recovery_key);
-	let long = [&blob[..], &[0]].concat();
-
-	file(
-		"Pairing credential: apiKey ‖ recoveryKey, exactly 64 raw bytes. No version field — the length discriminates. No server URL: it is public, and migrating servers must not invalidate the credential.",
-		vec![
-			json!({
-				"name": "blob",
-				"apiKey": hx(&api_key),
-				"recoveryKey": hx(&recovery_key),
-				"blob": hx(&blob),
-				"length": blob.len(),
-				"splits": pairing::split(&blob) == Some((&api_key, &recovery_key)),
-			}),
-			json!({
-				"name": "rejectShort",
-				"length": pairing::LEN - 1,
-				"splits": pairing::split(&blob[..pairing::LEN - 1]).is_some(),
-			}),
-			json!({
-				"name": "rejectLong",
-				"length": pairing::LEN + 1,
-				"splits": pairing::split(&long).is_some(),
 			}),
 		],
 	)

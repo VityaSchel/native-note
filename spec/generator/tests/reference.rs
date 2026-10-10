@@ -1,12 +1,21 @@
 use native_note_vectors::codec::DecodeError;
 use native_note_vectors::content::{self, Content};
-use native_note_vectors::envelope::{self, PadError};
+use native_note_vectors::envelope::{self, MAX_BUCKET, PadError};
 use native_note_vectors::export::{self, ArgonParams};
 use native_note_vectors::frame::{self, Request, Response, Status, Write, WriteResult};
 use native_note_vectors::mnemonic::{self, MnemonicError};
-use native_note_vectors::server::Server;
+use native_note_vectors::server::{NOTE_MAX, Server};
 use native_note_vectors::vectors::{seq_array, seq_bytes};
 use native_note_vectors::{aead, hex, kdf};
+
+fn sized_write(size: usize) -> Write {
+	Write {
+		blinded_id: [7; 16],
+		v: 1,
+		write_id: [1; 16],
+		payload: vec![0; size],
+	}
+}
 
 #[test]
 fn aead_and_envelope_round_trip() {
@@ -23,8 +32,8 @@ fn aead_and_envelope_round_trip() {
 
 	let request = envelope::seal_request(&key, &nonce, b"{}").unwrap();
 	assert_eq!(
-		envelope::open_request(&key, &request).as_deref(),
-		Ok(b"{}".as_slice())
+		envelope::open_request(&key, &request),
+		Ok(Ok(b"{}".to_vec()))
 	);
 
 	let response = envelope::seal_response(&key, &resp_nonce, &nonce, b"{}").unwrap();
@@ -36,6 +45,8 @@ fn aead_and_envelope_round_trip() {
 	let mut wrong = nonce;
 	wrong[0] ^= 1;
 	assert!(envelope::open_response(&key, &wrong, &response).is_err());
+	assert!(envelope::open_response(&key, &nonce, &request).is_err());
+	assert!(envelope::open_request(&key, &response).is_err());
 }
 
 #[test]
@@ -69,12 +80,11 @@ fn mnemonic_round_trips_and_rejects() {
 
 #[test]
 fn version_rule_rejects_replays_and_gaps() {
-	let mut server = Server::new(1024);
+	let mut server = Server::new();
 	let write = |v: u32, size: usize| Write {
 		blinded_id: [7u8; 16],
 		v,
 		write_id: [1u8; 16],
-		deleted: false,
 		payload: vec![0; size],
 	};
 
@@ -87,7 +97,7 @@ fn version_rule_rejects_replays_and_gaps() {
 	assert_eq!(accepted.status, Status::Accepted);
 	assert_eq!(accepted.seq, 2);
 
-	let rejected = server.apply(&write(3, 2048));
+	let rejected = server.apply(&write(3, NOTE_MAX + 1));
 	assert_eq!(rejected.status, Status::TooLarge);
 	assert_eq!(rejected.seq, 0, "a rejected write never carries a seq");
 
@@ -103,7 +113,6 @@ fn decoders_reject_malformed_input() {
 			blinded_id: [1u8; 16],
 			v: 1,
 			write_id: [2u8; 16],
-			deleted: false,
 			payload: vec![9; 8],
 		}],
 	});
@@ -159,15 +168,9 @@ fn frames_round_trip_and_reject_every_truncation() {
 		blinded_id: [1; 16],
 		v: 2,
 		write_id: [3; 16],
-		deleted: true,
 		payload: vec![4; 5],
 	};
-	let result = |status, seq| WriteResult {
-		blinded_id: [1; 16],
-		status,
-		v: 7,
-		seq,
-	};
+	let result = |status, seq| WriteResult { status, v: 7, seq };
 	let requests = [
 		Request::Sync {
 			since: 9,
@@ -185,8 +188,6 @@ fn frames_round_trip_and_reject_every_truncation() {
 				result(Status::Accepted, 1),
 				result(Status::Conflict, 0),
 				result(Status::TooLarge, 0),
-				result(Status::Exhausted, 0),
-				result(Status::Quota, 0),
 			],
 			changes: vec![write],
 			next_seq: 3,
@@ -200,6 +201,7 @@ fn frames_round_trip_and_reject_every_truncation() {
 			status: Status::Conflict,
 			v: 2,
 		},
+		Response::Error,
 	];
 
 	for request in requests {
@@ -237,7 +239,7 @@ fn frames_round_trip_and_reject_every_truncation() {
 		frame::decode_response(&[0x7f]),
 		Err(DecodeError::UnknownDiscriminant)
 	);
-	for status in [0x00, 0x06, 0xff] {
+	for status in [0x00, 0x03, 0x04, 0x05, 0xff] {
 		assert_eq!(
 			frame::decode_response(&[0x03, status, 0, 0, 0, 1]),
 			Err(DecodeError::UnknownDiscriminant)
@@ -256,16 +258,28 @@ fn sealed_inputs_shorter_than_nonce_and_tag_are_rejected() {
 			"length {len}"
 		);
 		assert!(
-			envelope::open_request(&key, &[&[envelope::VERSION][..], &short].concat()).is_err(),
+			envelope::open_request(&key, &short).is_err(),
 			"length {len}"
 		);
 	}
-	assert!(envelope::open_request(&key, &[]).is_err());
+}
+
+#[test]
+fn a_request_that_unseals_with_malformed_padding_opens_but_does_not_unpad() {
+	let key = kdf::envelope_key(&seq_bytes(0x00, 32));
+	let nonce: [u8; 12] = seq_array(0x70);
+	let mut dirty = envelope::pad(b"{}").unwrap();
+	dirty[200] = 0xff;
+	let frame = aead::seal(&key, &nonce, &dirty, &[]);
+
+	assert_eq!(
+		envelope::open_request(&key, &frame),
+		Ok(Err(PadError::Malformed))
+	);
 }
 
 #[test]
 fn padding_stops_at_the_largest_bucket() {
-	const MAX_BUCKET: usize = 2 * 1024 * 1024;
 	assert_eq!(envelope::bucket_for(0), Some(256));
 	assert_eq!(envelope::bucket_for(257), Some(512));
 	assert_eq!(envelope::bucket_for(MAX_BUCKET), Some(MAX_BUCKET));
@@ -297,17 +311,93 @@ fn padding_stops_at_the_largest_bucket() {
 }
 
 #[test]
+fn sealed_frames_are_28_bytes_longer_than_padded_in_both_directions() {
+	let key = kdf::envelope_key(&seq_bytes(0x00, 32));
+	let nonce: [u8; 12] = seq_array(0x70);
+	let resp_nonce: [u8; 12] = seq_array(0x90);
+
+	for inner in [vec![], vec![1; MAX_BUCKET - 4]] {
+		let padded = envelope::pad(&inner).unwrap().len();
+		let request = envelope::seal_request(&key, &nonce, &inner).unwrap();
+		let response = envelope::seal_response(&key, &resp_nonce, &nonce, &inner).unwrap();
+		assert_eq!(request.len(), padded + 28);
+		assert_eq!(response.len(), padded + 28);
+	}
+
+	assert!(envelope::admits_request(0));
+	assert!(envelope::admits_request(MAX_BUCKET + 28));
+	assert!(!envelope::admits_request(MAX_BUCKET + 29));
+}
+
+#[test]
+fn the_note_limit_is_one_mib() {
+	let mut server = Server::new();
+	assert_eq!(
+		server.apply(&sized_write(1024 * 1024 + 1)).status,
+		Status::TooLarge
+	);
+	assert_eq!(
+		server.apply(&sized_write(1024 * 1024)).status,
+		Status::Accepted
+	);
+}
+
+#[test]
+fn a_write_over_the_note_limit_fits_a_request_and_gets_too_large() {
+	let key = kdf::envelope_key(&seq_bytes(0x00, 32));
+	let nonce: [u8; 12] = seq_array(0x70);
+	let request = frame::encode_request(&Request::Sync {
+		since: 0,
+		writes: vec![sized_write(NOTE_MAX + 1)],
+	});
+
+	let sealed = envelope::seal_request(&key, &nonce, &request).unwrap();
+	assert!(envelope::admits_request(sealed.len()));
+	let opened = frame::decode_request(&envelope::open_request(&key, &sealed).unwrap().unwrap());
+	let Ok(Request::Sync { writes, .. }) = opened else {
+		panic!("the request opens as a sync");
+	};
+	assert_eq!(Server::new().apply(&writes[0]).status, Status::TooLarge);
+}
+
+#[test]
+fn the_most_results_a_request_can_ask_for_and_a_maximum_size_change_fit_one_response() {
+	let request = |count| {
+		frame::encode_request(&Request::Sync {
+			since: 0,
+			writes: vec![sized_write(0); count],
+		})
+	};
+	let empty = request(0).len();
+	let most = (MAX_BUCKET - 4 - empty) / (request(1).len() - empty);
+	assert!(envelope::pad(&request(most)).is_ok());
+	assert_eq!(envelope::pad(&request(most + 1)), Err(PadError::TooLarge));
+
+	let response = frame::encode_response(&Response::Sync {
+		results: vec![
+			WriteResult {
+				status: Status::Accepted,
+				v: 1,
+				seq: 1,
+			};
+			most
+		],
+		changes: vec![sized_write(NOTE_MAX)],
+		next_seq: 1,
+		more: false,
+	});
+	assert_eq!(
+		envelope::pad(&response).map(|padded| padded.len()),
+		Ok(MAX_BUCKET)
+	);
+}
+
+#[test]
 fn status_names_match_the_protocol() {
-	let statuses = [
-		Status::Accepted,
-		Status::Conflict,
-		Status::TooLarge,
-		Status::Exhausted,
-		Status::Quota,
-	];
+	let statuses = [Status::Accepted, Status::Conflict, Status::TooLarge];
 	assert_eq!(
 		statuses.map(Status::name),
-		["accepted", "conflict", "too_large", "exhausted", "quota"]
+		["accepted", "conflict", "too_large"]
 	);
 }
 
