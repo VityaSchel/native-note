@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>Label</key>
-	<string>dev.hloth.nativenote.power-loss-agent</string>
+	<string>dev.hloth.devtools.native-note-power-loss-test</string>
 	<key>ProgramArguments</key>
 	<array>
 		<string>/bin/sh</string>

@@ -4,7 +4,7 @@ set -eu
 volume=PowerLossLibrary
 library_size=2147483648
 home=/usr/local/libexec/native-note-power-loss
-label=dev.hloth.nativenote.power-loss-agent
+label=dev.hloth.devtools.native-note-power-loss-test
 sudoers=/etc/sudoers.d/native-note-power-loss
 kit=$(cd "$(dirname "$0")" && pwd)
 

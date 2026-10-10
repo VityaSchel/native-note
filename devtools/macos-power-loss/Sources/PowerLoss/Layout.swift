@@ -2,7 +2,7 @@ import Foundation
 import PowerLossKit
 
 struct Layout {
-	static let standard = Layout(home: URL.applicationSupportDirectory.appending(path: "NativeNotePowerLoss"))
+	static let standard = Layout(home: URL.libraryDirectory.appending(path: "Developer/native-note-devtools/power-loss"))
 
 	static let bootDiskSize = 48 << 30
 	static let librarySize = 2 << 30

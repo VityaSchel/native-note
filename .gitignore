@@ -16,7 +16,7 @@ target/
 *.pdb
 
 # Xcode
-build/
+clients/macos/build/
 DerivedData/
 *.xcuserstate
 *.xcscmblueprint

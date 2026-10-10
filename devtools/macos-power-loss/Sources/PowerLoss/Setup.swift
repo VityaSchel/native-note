@@ -70,7 +70,7 @@ private final class SetupWindow: NSObject, NSWindowDelegate {
 		view.capturesSystemKeys = true
 		view.automaticallyReconfiguresDisplay = true
 		window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 800), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-		window.title = "Native Note power-loss VM"
+		window.title = "Native Note power-loss test VM (development only)"
 		window.contentView = view
 		window.isReleasedWhenClosed = false
 		super.init()

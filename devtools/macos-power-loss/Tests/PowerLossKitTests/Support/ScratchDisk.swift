@@ -8,6 +8,13 @@ func temporaryDirectory() throws -> URL {
 	return url
 }
 
+func stub(_ name: String, in directory: URL, _ body: String) throws {
+	try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+	let url = directory.appending(path: name)
+	try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
+	try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+}
+
 func original(_ offset: Int) -> UInt8 {
 	UInt8(truncatingIfNeeded: offset % 251)
 }
