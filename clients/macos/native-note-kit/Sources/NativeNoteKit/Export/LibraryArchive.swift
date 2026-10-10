@@ -16,6 +16,11 @@ nonisolated enum LibraryArchive {
 		return try ZipArchive.write(entries)
 	}
 
+	static func importable(_ file: Data) throws -> Data {
+		guard file.count <= maximumSize else { throw ZipArchive.Failure.tooLarge }
+		return file
+	}
+
 	static func notes(in archive: Data) throws -> [Note] {
 		var seen = Set<UUID>()
 		return try ZipArchive.read(archive).map { entry in

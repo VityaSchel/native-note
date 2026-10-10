@@ -503,7 +503,7 @@ import Observation
 		do {
 			try await BlockingWork.run {
 				let archive = try LibraryArchive.archive(notes)
-				let file = try passphrase.map { try ExportEnvelope.seal(archive, passphrase: $0, parameters: parameters) } ?? archive
+				let file = try LibraryArchive.importable(passphrase.map { try ExportEnvelope.seal(archive, passphrase: $0, parameters: parameters) } ?? archive)
 				try file.write(to: url, options: .atomic)
 			}
 			return true

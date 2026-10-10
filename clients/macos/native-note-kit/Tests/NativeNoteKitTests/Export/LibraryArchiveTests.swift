@@ -18,6 +18,13 @@ struct LibraryArchiveTests {
 		#expect(restored.map(\.v) == notes.map(\.v))
 	}
 
+	@Test func anExportImportWouldRefuseIsNotWritten() throws {
+		#expect(try LibraryArchive.importable(Data(count: LibraryArchive.maximumSize)).count == LibraryArchive.maximumSize)
+		#expect(throws: ZipArchive.Failure.tooLarge) {
+			try LibraryArchive.importable(Data(count: LibraryArchive.maximumSize + 1))
+		}
+	}
+
 	@Test func aNoteRepeatedInTheArchiveIsRefused() throws {
 		let note = sampleNote(body: "twice")
 		let entries = ["a.md", "b.md"].map { ZipEntry(name: $0, data: Data(NoteMarkdown.render(note).utf8), modified: note.updatedAt) }
