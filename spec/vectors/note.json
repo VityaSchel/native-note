@@ -11,6 +11,7 @@
 				"updatedAt": 1786183500000,
 				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
 			},
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"name": "note",
 			"nonce": "707172737475767778797a7b",
 			"opensUnderWrongVersion": false,
@@ -28,6 +29,7 @@
 				"kind": "tombstone",
 				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
 			},
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"name": "tombstone",
 			"nonce": "707172737475767778797a7b",
 			"opensUnderWrongVersion": false,
@@ -47,6 +49,7 @@
 				"updatedAt": 1786183500000,
 				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
 			},
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"name": "nonAscii",
 			"nonce": "707172737475767778797a7b",
 			"opensUnderWrongVersion": false,

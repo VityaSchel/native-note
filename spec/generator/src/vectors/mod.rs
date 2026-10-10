@@ -3,7 +3,9 @@ mod credentials;
 mod export;
 mod frames;
 mod keys;
+mod markdown;
 mod padding;
+mod recovery;
 mod sync;
 
 use serde::Serialize;
@@ -25,7 +27,6 @@ const DEVICE_B: u8 = 0xb0;
 const MACHINE_ID: u8 = 0xc0;
 const SHARED_SECRET: u8 = 0xd0;
 const PAYLOAD: u8 = 0xd0;
-const BLOB: u8 = 0xe0;
 const UUID: &str = "0b8f1d2e-3a4b-4c5d-8e9f-001122334455";
 
 pub fn seq_bytes(start: u8, len: usize) -> Vec<u8> {
@@ -37,7 +38,7 @@ pub fn seq_array<const N: usize>(start: u8) -> [u8; N] {
 }
 
 fn parse_uuid(text: &str) -> [u8; 16] {
-	let hex: String = text.chars().filter(|c| *c != '-').collect();
+	let hex = text.replace('-', "");
 	crate::hex::decode(&hex).unwrap().try_into().unwrap()
 }
 
@@ -66,6 +67,8 @@ pub fn all() -> Vec<(&'static str, Value)> {
 		("mnemonic.json", credentials::mnemonic()),
 		("sync.json", sync::scenario()),
 		("export.json", export::export()),
+		("markdown.json", markdown::markdown()),
+		("recovery.json", recovery::recovery()),
 	]
 }
 

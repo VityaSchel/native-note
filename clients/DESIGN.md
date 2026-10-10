@@ -40,17 +40,20 @@ CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 
 `content=note` is an external-content index: without the three triggers it is populated once and never updated again.
 
-Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
+Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `seq` stays `NULL`, since a change carries no `seq`. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
 
 ### Local DB encryption
 
 Unlocks the app. Only used for app database encryption, never leaves the device. Derived from the unlock password. Optionally bounded to the machine using secure hardware element. On some platforms optionally storable under current biometrics set for authentication.
 
 ```
+localSalt  = 128-bit random
 argonOut   = Argon2id(password, localSalt, argonParams, 32)
 machineId  = hardwareBinding()
 localDbKey = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-note/localdb/v1", 32)
 ```
+
+Argon2id is version `0x13` with no secret or associated data, and `m` is in KiB. A password or passphrase enters it as UTF-8 bytes, unnormalized.
 
 `localDbKey` is passed as a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, not a passphrase. It opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
 
@@ -130,17 +133,15 @@ The Settings window, where Touch ID unlock is turned on and off, offers its sett
 
 ## Recovery flow
 
-Only applicable when a sync server is configured. The [Recovery key](../docs/PROTOCOL.md#recovery-key) decrypts the server-stored [Content key](../docs/PROTOCOL.md#content-key) blob; on its own it is not enough to configure a device for sync.
+Only applicable when a sync server is configured. The recovery credential is the [Recovery key](../docs/PROTOCOL.md#recovery-key)'s 24 words; the API key and the server URL are not part of it. The word checksum is only a UI check; the real check is GCM verification.
 
-The recovery credential is the Recovery key as 24 BIP39 words, English wordlist. The API key and the server URL are not part of it. The word checksum is only a UI check; the real check is GCM verification.
-
-Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key). When a `put` conflicts and the blob it then gets [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key still in memory, setup routes to restore and rotation reports that another device rotated.
+Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key), and one whose response is lost is sent again unchanged. When a `put` conflicts and the blob it then gets [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key still in memory, setup routes to restore and rotation reports that another device rotated.
 
 **Setup:**
 1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to restore before any words are shown.
 2. Generate the Content key and the Recovery key with a CSPRNG.
 3. Show the 24 words, selectable and copyable as text, and require three random words to be filled back in.
-4. `put` the Content key encrypted under the Recovery key, store the Content key, API key, URL and pin in `meta`, and enable sync.
+4. `put` the Content key encrypted under the Recovery key and, once that `put` has landed, store the Content key, API key, URL and pin in `meta`, and enable sync.
 
 **Rotation:** shows new words the same way as setup, then `put`s the Content key under the new Recovery key. After it reports that another device rotated, rotation asks for the current words; once the fetched blob opens under them and holds this library's Content key, the pin takes its `v` and rotation can run again.
 
@@ -154,21 +155,23 @@ Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-ke
 
 Each pulled change, tombstones included, must pass three checks:
 
-- It decrypts.
+- It decrypts and its content decodes.
 - Its decrypted `uuid` re-derives the `blindedId` it arrived under.
-- Its `v` is not below the local `v`. Equal is allowed, since a device's own write comes back.
+- Its `v` is not below the local `v`. Equal is allowed, since a device's own write comes back, and is not applied.
 
-A change that fails a check is reported and not applied, so a local note is removed only by a pulled tombstone that passes all three. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, or a `nextSeq` below the client's `since`, means the server is behind the client: the client reports it and does not retry in a loop.
+A change that fails a check is reported and not applied, so a local note is removed only by a pulled tombstone that passes all three. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, a `put` `conflict` below the pin, or a `nextSeq` below the client's `since`, means the server is behind the client: the client reports it and does not retry in a loop. A response whose `nextSeq` is below `since` is not applied at all, and `since` stays.
 
 ## Conflicts
 
-Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text and the original is marked clean; a dirty tombstone there is marked clean without a push.
+Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note, with a new UUID, the unpushed `createdAt` and `updatedAt`, and dirty at `v = 0`, and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text, and the original keeps it locally and is marked clean; a dirty tombstone there is marked clean without a push.
 
-A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored, after a lost response: it is marked synced, not a conflict.
+A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored, after a lost response: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. Unacknowledged `writeId`s live in memory, each until a pull resolves it; after a relaunch, a lost response takes the copy path, where matching bodies make no copy.
 
-A conflicted push stays dirty until its pull arrives. A failed sync retries at the next scheduled sync.
+A conflicted push stays dirty until its pull arrives. A failed sync retries at the next scheduled sync. A note whose payload would exceed the [note limit](../docs/PROTOCOL.md#limits) stays dirty and unpushed, and is reported.
 
 ## Exports
+
+An export is the zip below, or, with a passphrase, this file:
 
 ```
 salt        = 128-bit random
@@ -181,8 +184,22 @@ file        = header ‖ nonce ‖ ciphertext ‖ tag
 
 The parameters travel in the header because the recipient has only the passphrase.
 
-Exports use the Argon2id floor, so any device can open them. A reader refuses more than 2 GiB, 10 passes or 16 lanes before hashing.
+Exports use the Argon2id floor, so any device can open them. Before hashing, a reader refuses `m` above 2 GiB or below `8p`, `t` outside 1–10 and `p` outside 1–16.
 
-The zip holds one uncompressed markdown file per live note, named from its title. Each file starts with front matter `id`, `created`, `updated` (ISO 8601 UTC with milliseconds) and `v`, then the body byte for byte.
+The zip holds one markdown file per live note, named from its title as one path component that ends in `.md`, holds no control character, `/` or `\`, takes at most 255 bytes, and is unique ignoring case and Unicode normalization. Entries are stored (method 0) under UTF-8 names with general-purpose flag bit 11 and no other flag, each local header matching its central record, and no extra field, comment or zip64 record; version, time and attribute fields are free. Export refuses a library of more than 65,534 live notes or a file over 512 MiB.
 
-Import reads only this format, one import at a time, and refuses files over 512 MiB unread. It adds notes whose `id` the library does not hold, at `v = 0`, and skips every `id` it holds, live or deleted.
+Each file is UTF-8: front matter with LF line endings, then the body byte for byte, CR included:
+
+```
+---
+id: 0b8f1d2e-3a4b-4c5d-8e9f-001122334455
+created: 2026-08-08T10:00:00.000Z
+updated: 2026-08-08T10:05:00.000Z
+v: 3
+---
+body
+```
+
+The fields come in this order and spelling only: `id` lowercase and hyphenated; `created` and `updated` as ISO 8601 in UTC with milliseconds on the proleptic Gregorian calendar, where year `0000` is 1 BC, and, for a year outside 0000–9999, a sign and the year zero-padded to six digits; `v` as a `u32` in decimal.
+
+Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase; any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, and skips every `id` it holds, live or deleted.

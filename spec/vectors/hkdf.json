@@ -41,6 +41,14 @@
 			"name": "localDbKey",
 			"okm": "7109e93e1e74f41dd11152d6c0a840deb039a03e172737f83da930bf1a141913",
 			"salt": "808182838485868788898a8b8c8d8e8f"
+		},
+		{
+			"ikm": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+			"info": "native-note/localdb/v1",
+			"length": 32,
+			"name": "localDbKeyWithoutMachineId",
+			"okm": "c158e26699bfb82c64e87eb1fcf631b3433a0d7a4249525aa18b595869fb232f",
+			"salt": "808182838485868788898a8b8c8d8e8f"
 		}
 	],
 	"description": "HKDF-SHA256 derivations for every info label in the protocol."

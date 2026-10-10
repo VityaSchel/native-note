@@ -15,16 +15,14 @@ HTTP layer is hand-rolled on `std::net::TcpListener` — ~300 lines over 2 direc
 
 - One listener on the given address. `[::]` also accepts IPv4 where the host default `net.ipv6.bindv6only=0` allows it, since std cannot set `IPV6_V6ONLY`.
 - A fixed number of threads each block in `accept` on that listener; the listen backlog is the only queue.
-- `Content-Length` required, `Transfer-Encoding` rejected — no chunked decoding.
-- `Connection: close` — no keep-alive state machine.
-- Caps on request line, header count, header bytes, and [body size](../docs/PROTOCOL.md#limits), enforced before allocating.
+- Framing, route and statuses per [API](../docs/PROTOCOL.md#api): no chunked decoding and no keep-alive state machine. A request rejected before unsealing writes no log line.
+- Caps on the request line and headers per [API](../docs/PROTOCOL.md#api) and on [body size](../docs/PROTOCOL.md#limits), enforced before allocating.
 - Read and write timeouts on every socket operation, and a deadline per connection counted from accept.
-- Route and statuses per [API](../docs/PROTOCOL.md#api). A request rejected before unsealing writes no log line.
 - No devices, sessions, per-caller state or rate limits; throttling belongs in a reverse proxy.
 
 ## Server storage
 
-The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`. The loader trims surrounding whitespace and rejects anything but 64 lowercase hex characters. When the file is absent, the server generates a key and writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path.
+The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`, and the loader parses it as that section says. When the file is absent, the server generates a key and writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path.
 
 Secrets are wrapped in `Secret<T>`, whose `Debug` prints `[redacted]`. No zeroize and no constant-time helper: the GCM tag check inside `ring` is the only comparison of secret data.
 
@@ -38,8 +36,6 @@ Boot runs `PRAGMA integrity_check`; a failure logs, exits non-zero and leaves th
 
 ### `note` table
 
-Notes entries.
-
 ```sql
 CREATE TABLE note (
     blindedId BLOB    PRIMARY KEY NOT NULL,
@@ -50,7 +46,7 @@ CREATE TABLE note (
 );
 ```
 
-The `seq` counter is incremented in the same DB transaction as the write. It is not the rowid: `seq` is reassigned on every write, and plain rowid reuses freed values.
+`seq` is not the rowid: it is reassigned on every write, and plain rowid reuses freed values.
 
 ### `meta` table
 

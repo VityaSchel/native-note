@@ -8,9 +8,21 @@
 			"output": "23fed16e2b29221c74586ef9beb344b36a28aeaa61ea5f868a7bad711a8ae373",
 			"p": 1,
 			"password": "correct horse battery staple",
+			"passwordUtf8": "636f727265637420686f727365206261747465727920737461706c65",
+			"salt": "808182838485868788898a8b8c8d8e8f",
+			"t": 1
+		},
+		{
+			"length": 32,
+			"m": 1024,
+			"name": "unnormalizedPassword",
+			"output": "face2453861817363e3d13e0f08b7e52ee2dcf10c119b804e26a987806f23575",
+			"p": 1,
+			"password": "café con léche",
+			"passwordUtf8": "63616665cc8120636f6e206c65cc81636865",
 			"salt": "808182838485868788898a8b8c8d8e8f",
 			"t": 1
 		}
 	],
-	"description": "Argon2id at fixed low-cost parameters. Production parameters are calibrated per device; these pin the algorithm only."
+	"description": "Argon2id at fixed low-cost parameters. Production parameters are calibrated per device; these pin the algorithm only. The password enters as its UTF-8 bytes, unnormalized."
 }

@@ -2,6 +2,7 @@
 	"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
 	"cases": [
 		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"device": "A",
 			"explains": "First write of a new note. storedV is 0, so v = 1 is accepted. Changes are read after the writes, so the accepted write comes back.",
 			"name": "step1",
@@ -17,11 +18,26 @@
 			},
 			"request": "0100000000000000000000000126003e292636ef34989a58f4e431b0fb000000016162636465666768696a6b6c6d6e6f700000004e9192939495969798999a9b9c1a02d309b22dae838a84bb139bc7fbc60984c748e598a9294f734d4e64edc2346004636e0f55a0b23197a299e7e8d9b6e459be58686594ab78af47e391d74e8e83c3",
 			"response": "0100000001010000000100000000000000010000000126003e292636ef34989a58f4e431b0fb000000016162636465666768696a6b6c6d6e6f700000004e9192939495969798999a9b9c1a02d309b22dae838a84bb139bc7fbc60984c748e598a9294f734d4e64edc2346004636e0f55a0b23197a299e7e8d9b6e459be58686594ab78af47e391d74e8e83c3000000000000000100",
-			"step": 1
+			"step": 1,
+			"writes": [
+				{
+					"content": {
+						"body": "written by A",
+						"createdAt": 1786183200000,
+						"kind": "note",
+						"updatedAt": 1786183500000,
+						"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+					},
+					"nonce": "9192939495969798999a9b9c",
+					"writeId": "6162636465666768696a6b6c6d6e6f70"
+				}
+			]
 		},
 		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"copyUuid": "5d2c8a71-4e6b-4f30-9c1d-a2b3c4d5e6f7",
 			"device": "B",
-			"explains": "B was offline and also produced v = 1. storedV is already 1, so the write is rejected with the server's current v and seq 0. The same response carries A's version, newer than B's unpushed edit, so B saves its own text as a new note and applies A's version.",
+			"explains": "B holds the same note unsynced at v = 0, as after importing the same export, and produced v = 1 offline. storedV is already 1, so the write is rejected with the server's current v and seq 0. The same response carries A's version, newer than B's unpushed edit, so B saves its own text as a new note under copyUuid, keeping its createdAt and updatedAt, and applies A's version.",
 			"name": "step2",
 			"outcome": {
 				"changes": 1,
@@ -35,9 +51,23 @@
 			},
 			"request": "0100000000000000000000000126003e292636ef34989a58f4e431b0fb00000001b1b2b3b4b5b6b7b8b9babbbcbdbebfc00000004ee1e2e3e4e5e6e7e8e9eaebec1b54f67ce2d9187fc7e7849bfe44695dae1450035ca3be9bc22be660e24072eeb6d1cbcb7d06b7bc306b8fa0db619fd93469ac698dbec6477ff63512908dd0f56b63",
 			"response": "0100000001020000000100000000000000000000000126003e292636ef34989a58f4e431b0fb000000016162636465666768696a6b6c6d6e6f700000004e9192939495969798999a9b9c1a02d309b22dae838a84bb139bc7fbc60984c748e598a9294f734d4e64edc2346004636e0f55a0b23197a299e7e8d9b6e459be58686594ab78af47e391d74e8e83c3000000000000000100",
-			"step": 2
+			"step": 2,
+			"writes": [
+				{
+					"content": {
+						"body": "written by B",
+						"createdAt": 1786183200000,
+						"kind": "note",
+						"updatedAt": 1786183500000,
+						"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+					},
+					"nonce": "e1e2e3e4e5e6e7e8e9eaebec",
+					"writeId": "b1b2b3b4b5b6b7b8b9babbbcbdbebfc0"
+				}
+			]
 		},
 		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"device": "B",
 			"explains": "B pushes the copy, a new note under a new UUID, at v = 1.",
 			"name": "step3",
@@ -53,9 +83,23 @@
 			},
 			"request": "0100000000000000010000000153112c92a1d6c7ae6967533157276b7700000001b2b3b4b5b6b7b8b9babbbcbdbebfc0c10000004ee2e3e4e5e6e7e8e9eaebecedf152b3d77ca4ee76525e4e061725468bd95904c61326ac5613a128c4d8e0837ce701f882de883b90419a75c1b639c36da08f2fbb3c75c0dbe961fd258d086b1227fb",
 			"response": "0100000001010000000100000000000000020000000153112c92a1d6c7ae6967533157276b7700000001b2b3b4b5b6b7b8b9babbbcbdbebfc0c10000004ee2e3e4e5e6e7e8e9eaebecedf152b3d77ca4ee76525e4e061725468bd95904c61326ac5613a128c4d8e0837ce701f882de883b90419a75c1b639c36da08f2fbb3c75c0dbe961fd258d086b1227fb000000000000000200",
-			"step": 3
+			"step": 3,
+			"writes": [
+				{
+					"content": {
+						"body": "written by B",
+						"createdAt": 1786183200000,
+						"kind": "note",
+						"updatedAt": 1786183500000,
+						"uuid": "5d2c8a714e6b4f309c1da2b3c4d5e6f7"
+					},
+					"nonce": "e2e3e4e5e6e7e8e9eaebeced",
+					"writeId": "b2b3b4b5b6b7b8b9babbbcbdbebfc0c1"
+				}
+			]
 		},
 		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"device": "A",
 			"explains": "A pulls from the seq it last saw and gets B's copy. Both devices now hold both versions.",
 			"name": "step4",
@@ -65,9 +109,11 @@
 			},
 			"request": "01000000000000000100000000",
 			"response": "01000000000000000153112c92a1d6c7ae6967533157276b7700000001b2b3b4b5b6b7b8b9babbbcbdbebfc0c10000004ee2e3e4e5e6e7e8e9eaebecedf152b3d77ca4ee76525e4e061725468bd95904c61326ac5613a128c4d8e0837ce701f882de883b90419a75c1b639c36da08f2fbb3c75c0dbe961fd258d086b1227fb000000000000000200",
-			"step": 4
+			"step": 4,
+			"writes": []
 		},
 		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
 			"device": "A",
 			"explains": "Deletion is an ordinary write at v + 1 carrying a sealed tombstone, so a forged delete fails to decrypt.",
 			"name": "step5",
@@ -83,8 +129,100 @@
 			},
 			"request": "0100000000000000020000000126003e292636ef34989a58f4e431b0fb0000000262636465666768696a6b6c6d6e6f70710000003692939495969798999a9b9c9d1467f7203c382c7d85154f3d3c197be8c2a8f19e15ae3b5ae2f54af06de9e73c112dd3ca6eaaeb8590e8",
 			"response": "0100000001010000000200000000000000030000000126003e292636ef34989a58f4e431b0fb0000000262636465666768696a6b6c6d6e6f70710000003692939495969798999a9b9c9d1467f7203c382c7d85154f3d3c197be8c2a8f19e15ae3b5ae2f54af06de9e73c112dd3ca6eaaeb8590e8000000000000000300",
-			"step": 5
+			"step": 5,
+			"writes": [
+				{
+					"content": {
+						"deletedAt": 1786186800000,
+						"kind": "tombstone",
+						"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+					},
+					"nonce": "92939495969798999a9b9c9d",
+					"writeId": "62636465666768696a6b6c6d6e6f7071"
+				}
+			]
+		},
+		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"device": null,
+			"explains": "Step 1's request arrives again, as a network replay, so no device builds it. storedV is 2, so the write is rejected, and the pull returns every current write, sealed to a key a replaying attacker lacks.",
+			"name": "step6",
+			"outcome": {
+				"changes": 2,
+				"results": [
+					{
+						"seq": 0,
+						"status": "conflict",
+						"v": 2
+					}
+				]
+			},
+			"replays": "step1",
+			"request": "0100000000000000000000000126003e292636ef34989a58f4e431b0fb000000016162636465666768696a6b6c6d6e6f700000004e9192939495969798999a9b9c1a02d309b22dae838a84bb139bc7fbc60984c748e598a9294f734d4e64edc2346004636e0f55a0b23197a299e7e8d9b6e459be58686594ab78af47e391d74e8e83c3",
+			"response": "0100000001020000000200000000000000000000000253112c92a1d6c7ae6967533157276b7700000001b2b3b4b5b6b7b8b9babbbcbdbebfc0c10000004ee2e3e4e5e6e7e8e9eaebecedf152b3d77ca4ee76525e4e061725468bd95904c61326ac5613a128c4d8e0837ce701f882de883b90419a75c1b639c36da08f2fbb3c75c0dbe961fd258d086b1227fb26003e292636ef34989a58f4e431b0fb0000000262636465666768696a6b6c6d6e6f70710000003692939495969798999a9b9c9d1467f7203c382c7d85154f3d3c197be8c2a8f19e15ae3b5ae2f54af06de9e73c112dd3ca6eaaeb8590e8000000000000000300",
+			"step": 6,
+			"writes": [
+				{
+					"content": {
+						"body": "written by A",
+						"createdAt": 1786183200000,
+						"kind": "note",
+						"updatedAt": 1786183500000,
+						"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+					},
+					"nonce": "9192939495969798999a9b9c",
+					"writeId": "6162636465666768696a6b6c6d6e6f70"
+				}
+			]
+		},
+		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"device": "B",
+			"explains": "B pushes two notes in one request from the seq it last saw: a new note at v = 1, then an edit of the copy at v = 2. Writes apply in the order submitted, so their seqs follow that order, not blindedId order. The pull also brings A's tombstone, which removes the original on B.",
+			"name": "step7",
+			"outcome": {
+				"changes": 3,
+				"results": [
+					{
+						"seq": 4,
+						"status": "accepted",
+						"v": 1
+					},
+					{
+						"seq": 5,
+						"status": "accepted",
+						"v": 2
+					}
+				]
+			},
+			"request": "01000000000000000200000002ac06d433c74e5041e44a0f580e0d996c00000001b3b4b5b6b7b8b9babbbcbdbebfc0c1c20000004ae3e4e5e6e7e8e9eaebecedeebf4d49bf6e5f65c340886300eedf0fafe03464916dd7617d086a23698318acf0441a0d1fd54d2b4504d2384067be81c186397cac4057625f5b3c149d247153112c92a1d6c7ae6967533157276b7700000002b4b5b6b7b8b9babbbcbdbebfc0c1c2c300000056e4e5e6e7e8e9eaebecedeeef6c5225768fcae569d9e754cae4ea1904dae2b8ca81527d03b57afa4f0764dcd52d788fc6fc9b5832fe9c7ff06e194d0bcd5c7a0d1567f9fbcb7ea3c4df3825638649fb7c7b010ecc53c3",
+			"response": "010000000201000000010000000000000004010000000200000000000000050000000326003e292636ef34989a58f4e431b0fb0000000262636465666768696a6b6c6d6e6f70710000003692939495969798999a9b9c9d1467f7203c382c7d85154f3d3c197be8c2a8f19e15ae3b5ae2f54af06de9e73c112dd3ca6eaaeb8590e8ac06d433c74e5041e44a0f580e0d996c00000001b3b4b5b6b7b8b9babbbcbdbebfc0c1c20000004ae3e4e5e6e7e8e9eaebecedeebf4d49bf6e5f65c340886300eedf0fafe03464916dd7617d086a23698318acf0441a0d1fd54d2b4504d2384067be81c186397cac4057625f5b3c149d247153112c92a1d6c7ae6967533157276b7700000002b4b5b6b7b8b9babbbcbdbebfc0c1c2c300000056e4e5e6e7e8e9eaebecedeeef6c5225768fcae569d9e754cae4ea1904dae2b8ca81527d03b57afa4f0764dcd52d788fc6fc9b5832fe9c7ff06e194d0bcd5c7a0d1567f9fbcb7ea3c4df3825638649fb7c7b010ecc53c3000000000000000500",
+			"step": 7,
+			"writes": [
+				{
+					"content": {
+						"body": "new on B",
+						"createdAt": 1786183560000,
+						"kind": "note",
+						"updatedAt": 1786183560000,
+						"uuid": "e4a1c7d29b3f4a588c6e1f2a3b4c5d6e"
+					},
+					"nonce": "e3e4e5e6e7e8e9eaebecedee",
+					"writeId": "b3b4b5b6b7b8b9babbbcbdbebfc0c1c2"
+				},
+				{
+					"content": {
+						"body": "written by B, edited",
+						"createdAt": 1786183200000,
+						"kind": "note",
+						"updatedAt": 1786183620000,
+						"uuid": "5d2c8a714e6b4f309c1da2b3c4d5e6f7"
+					},
+					"nonce": "e4e5e6e7e8e9eaebecedeeef",
+					"writeId": "b4b5b6b7b8b9babbbcbdbebfc0c1c2c3"
+				}
+			]
 		}
 	],
-	"description": "End-to-end sync: concurrent v = 1 writes, conflict, the losing edit kept as a new note, convergence, tombstone. Envelope framing is covered by envelope.json."
+	"description": "End-to-end sync: concurrent v = 1 writes, conflict, the losing edit kept as a new note, convergence, tombstone, replay, and two writes in one request. Steps run in order against one server; the content key is the same in every step. Envelope framing is covered by envelope.json."
 }

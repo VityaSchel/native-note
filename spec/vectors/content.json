@@ -52,6 +52,32 @@
 			"roundTrips": true
 		},
 		{
+			"content": {
+				"body": "1969",
+				"createdAt": -86400000,
+				"kind": "note",
+				"updatedAt": -1,
+				"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455"
+			},
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f001122334455fffffffffad9a400ffffffffffffffff0000000431393639",
+			"length": 42,
+			"name": "beforeEpoch",
+			"roundTrips": true
+		},
+		{
+			"content": {
+				"body": "decodes",
+				"createdAt": 1786183500000,
+				"kind": "note",
+				"updatedAt": 1786183200000,
+				"uuid": "00000000000000000000000000000000"
+			},
+			"encoded": "0101000000000000000000000000000000000000019fe0d540e00000019fe0d0ad00000000076465636f646573",
+			"length": 45,
+			"name": "nonV4UuidAndReversedTimes",
+			"roundTrips": true
+		},
+		{
 			"decodes": false,
 			"encoded": "02020b8f1d2e3a4b4c5d8e9f0011223344550000019fe1079b80",
 			"error": "UnknownDiscriminant",
@@ -81,11 +107,39 @@
 		},
 		{
 			"decodes": false,
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e0ffffffff78",
+			"error": "Truncated",
+			"matches": true,
+			"name": "rejectImpossibleLength"
+		},
+		{
+			"decodes": false,
 			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e000000001ff",
 			"error": "NotCanonical",
 			"matches": true,
 			"name": "rejectInvalidUtf8"
+		},
+		{
+			"decodes": false,
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e000000002c080",
+			"error": "NotCanonical",
+			"matches": true,
+			"name": "rejectOverlongUtf8"
+		},
+		{
+			"decodes": false,
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e000000003eda080",
+			"error": "NotCanonical",
+			"matches": true,
+			"name": "rejectEncodedSurrogate"
+		},
+		{
+			"decodes": false,
+			"encoded": "01010b8f1d2e3a4b4c5d8e9f0011223344550000019fe0d0ad000000019fe0d540e000000004f4908080",
+			"error": "NotCanonical",
+			"matches": true,
+			"name": "rejectCodePointAboveMax"
 		}
 	],
-	"description": "Note content: version ‖ kind ‖ fields. Timestamps are epoch milliseconds; the body is length-prefixed UTF-8."
+	"description": "Note content: version ‖ kind ‖ fields. Timestamps are signed epoch milliseconds; the body is length-prefixed UTF-8 per RFC 3629. Nothing else is validated, so any uuid and timestamp order decodes."
 }

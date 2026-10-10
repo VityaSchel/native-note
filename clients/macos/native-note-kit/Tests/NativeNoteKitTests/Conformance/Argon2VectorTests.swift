@@ -13,8 +13,11 @@ struct Argon2VectorTests {
 				p: UInt32(try #require(vector.int("p")))
 			)
 
+			let password = try #require(vector.string("password"))
+			#expect(Data(password.utf8) == (try vector.require("passwordUtf8")), "case \(vector.name)")
+
 			let out = try Argon2.hash(
-				password: try #require(vector.string("password")),
+				password: password,
 				salt: try vector.require("salt"),
 				parameters: parameters,
 				length: try #require(vector.int("length"))

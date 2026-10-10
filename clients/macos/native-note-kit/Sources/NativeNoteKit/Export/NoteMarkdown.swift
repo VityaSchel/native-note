@@ -113,7 +113,7 @@ nonisolated enum NoteMarkdown {
 
 	private static func moment(_ field: Field, from values: [Field: String]) throws -> Date {
 		let date = Date(epochMilliseconds: try decode(field, from: values, Timestamp.milliseconds(from:), canonical: Timestamp.string(from:)))
-		guard Timestamp.milliseconds(from: Timestamp.string(from: date.epochMilliseconds)) != nil else {
+		guard Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded()) != nil else {
 			throw Failure.invalidField(field.rawValue)
 		}
 		return date
@@ -176,6 +176,7 @@ nonisolated enum NoteMarkdown {
 		private static let daysPerEra: Int64 = 146_097
 		private static let daysFromEraStartToEpoch: Int64 = 719_468
 		private static let layoutAfterYear = "-MM-DDTHH:mm:ss.sssZ"
+		private static let signedYearLengths = 7 ... 10
 
 		static func string(from milliseconds: Int64) -> String {
 			var (days, time) = milliseconds.quotientAndRemainder(dividingBy: millisecondsPerDay)
@@ -192,7 +193,7 @@ nonisolated enum NoteMarkdown {
 		static func milliseconds(from text: String) -> Int64? {
 			let bytes = Array(text.utf8)
 			let yearEnd = bytes.count - layoutAfterYear.utf8.count
-			let signed = yearEnd == 7
+			let signed = signedYearLengths.contains(yearEnd)
 			guard yearEnd == 4 || signed,
 				let magnitude = decimal(bytes[(signed ? 1 : 0)..<yearEnd]),
 				let month = decimal(bytes[yearEnd + 1..<yearEnd + 3]),
@@ -205,7 +206,7 @@ nonisolated enum NoteMarkdown {
 			let year = bytes.first == UInt8(ascii: "-") ? -magnitude : magnitude
 			let days = days(fromYear: year, month: month, day: day)
 			let time = ((hour * 60 + minute) * 60 + second) * 1000 + millisecond
-			return days * millisecondsPerDay + time
+			return Int64(exactly: Int128(days) * Int128(millisecondsPerDay) + Int128(time))
 		}
 
 		private static func decimal(_ digits: ArraySlice<UInt8>) -> Int64? {

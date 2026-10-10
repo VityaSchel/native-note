@@ -1,0 +1,101 @@
+{
+	"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
+	"cases": [
+		{
+			"blob": "707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e",
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"mnemonic": "doctor anxiety move mass federal casual cancel citizen ensure give fatal pact agree powder essence melt film river bind regret remind concert just welcome",
+			"name": "blob",
+			"nonce": "707172737475767778797a7b",
+			"opens": true,
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+		},
+		{
+			"blob": "707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e",
+			"name": "rejectWrongRecoveryKey",
+			"opens": false,
+			"recoveryKey": "414142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+		},
+		{
+			"blob": "707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb178f5774fa7f733f46e6898250d558bd",
+			"name": "rejectWrongLength",
+			"opens": false,
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+		},
+		{
+			"device": "A",
+			"explains": "Setup gets the blob first. v = 0 means none is stored, so setup goes on with pin 0.",
+			"name": "getEmpty",
+			"request": "02",
+			"response": "020000000000000000"
+		},
+		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"device": "A",
+			"explains": "Setup puts the blob at its pin + 1, so v = 1 is accepted.",
+			"name": "put",
+			"nonce": "707172737475767778797a7b",
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"request": "03000000010000003c707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e",
+			"response": "030100000001"
+		},
+		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"device": "A",
+			"explains": "The same put after a lost response. storedV is already 1, so it conflicts with the server's current v.",
+			"name": "putAgain",
+			"nonce": "707172737475767778797a7b",
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"request": "03000000010000003c707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e",
+			"response": "030200000001"
+		},
+		{
+			"device": "A",
+			"explains": "A gets the blob; it opens under the Recovery key A just put, so that put landed and the pin is 1.",
+			"name": "getAfterConflict",
+			"opens": true,
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"request": "02",
+			"response": "02000000010000003c707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e"
+		},
+		{
+			"device": "B",
+			"explains": "B joins with the same words. The blob opens, so B stores the Content key and takes v = 1 as its pin.",
+			"name": "getOnJoin",
+			"opens": true,
+			"recoveryKey": "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f",
+			"request": "02",
+			"response": "02000000010000003c707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e"
+		},
+		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"device": "B",
+			"explains": "B rotates to a new Recovery key and puts at its pin + 1, so v = 2 is accepted.",
+			"name": "rotateOnB",
+			"nonce": "909192939495969798999a9b",
+			"recoveryKey": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+			"request": "03000000020000003c909192939495969798999a9b836b4395e078984aec6b5c0b22e62c23e5286c1e57559120c93b0fb3fae52816cb5134a3838840bc89928a33bda7a0c8",
+			"response": "030100000002"
+		},
+		{
+			"contentKey": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+			"device": "A",
+			"explains": "A rotates too and puts at its pin + 1 without a get. storedV is already 2, so it conflicts.",
+			"name": "rotateOnAWithStalePin",
+			"nonce": "b0b1b2b3b4b5b6b7b8b9babb",
+			"recoveryKey": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+			"request": "03000000020000003cb0b1b2b3b4b5b6b7b8b9babb520071a0c31516e058a591d48bd5cd8945026ecc0ebb7c2d1386cfa2882a2185124b24abbc89d5f2c790ad529f7ca5eb",
+			"response": "030200000002"
+		},
+		{
+			"device": "A",
+			"explains": "A gets the blob; it does not open under the Recovery key A just put, so A reports that another device rotated and keeps pin 1.",
+			"name": "rejectBlobRotatedElsewhere",
+			"opens": false,
+			"recoveryKey": "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f",
+			"request": "02",
+			"response": "02000000020000003c909192939495969798999a9b836b4395e078984aec6b5c0b22e62c23e5286c1e57559120c93b0fb3fae52816cb5134a3838840bc89928a33bda7a0c8"
+		}
+	],
+	"description": "contentKeyEncrypted: the Content key sealed under the Recovery key with an empty AAD, then get and put exchanges over the reference server semantics. A client puts at its pin + 1 and, after a conflict, checks whether the fetched blob opens under the Recovery key it just put."
+}

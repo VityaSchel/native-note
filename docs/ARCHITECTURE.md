@@ -56,7 +56,7 @@ Note model:
 
 ### Exports
 
-Markdown files in a zip, one per note, metadata in front matter. Produces an unencrypted copy of everything, so the flow warns and offers passphrase encryption (separate from ZIP's native password protection, because it allows to list files in the archive).
+Markdown files in a zip, one per live note, metadata in front matter. Produces an unencrypted copy of everything, so the flow warns and offers passphrase encryption (separate from ZIP's native password protection, because it allows to list files in the archive).
 
 ## Threat model
 

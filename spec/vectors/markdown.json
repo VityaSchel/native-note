@@ -1,0 +1,51 @@
+{
+	"$generated": "spec/generator — do not edit; run `cargo run --bin gen-vectors`",
+	"cases": [
+		{
+			"body": "Groceries\nmilk\nbread",
+			"createdAt": 1786183200000,
+			"markdown": "---\nid: 0b8f1d2e-3a4b-4c5d-8e9f-001122334455\ncreated: 2026-08-08T10:00:00.000Z\nupdated: 2026-08-08T10:05:00.000Z\nv: 3\n---\nGroceries\nmilk\nbread",
+			"name": "note",
+			"updatedAt": 1786183500000,
+			"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455",
+			"v": 3
+		},
+		{
+			"body": "",
+			"createdAt": -1,
+			"markdown": "---\nid: 00000000-0000-4000-8000-000000000000\ncreated: 1969-12-31T23:59:59.999Z\nupdated: 1970-01-01T00:00:00.000Z\nv: 1\n---\n",
+			"name": "beforeEpoch",
+			"updatedAt": 0,
+			"uuid": "00000000000040008000000000000000",
+			"v": 1
+		},
+		{
+			"body": "Ünïcode — 日本語 🔐\n\n---\nv: 0\n",
+			"createdAt": -62167219200001,
+			"markdown": "---\nid: ffffffff-ffff-4fff-bfff-ffffffffffff\ncreated: -000001-12-31T23:59:59.999Z\nupdated: +010000-01-01T00:00:00.000Z\nv: 4294967295\n---\nÜnïcode — 日本語 🔐\n\n---\nv: 0\n",
+			"name": "yearsOutsideFourDigits",
+			"updatedAt": 253402300800000,
+			"uuid": "ffffffffffff4fffbfffffffffffffff",
+			"v": 4294967295
+		},
+		{
+			"body": "Far off",
+			"createdAt": -31619119219200000,
+			"markdown": "---\nid: 7c1e9a42-5b3d-4f60-9e8a-0d2c4b6f8a1e\ncreated: -1000000-01-01T00:00:00.000Z\nupdated: +1000000-12-31T23:59:59.000Z\nv: 2\n---\nFar off",
+			"name": "yearsBeyondSixDigits",
+			"updatedAt": 31494816403199000,
+			"uuid": "7c1e9a425b3d4f609e8a0d2c4b6f8a1e",
+			"v": 2
+		},
+		{
+			"body": "Pasted\r\nfrom elsewhere\r\n\rend",
+			"createdAt": 1786183200000,
+			"markdown": "---\nid: 0b8f1d2e-3a4b-4c5d-8e9f-001122334455\ncreated: 2026-08-08T10:00:00.000Z\nupdated: 2026-08-08T10:05:00.000Z\nv: 1\n---\nPasted\r\nfrom elsewhere\r\n\rend",
+			"name": "bodyWithCarriageReturns",
+			"updatedAt": 1786183500000,
+			"uuid": "0b8f1d2e3a4b4c5d8e9f001122334455",
+			"v": 1
+		}
+	],
+	"description": "One exported note file per case: front matter id, created, updated and v with LF line endings, then the body byte for byte. Rendering the fields gives markdown, and parsing markdown gives the fields."
+}

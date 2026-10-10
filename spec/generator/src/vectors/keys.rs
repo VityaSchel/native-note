@@ -2,11 +2,11 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use serde_json::{Value, json};
 
 use super::{
-	API_KEY, ARGON_OUT, CONTENT_KEY, LOCAL_SALT, MACHINE_ID, SHARED_SECRET, UUID, WRITE_ID, file,
+	API_KEY, ARGON_OUT, CONTENT_KEY, LOCAL_SALT, MACHINE_ID, SHARED_SECRET, WRITE_ID, file,
 	seq_bytes, uuid_bytes,
 };
 use crate::hex::encode as hx;
-use crate::{kdf, note};
+use crate::{kdf, markdown, note};
 
 fn hkdf_case(name: &str, ikm: &[u8], salt: Option<&[u8]>, info: &str, len: usize) -> Value {
 	json!({
@@ -55,6 +55,13 @@ pub fn hkdf() -> Value {
 				"length": 32,
 				"okm": hx(&kdf::local_db_key(&argon_out, &machine_id, &local_salt)),
 			}),
+			hkdf_case(
+				"localDbKeyWithoutMachineId",
+				&argon_out,
+				Some(&local_salt),
+				kdf::label::LOCAL_DB,
+				32,
+			),
 		],
 	)
 }
@@ -63,13 +70,14 @@ pub fn blinding() -> Value {
 	let content_key = seq_bytes(CONTENT_KEY, 32);
 	let blinding_key = kdf::blinding_key(&content_key);
 	let uuid = uuid_bytes();
-	let mut neighbour = uuid;
-	neighbour[15] ^= 0x01;
+	let mut neighbor = uuid;
+	neighbor[15] ^= 0x01;
 
-	let case = |name: &str, id: &[u8; 16], text: &str| {
+	let case = |name: &str, id: &[u8; 16]| {
 		json!({
 			"name": name,
-			"uuid": text,
+			"blindingKey": hx(&blinding_key),
+			"uuid": markdown::uuid_text(id),
 			"uuidBytes": hx(id),
 			"blindedId": hx(&note::blinded_id(&blinding_key, id)),
 		})
@@ -83,35 +91,39 @@ pub fn blinding() -> Value {
 				"contentKey": hx(&content_key),
 				"blindingKey": hx(&blinding_key),
 			}),
-			case("uuid", &uuid, UUID),
-			case(
-				"uuidOneBitApart",
-				&neighbour,
-				"0b8f1d2e-3a4b-4c5d-8e9f-001122334454",
-			),
+			case("uuid", &uuid),
+			case("uuidOneBitApart", &neighbor),
 		],
 	)
 }
 
-pub fn argon2() -> Value {
+fn argon2_case(name: &str, password: &str) -> Value {
 	let salt = seq_bytes(LOCAL_SALT, 16);
 	let params = Params::new(1024, 1, 1, Some(32)).unwrap();
 	let mut out = [0u8; 32];
 	Argon2::new(Algorithm::Argon2id, Version::V0x13, params)
-		.hash_password_into(b"correct horse battery staple", &salt, &mut out)
+		.hash_password_into(password.as_bytes(), &salt, &mut out)
 		.unwrap();
 
+	json!({
+		"name": name,
+		"password": password,
+		"passwordUtf8": hx(password.as_bytes()),
+		"salt": hx(&salt),
+		"m": 1024,
+		"t": 1,
+		"p": 1,
+		"length": 32,
+		"output": hx(&out),
+	})
+}
+
+pub fn argon2() -> Value {
 	file(
-		"Argon2id at fixed low-cost parameters. Production parameters are calibrated per device; these pin the algorithm only.",
-		vec![json!({
-			"name": "argon2id",
-			"password": "correct horse battery staple",
-			"salt": hx(&salt),
-			"m": 1024,
-			"t": 1,
-			"p": 1,
-			"length": 32,
-			"output": hx(&out),
-		})],
+		"Argon2id at fixed low-cost parameters. Production parameters are calibrated per device; these pin the algorithm only. The password enters as its UTF-8 bytes, unnormalized.",
+		vec![
+			argon2_case("argon2id", "correct horse battery staple"),
+			argon2_case("unnormalizedPassword", "cafe\u{301} con le\u{301}che"),
+		],
 	)
 }

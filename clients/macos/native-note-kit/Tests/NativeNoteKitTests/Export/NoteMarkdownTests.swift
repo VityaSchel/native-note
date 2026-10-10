@@ -3,8 +3,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-private let knownID = UUID(uuidString: "3F2504E0-4F89-41D3-9A0C-0305E82C3301")!
-
 private let validFields = [
 	"id: 3f2504e0-4f89-41d3-9a0c-0305e82c3301",
 	"created: 2026-09-24T21:00:00.123Z",
@@ -31,12 +29,8 @@ private func note(_ body: String, created: Int64 = 1_790_283_600_123, updated: I
 	Note(id: UUID(), body: body, createdAt: Date(epochMilliseconds: created), updatedAt: Date(epochMilliseconds: updated), v: v)
 }
 
-private func document(_ fields: [String], body: String = "Body") -> String {
-	"---\n" + fields.map { $0 + "\n" }.joined() + "---\n" + body
-}
-
-private func fields(replacing name: String, with line: String) -> [String] {
-	validFields.map { $0.hasPrefix(name + ": ") ? line : $0 }
+private func document(_ fields: [String]) -> String {
+	"---\n" + fields.map { $0 + "\n" }.joined() + "---\nBody"
 }
 
 private func fileNames(_ titles: [String]) -> [String] {
@@ -48,38 +42,6 @@ private func utf8(_ strings: [String]) -> [[UInt8]] {
 }
 
 struct NoteMarkdownTests {
-	@Test func rendersTheFrontMatterFieldsInOrderAboveTheBody() {
-		let note = Note(
-			id: knownID,
-			body: "Groceries\nmilk\n",
-			createdAt: Date(epochMilliseconds: 1_790_283_600_123),
-			updatedAt: Date(epochMilliseconds: 1_790_325_015_456),
-			v: 7
-		)
-
-		#expect(NoteMarkdown.render(note) == document(validFields, body: "Groceries\nmilk\n"))
-		#expect(
-			NoteMarkdown.render(note)
-				== "---\nid: 3f2504e0-4f89-41d3-9a0c-0305e82c3301\ncreated: 2026-09-24T21:00:00.123Z\nupdated: 2026-09-25T08:30:15.456Z\nv: 7\n---\nGroceries\nmilk\n"
-		)
-	}
-
-	@Test func parsesEveryFieldOfAKnownFile() throws {
-		let parsed = try NoteMarkdown.parse(document(validFields, body: "Groceries\nmilk"))
-
-		#expect(
-			parsed
-				== Note(
-					id: knownID,
-					body: "Groceries\nmilk",
-					createdAt: Date(epochMilliseconds: 1_790_283_600_123),
-					updatedAt: Date(epochMilliseconds: 1_790_325_015_456),
-					dirty: true,
-					v: 7
-				)
-		)
-	}
-
 	@Test func importedNotesAreLiveDirtyAndUnsequenced() throws {
 		var original = note("Synced elsewhere", v: 12)
 		original.deleted = true
@@ -140,6 +102,8 @@ struct NoteMarkdownTests {
 		(253_402_300_800_000, "+010000-01-01T00:00:00.000Z"),
 		(8_640_000_000_000_000, "+275760-09-13T00:00:00.000Z"),
 		(-8_640_000_000_000_000, "-271821-04-20T00:00:00.000Z"),
+		(31_494_784_780_799_000, "+999999-12-31T23:59:59.000Z"),
+		(.min, "-292275055-05-16T16:47:04.192Z"),
 	])
 	func timestampsKeepEveryMillisecond(milliseconds: Int64, expected: String) throws {
 		let rendered = NoteMarkdown.render(note("Timed", created: milliseconds, updated: milliseconds))
@@ -159,21 +123,6 @@ struct NoteMarkdownTests {
 
 		#expect(abs(parsed.createdAt.timeIntervalSince(original.createdAt)) < 0.002)
 		#expect(abs(parsed.updatedAt.timeIntervalSince(original.updatedAt)) < 0.002)
-	}
-
-	@Test func refusesATimestampThatCouldNotBeExportedAgain() {
-		#expect(throws: NoteMarkdown.Failure.invalidField("created")) {
-			try NoteMarkdown.parse(document(fields(replacing: "created", with: "created: +999999-12-31T23:59:59.999Z")))
-		}
-	}
-
-	@Test func importsSixDigitYearsButNotLongerOnes() throws {
-		for created in ["+999999-12-31T23:59:59.988Z", "-999999-01-01T00:00:00.000Z"] {
-			_ = try NoteMarkdown.parse(document(fields(replacing: "created", with: "created: \(created)")))
-		}
-		#expect(throws: NoteMarkdown.Failure.invalidField("created")) {
-			try NoteMarkdown.parse(NoteMarkdown.render(note("Beyond", created: 31_494_784_780_800_000)))
-		}
 	}
 
 	@Test(arguments: textsWithoutFrontMatter)
@@ -217,6 +166,10 @@ struct NoteMarkdownTests {
 		("created", "created: +002026-09-24T21:00:00.123Z"),
 		("created", "created: 002026-09-24T21:00:00.123Z"),
 		("created", "created: -000000-01-01T00:00:00.000Z"),
+		("created", "created: +0999999-12-31T23:59:59.000Z"),
+		("created", "created: +292278994-08-17T07:12:55.807Z"),
+		("created", "created: +292278994-08-17T07:12:55.808Z"),
+		("created", "created: +1000000000-01-01T00:00:00.000Z"),
 		("created", "created:X2026-09-24T21:00:00.123Z"),
 		("updated", "updated: 1790325015456"),
 		("updated", "updated: 2026-09-25T08:30:15.456Z\r"),
@@ -232,7 +185,7 @@ struct NoteMarkdownTests {
 	])
 	func namesTheInvalidField(name: String, line: String) {
 		#expect(throws: NoteMarkdown.Failure.invalidField(name)) {
-			try NoteMarkdown.parse(document(fields(replacing: name, with: line)))
+			try NoteMarkdown.parse(document(validFields.map { $0.hasPrefix(name + ": ") ? line : $0 }))
 		}
 	}
 

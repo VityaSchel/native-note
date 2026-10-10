@@ -17,14 +17,14 @@ private enum Hex {
 }
 
 enum VectorFile: String, CaseIterable {
-	case argon2, hkdf, export
-	case blinding, content, note, frames, envelope, padding, sync
+	case argon2, hkdf, export, markdown
+	case blinding, content, note, frames, envelope, padding, sync, recovery
 	case mnemonic
 
 	var deferredToPhase: Int? {
 		switch self {
-		case .argon2, .hkdf, .export: nil
-		case .blinding, .content, .note, .frames, .envelope, .padding, .sync: 5
+		case .argon2, .hkdf, .export, .markdown: nil
+		case .blinding, .content, .note, .frames, .envelope, .padding, .sync, .recovery: 5
 		case .mnemonic: 6
 		}
 	}
@@ -46,6 +46,7 @@ enum Vectors {
 		func int(_ key: String) -> Int? { fields[key] as? Int }
 		func bool(_ key: String) -> Bool? { fields[key] as? Bool }
 		func bytes(_ key: String) -> Data? { string(key).flatMap(Hex.decode) }
+		func objects(_ key: String) -> [[String: Any]]? { fields[key] as? [[String: Any]] }
 
 		func require(_ key: String) throws -> Data {
 			try #require(bytes(key), "case \(name) is missing hex field \(key)")

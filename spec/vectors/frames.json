@@ -24,7 +24,7 @@
 		},
 		{
 			"direction": "request",
-			"encoded": "03000000020000003ce0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b",
+			"encoded": "03000000020000003c707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e",
 			"length": 69,
 			"name": "putRecovery",
 			"roundTrips": true
@@ -66,7 +66,7 @@
 		},
 		{
 			"direction": "response",
-			"encoded": "02000000020000003ce0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff000102030405060708090a0b0c0d0e0f101112131415161718191a1b",
+			"encoded": "02000000020000003c707172737475767778797a7bf3c4993bba7dc22d837691769329350ef83953a22430f40dceb4acbe193feb9ec3713126e6440746f49bffc271e6731e",
 			"length": 69,
 			"name": "getRecoveryResult",
 			"roundTrips": true
@@ -111,6 +111,14 @@
 		{
 			"decodes": false,
 			"direction": "request",
+			"encoded": "01000000000000000700000001101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6fffffffffd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7",
+			"error": "Truncated",
+			"matches": true,
+			"name": "rejectImpossibleLength"
+		},
+		{
+			"decodes": false,
+			"direction": "request",
 			"encoded": "01000000000000000700000001101112131415161718191a1b1c1d1e1f00000001606162636465666768696a6b6c6d6e6f00000018d0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e700",
 			"error": "TrailingBytes",
 			"matches": true,
@@ -147,6 +155,14 @@
 			"error": "UnknownDiscriminant",
 			"matches": true,
 			"name": "rejectUnknownStatus"
+		},
+		{
+			"decodes": false,
+			"direction": "response",
+			"encoded": "010000000204000000010000000000000000",
+			"error": "UnknownDiscriminant",
+			"matches": true,
+			"name": "rejectBadItemBeforeShortCount"
 		},
 		{
 			"decodes": false,

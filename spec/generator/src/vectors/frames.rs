@@ -1,12 +1,14 @@
 use serde_json::{Value, json};
 
+use super::recovery::sample_blob;
 use super::{
-	API_KEY, BLINDED_ID, BLOB, NONCE, PAYLOAD, RESPONSE_NONCE, WRITE_ID, file, seq_array, seq_bytes,
+	API_KEY, BLINDED_ID, NONCE, PAYLOAD, RESPONSE_NONCE, WRITE_ID, file, seq_array, seq_bytes,
 };
 use crate::codec::DecodeError;
 use crate::frame::{self, Request, Response, Status, Write, WriteResult};
 use crate::hex::encode as hx;
-use crate::{envelope, kdf};
+use crate::server::Server;
+use crate::{aead, envelope, kdf};
 
 fn sample_write(v: u32) -> Write {
 	Write {
@@ -17,8 +19,13 @@ fn sample_write(v: u32) -> Write {
 	}
 }
 
-fn result(status: Status, v: u32, seq: u64) -> WriteResult {
-	WriteResult { status, v, seq }
+fn one_result(status: Status, v: u32, seq: u64) -> Response {
+	Response::Sync {
+		results: vec![WriteResult { status, v, seq }],
+		changes: vec![],
+		next_seq: 1,
+		more: false,
+	}
 }
 
 fn request_case(name: &str, request: Request) -> Value {
@@ -78,14 +85,13 @@ pub fn frames() -> Value {
 	let mut huge_count = encoded_sync.clone();
 	huge_count[9..13].copy_from_slice(&u32::MAX.to_be_bytes());
 
-	let trailing = [encoded_sync.clone(), vec![0]].concat();
+	let payload_len_at = 1 + 8 + 4 + 16 + 4 + 16;
+	let mut huge_length = encoded_sync.clone();
+	huge_length[payload_len_at..payload_len_at + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
-	let conflict = Response::Sync {
-		results: vec![result(Status::Conflict, 1, 0)],
-		changes: vec![],
-		next_seq: 1,
-		more: false,
-	};
+	let trailing = [encoded_sync, vec![0]].concat();
+
+	let conflict = one_result(Status::Conflict, 1, 0);
 	let status_at = 1 + 4;
 	let mut unknown_status = frame::encode_response(&conflict);
 	unknown_status[status_at] = 0x04;
@@ -93,6 +99,11 @@ pub fn frames() -> Value {
 	let mut seq_on_conflict = frame::encode_response(&conflict);
 	let seq_at = status_at + 1 + 4;
 	seq_on_conflict[seq_at..seq_at + 8].copy_from_slice(&9u64.to_be_bytes());
+
+	let mut short_count_bad_item = frame::encode_response(&conflict);
+	short_count_bad_item[1..5].copy_from_slice(&2u32.to_be_bytes());
+	short_count_bad_item[status_at] = 0x04;
+	short_count_bad_item.truncate(seq_at + 8);
 
 	let mut bad_bool = frame::encode_response(&conflict);
 	*bad_bool.last_mut().unwrap() = 0x02;
@@ -123,37 +134,16 @@ pub fn frames() -> Value {
 				"putRecovery",
 				Request::PutRecovery {
 					v: 2,
-					blob: seq_bytes(BLOB, 60),
+					blob: sample_blob(),
 				},
 			),
-			response_case(
-				"syncAccepted",
-				Response::Sync {
-					results: vec![result(Status::Accepted, 1, 1)],
-					changes: vec![],
-					next_seq: 1,
-					more: false,
-				},
-			),
+			response_case("syncAccepted", one_result(Status::Accepted, 1, 1)),
 			response_case("syncConflict", conflict),
 			response_case(
 				"syncConflictAtLastVersion",
-				Response::Sync {
-					results: vec![result(Status::Conflict, u32::MAX, 0)],
-					changes: vec![],
-					next_seq: 1,
-					more: false,
-				},
+				one_result(Status::Conflict, u32::MAX, 0),
 			),
-			response_case(
-				"syncTooLarge",
-				Response::Sync {
-					results: vec![result(Status::TooLarge, 1, 0)],
-					changes: vec![],
-					next_seq: 1,
-					more: false,
-				},
-			),
+			response_case("syncTooLarge", one_result(Status::TooLarge, 1, 0)),
 			response_case(
 				"syncChanges",
 				Response::Sync {
@@ -167,7 +157,7 @@ pub fn frames() -> Value {
 				"getRecoveryResult",
 				Response::GetRecovery {
 					v: 2,
-					blob: seq_bytes(BLOB, 60),
+					blob: sample_blob(),
 				},
 			),
 			response_case(
@@ -188,6 +178,11 @@ pub fn frames() -> Value {
 				DecodeError::UnknownDiscriminant,
 			),
 			reject_request("rejectImpossibleCount", huge_count, DecodeError::Truncated),
+			reject_request(
+				"rejectImpossibleLength",
+				huge_length,
+				DecodeError::Truncated,
+			),
 			reject_request("rejectTrailingBytes", trailing, DecodeError::TrailingBytes),
 			reject_request(
 				"rejectErrorAsRequest",
@@ -207,6 +202,11 @@ pub fn frames() -> Value {
 			reject_response(
 				"rejectUnknownStatus",
 				unknown_status,
+				DecodeError::UnknownDiscriminant,
+			),
+			reject_response(
+				"rejectBadItemBeforeShortCount",
+				short_count_bad_item,
 				DecodeError::UnknownDiscriminant,
 			),
 			reject_response(
@@ -253,8 +253,23 @@ pub fn envelope() -> Value {
 
 	let truncated = &request[..request.len() - 1];
 
+	let mut dirty_fill = envelope::pad(&request_inner).unwrap();
+	*dirty_fill.last_mut().unwrap() = 0x01;
+	let unpaddable = aead::seal(&key, &req_nonce, &dirty_fill, &[]);
+	let undecodable = envelope::seal_request(&key, &req_nonce, &[0x7f]).unwrap();
+	let answered = |name: &str, sealed: &[u8]| {
+		json!({
+			"name": name,
+			"envelopeKey": hx(&key),
+			"frame": hx(sealed),
+			"responseNonce": hx(&resp_nonce),
+			"response": hx(&Server::new().handle(&key, sealed, &resp_nonce).unwrap()),
+			"responseInner": hx(&frame::encode_response(&Response::Error)),
+		})
+	};
+
 	file(
-		"Sealed envelopes. Requests are sealed with an empty AAD; responses bind the request nonce as AAD.",
+		"Sealed envelopes. Requests are sealed with an empty AAD; responses bind the request nonce as AAD. A request that opens but fails to unpad or decode is answered with a sealed error.",
 		vec![
 			json!({
 				"name": "request",
@@ -267,6 +282,7 @@ pub fn envelope() -> Value {
 			}),
 			json!({
 				"name": "response",
+				"envelopeKey": hx(&key),
 				"inner": hx(&response_inner),
 				"nonce": hx(&resp_nonce),
 				"requestNonce": hx(&req_nonce),
@@ -275,26 +291,32 @@ pub fn envelope() -> Value {
 			}),
 			json!({
 				"name": "rejectResponseUnderWrongRequestNonce",
+				"envelopeKey": hx(&key),
 				"frame": hx(&response),
 				"requestNonce": hx(&wrong_nonce),
 				"opens": envelope::open_response(&key, &wrong_nonce, &response).is_ok(),
 			}),
 			json!({
 				"name": "rejectTruncated",
+				"envelopeKey": hx(&key),
 				"frame": hx(truncated),
 				"opens": envelope::open_request(&key, truncated).is_ok(),
 			}),
 			json!({
 				"name": "rejectRequestOpenedAsResponse",
+				"envelopeKey": hx(&key),
 				"frame": hx(&request),
 				"requestNonce": hx(&req_nonce),
 				"opens": envelope::open_response(&key, &req_nonce, &request).is_ok(),
 			}),
 			json!({
 				"name": "rejectResponseOpenedAsRequest",
+				"envelopeKey": hx(&key),
 				"frame": hx(&response),
 				"opens": envelope::open_request(&key, &response).is_ok(),
 			}),
+			answered("errorForUnpaddableRequest", &unpaddable),
+			answered("errorForUndecodableRequest", &undecodable),
 		],
 	)
 }

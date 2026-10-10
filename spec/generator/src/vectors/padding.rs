@@ -23,27 +23,36 @@ pub fn padding() -> Value {
 
 	let mut dirty = envelope::pad(b"hi").unwrap();
 	dirty[200] = 0xff;
+	let mut larger = envelope::pad(b"hi").unwrap();
+	larger.resize(512, 0);
+	let mut past_end = envelope::pad(b"hi").unwrap();
+	past_end[..4].copy_from_slice(&253u32.to_be_bytes());
 	let above = vec![0x41u8; MAX_BUCKET - 3];
+	let unpads = |name: &str, padded: &[u8]| {
+		json!({
+			"name": name,
+			"padded": hx(padded),
+			"paddedLength": padded.len(),
+			"unpads": envelope::unpad(padded).is_some(),
+		})
+	};
 
 	cases.push(json!({
 		"name": "rejectAboveLargestBucket",
 		"innerLength": above.len(),
-		"pads": envelope::pad(&above).is_ok(),
+		"pads": envelope::pad(&above).is_some(),
 	}));
-	cases.push(json!({
-		"name": "rejectNonBucketLength",
-		"padded": hx(&[0u8; 128]),
-		"paddedLength": 128,
-		"unpads": envelope::unpad(&[0u8; 128]).is_ok(),
-	}));
+	cases.push(unpads("rejectNonBucketLength", &[0; 128]));
+	cases.push(unpads("rejectLargerBucket", &larger));
+	cases.push(unpads("rejectLengthPastEnd", &past_end));
 	cases.push(json!({
 		"name": "rejectNonZeroFill",
 		"padded": hx(&dirty),
-		"unpads": envelope::unpad(&dirty).is_ok(),
+		"unpads": envelope::unpad(&dirty).is_some(),
 	}));
 
 	file(
-		"padded = len_be32 ‖ inner ‖ zero fill, to the next doubling bucket from 256 B up to the body limit, fixed at 2 MiB.",
+		"padded = len_be32 ‖ inner ‖ zero fill, to the smallest doubling bucket from 256 B that holds it, up to the body limit, fixed at 2 MiB. Unpadding accepts only that bucket and zero fill.",
 		cases,
 	)
 }

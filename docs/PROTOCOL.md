@@ -1,5 +1,7 @@
 # Native Note Sync Protocol
 
+Every AES-256-GCM output is `nonce ‖ ciphertext ‖ tag`, with a random 12-byte nonce and a 16-byte tag.
+
 ## Keys
 
 | Key                           | Description                                                                                                                              | If lost or leaked                             |
@@ -10,7 +12,7 @@
 
 ### API key
 
-Authorizes API requests to the server. 32 secure random bytes generated during server setup (server-side). Serialized as lowercase 64-characters hex string with leading/trailing whitespaces trimmed.
+Authorizes API requests to the server. 32 secure random bytes generated during server setup (server-side). Serialized as 64 lowercase hex characters; parsing trims surrounding whitespace and rejects anything else. Keys derive from the 32 bytes, not the text.
 
 ### Content key
 
@@ -22,11 +24,13 @@ Stored on the server in encrypted form to allow recovery. Server never learns it
 
 Encrypts Content key to store securely on the server.
 
-32 secure random bytes generated during server setup (client-side). Serialized as 24 BIP39 words.
+32 secure random bytes generated during server setup (client-side). Serialized as 24 BIP39 words from the English wordlist.
 
 ```
-contentKeyEncrypted = AES-256-GCM(recoveryKey, e2eeContentKey)
+contentKeyEncrypted = AES-256-GCM(recoveryKey, e2eeContentKey, aad: empty)
 ```
+
+A blob that opens to anything but 32 bytes does not open.
 
 Clients never persist the recovery key, user is responsible for storing it securely. A client puts the blob at its pinned `v + 1`, never at a fetched `v + 1`. The pin is the `v` of the last blob the client put or opened, 0 before either.
 
@@ -36,7 +40,7 @@ Clients render the first line of `body` as the title.
 
 Note store request, visible to the server:
 
-- `blindedId` — [note's UUID](./ARCHITECTURE.md#notes) is blinded with Content key-derived `blindingKey`. HMAC-SHA256 truncated to its first 16 bytes (RFC 4868's standard `HMAC-SHA-256-128`), same width as the UUID.
+- `blindedId` — RFC 4868's `HMAC-SHA-256-128` of the [note's UUID](./ARCHITECTURE.md#notes), as the 16 bytes [Content](#content) carries.
 
 ```
 blindingKey = HKDF-SHA256(e2eeContentKey, info: "native-note/id-blind/v1", 32)
@@ -44,7 +48,7 @@ blindedId = HMAC-SHA256(blindingKey, uuid)[0..16]
 ```
 
 - `v` — a `u32` starting at 1, plaintext because the server compares it. The server rejects a write unless `v == storedV + 1`, computed without wrapping: at `storedV = u32::MAX` every write is `conflict`. A client never computes `v + 1` past `u32::MAX`.
-- `payload` — encrypted content. Encryption is per write, not per note. Payload encryption key is derived from Content key with a 128-bit salt random per write. Nonce is random.
+- `payload` — encrypted content. Encryption is per write, not per note.
 
 ```
 writeId = 128-bit random salt, stored and transmitted in plaintext
@@ -65,7 +69,7 @@ kind(1)
   0x02 tombstone   uuid(16) ‖ deletedAt_be64
 ```
 
-Timestamps are epoch milliseconds as signed 64-bit. `body` is UTF-8. An unknown `version` or `kind` is rejected.
+Timestamps are epoch milliseconds. `body` is UTF-8 per RFC 3629; anything else is rejected. An unknown `version` or `kind` is rejected.
 
 Deleting a note writes a tombstone. Tombstones are not garbage-collected.
 
@@ -81,11 +85,13 @@ Rules, applied uniformly so that every message has exactly one valid encoding:
 - Enum discriminants are one byte. Unknown values are rejected.
 - A message must consume its buffer exactly. Trailing bytes are rejected.
 
+Decoders reject only what these rules and the per-message rules name, so a non-v4 `uuid`, a negative timestamp or a payload too short to open still decodes.
+
 Decoders must be total: bounds-check every read, never allocate from a length or count before it has been checked against the remaining input, and return an error rather than panicking.
 
 ## Ordering
 
-The server assigns a monotonic `seq` to every accepted write; clients pull `since=seq`. It is an application counter the server maintains, incremented inside the same transaction as the write it stamps, strictly increasing, never reused, and never reassigned to an earlier value. Clients echo it back as-is. List ordering and date grouping are computed locally by `updatedAt`.
+The server stamps every accepted write with a `seq`, inside the same transaction as the write, starting at 1 and strictly increasing. List ordering and date grouping are computed locally by `updatedAt`.
 
 ## Transport
 
@@ -96,29 +102,23 @@ A replayed write is rejected by `v == storedV + 1`, since the server has already
 ```
 envelopeKey = HKDF-SHA256(apiKey, info: "native-note/envelope/v1", 32)
 
-request  = nonce ‖ ciphertext ‖ tag    # AES-256-GCM(envelopeKey, padded, aad: empty)
-response = nonce ‖ ciphertext ‖ tag    # AES-256-GCM(envelopeKey, padded, aad: requestNonce)
+request  = AES-256-GCM(envelopeKey, padded, aad: empty)
+response = AES-256-GCM(envelopeKey, padded, aad: requestNonce)
 ```
-
-The envelope has no version byte; [its label](#hkdf-label-registry) versions it.
 
 ### Padding
 
-`padded = len_be32 ‖ inner ‖ zero fill` to the next bucket. Buckets double from 256 B up to the body limit, measured on `padded`, which is the sealed length minus 28 B in both directions. Both directions pad before sealing, so neither request nor response length leaks more than a bucket.
+`padded = len_be32 ‖ inner ‖ zero fill` to the smallest bucket that holds it. Buckets double from 256 B up to the [body limit](#limits), so neither request nor response length leaks more than a bucket. Unpadding rejects any other length and non-zero fill.
 
 ## API
 
-`POST /` is the only route; any other method or path is `400`.
+`POST /` is the only route, and the request target is exactly `/`. Requests are HTTP/1.1 with lines ending in CRLF and one `Content-Length` of ASCII digits. The request line and headers, through the blank line that ends them, fit in 8 KiB with at most 100 headers. Other headers are ignored, and `Expect` gets no `100 Continue`. Any other method, target, version or framing, `Transfer-Encoding` included, a header line that is folded, lacks a colon or has whitespace before it, or headers past these caps, is `400`. Responses carry `Content-Length` and `Connection: close`, and only `200` has a body. A client posts to its server URL as configured, so a reverse proxy may map a path prefix to `/`.
 
-Distinct HTTP status codes exist only for outcomes with no sealed response and carry no application meaning: `400` malformed or unopenable, `413` oversize, `500` a fault that leaves no sealed response. No meaningful `409`/`404`/`401`.
+Distinct HTTP status codes exist only for outcomes with no sealed response and carry no application meaning: `400` malformed or unopenable, `413` oversize, `500` fault.
 
-### `POST /` — call
+The body is the sealed envelope, parsed after GCM verification. Every sealed response is HTTP 200, and every outcome is a field inside it.
 
-Binary frame — sealed envelope, parsed after GCM verification. Every sealed response is HTTP 200, and every outcome is a field inside it.
-
-Every action is sealed under `envelopeKey`. There is no server-side device enrollment or sessions management.
-
-Each action is one byte; every response except `error` echoes it.
+Each action is one byte; every response except `error` echoes it, and a client treats any other action as an error.
 
 | `action` | Byte | Purpose                               |
 | -------- | ---- | ------------------------------------- |
@@ -126,7 +126,7 @@ Each action is one byte; every response except `error` echoes it.
 | `get`    | 0x02 | Read `contentKeyEncrypted`            |
 | `put`    | 0x03 | Store or rotate `contentKeyEncrypted` |
 
-#### Action `sync`
+### Action `sync`
 
 ```
 request    0x01 ‖ since_be64 ‖ writeCount_be32 ‖ write*
@@ -139,7 +139,7 @@ result     status(1) ‖ v_be32 ‖ seq_be64
 change     same layout as write
 ```
 
-`results` carries one entry per submitted write, in the order submitted; a client treats a response with any other count as an error. **`v` and `seq` must be echoed** — without them the client cannot advance and every later write conflicts.
+`results` carries one entry per submitted write, in the order submitted. A client treats as an error a response with any other result count, an `accepted` result whose `v` is not the one sent or whose `seq` is `0`, and `more` with no changes, and applies none of it.
 
 | `status`    | Byte | Description                                            |
 | ----------- | ---- | ------------------------------------------------------ |
@@ -151,11 +151,11 @@ A write that fails both checks gets `too_large`.
 
 On every status except `accepted`, `v` is the server's current version and `seq` is `0`; a non-zero `seq` alongside another status is rejected.
 
-The server applies a `sync`'s writes before it reads `changes`, so accepted writes come back in the same response. A `sync` is applied atomically: after `error` none of its writes are stored, so a retry is safe.
+The server applies a `sync`'s writes in the order submitted, then reads `changes`, so accepted writes come back in the same response. A `sync` is applied atomically: after `error` none of its writes are stored, so a retry is safe.
 
-A response that sets `more` carries at least one change, and the client pulls again from `nextSeq`. Clients batch writes so each request stays within the body limit, and never send a payload over the note limit.
+`changes` holds the current write of each note whose `seq` is above `since`, in `seq` order. `nextSeq` is the server's latest `seq`, or the last change's `seq` when `more` is set, and the client's next pull starts from it. A response that sets `more` carries at least one change, and the client pulls again right away. Clients batch writes so each request stays within the body limit.
 
-#### Actions `get` and `put`
+### Actions `get` and `put`
 
 ```
 get request    0x02
@@ -165,11 +165,11 @@ put request    0x03 ‖ v_be32 ‖ blobLen_be32 ‖ blob
 put response   0x03 ‖ status(1) ‖ v_be32
 ```
 
-With no blob stored, `get` returns `v = 0` and an empty blob.
+`v = 0` means no blob is stored, and the blob is then empty; a client treats a `get` response with `v = 0` and a blob as an error.
 
-A `put` follows the same [version rule](#notes) as notes and answers `accepted` or `conflict` with the server's current `v`; any other status in a `put` response is rejected. On `conflict` the client gets the blob. If it opens under the Recovery key the client just put, that `put` landed; otherwise [Recovery flow](../clients/DESIGN.md#recovery-flow) handles it.
+A `put` follows the same [version rule](#notes) as notes and answers `accepted` with the `v` sent or `conflict` with the server's current `v`; any other status in a `put` response is rejected, and a client treats an `accepted` with another `v` as an error. On `conflict` the client gets the blob. If it opens under the Recovery key the client just put, that `put` landed; otherwise [Recovery flow](../clients/DESIGN.md#recovery-flow) handles it.
 
-#### Response `error`
+### Response `error`
 
 ```
 error response   0xff
@@ -179,7 +179,7 @@ A request that unseals but fails to unpad or decode, or hits a fault after unsea
 
 ## HKDF label registry
 
-Every `info` label in the protocol, in one place. New labels must not collide; a changed derivation bumps its `/v`, and a changed envelope layout bumps `native-note/envelope/v1`.
+Every `info` label in the protocol, in one place. New labels must not collide; a changed derivation bumps its `/v`, and a changed envelope layout bumps `native-note/envelope/v1`. `info` is the label's ASCII bytes, and a derivation shown without a salt uses RFC 5869's default of 32 zero bytes.
 
 | Label                                          | Derives             | From                   |
 | ---------------------------------------------- | ------------------- | ---------------------- |
@@ -193,5 +193,5 @@ Every `info` label in the protocol, in one place. New labels must not collide; a
 
 | Limit                                  | Maximum | Exceeded                                                       |
 | -------------------------------------- | ------- | -------------------------------------------------------------- |
-| Note payload                           | 1 MiB   | `too_large` in the response                                    |
+| Note `payload`, nonce and tag included | 1 MiB   | `too_large` in the response                                    |
 | Body, measured on [`padded`](#padding) | 2 MiB   | Request: HTTP `413`. Response: `changes` truncated, `more` set |

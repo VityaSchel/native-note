@@ -46,9 +46,21 @@ struct ExportVectorTests {
 		#expect(file == (try reference.vector.require("file")))
 	}
 
+	@Test func theSealedZipHoldsTheListedNoteFiles() throws {
+		let reference = try Reference()
+		let zip = try reference.vector.require("zip")
+		let listed = try #require(reference.vector.objects("entries"))
+
+		let entries = try ZipArchive.read(zip)
+
+		#expect(entries.map(\.name) == listed.compactMap { $0["name"] as? String })
+		#expect(entries.map(\.data) == listed.compactMap { ($0["markdown"] as? String).map { Data($0.utf8) } })
+		#expect(try LibraryArchive.notes(in: zip).count == listed.count)
+	}
+
 	@Test func everyCaseOpensOrIsRejectedAsDeclared() throws {
 		let cases = try Vectors.load(.export)
-		#expect(cases.count == 7)
+		#expect(cases.count == 12)
 
 		for vector in cases {
 			let file = try vector.require("file")
@@ -61,7 +73,7 @@ struct ExportVectorTests {
 			} else {
 				let expected: ExportEnvelope.Failure = switch vector.name {
 				case "rejectBadMagic": .notAnExport
-				case "rejectParametersOutOfBounds": .parametersOutOfBounds
+				case let name where name.hasPrefix("rejectParameters"): .parametersOutOfBounds
 				default: .wrongPassphraseOrDamaged
 				}
 				#expect(throws: expected, "case \(vector.name)") {

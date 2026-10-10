@@ -3,7 +3,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use crate::aead::{self, NONCE_LEN, OpenError};
 
 pub const MAGIC: &[u8; 9] = b"NNEXPORT1";
-pub const PARAMS_LEN: usize = 12;
+const PARAMS_LEN: usize = 12;
 pub const SALT_LEN: usize = 16;
 pub const HEADER_LEN: usize = MAGIC.len() + PARAMS_LEN + SALT_LEN;
 pub const MAX_M: u32 = 2 * 1024 * 1024;

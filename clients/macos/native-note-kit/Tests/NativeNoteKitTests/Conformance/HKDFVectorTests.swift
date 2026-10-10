@@ -14,11 +14,7 @@ struct HKDFVectorTests {
 			let length = try #require(vector.int("length"))
 			let info = try #require(vector.string("info"))
 
-			let ikm = if vector.bytes("ikm") != nil {
-				try vector.require("ikm")
-			} else {
-				try vector.require("argonOut") + vector.require("machineId")
-			}
+			let ikm = try vector.bytes("ikm") ?? (vector.require("argonOut") + vector.require("machineId"))
 
 			let okm = KeyDerivation.derive(ikm: SymmetricKey(data: ikm), salt: salt, info: info, length: length)
 
@@ -38,12 +34,13 @@ struct HKDFVectorTests {
 		#expect(labels["machineId"] == KeyDerivation.machineId)
 	}
 
-	@Test func localDbKeyConcatenatesArgonOutputAndMachineId() throws {
-		let vector = try #require(try Vectors.load(.hkdf).first { $0.name == "localDbKey" })
+	@Test(arguments: ["localDbKey", "localDbKeyWithoutMachineId"])
+	func localDbKeyMatchesItsVector(name: String) throws {
+		let vector = try #require(try Vectors.load(.hkdf).first { $0.name == name })
 
 		let key = KeyDerivation.localDbKey(
-			argonOut: SymmetricKey(data: try vector.require("argonOut")),
-			machineId: SymmetricKey(data: try vector.require("machineId")),
+			argonOut: SymmetricKey(data: try vector.bytes("argonOut") ?? vector.require("ikm")),
+			machineId: vector.bytes("machineId").map { SymmetricKey(data: $0) },
 			localSalt: try vector.require("salt")
 		)
 

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::frame::{Response, Status, Write, WriteResult};
+use crate::aead::NONCE_LEN;
+use crate::envelope;
+use crate::frame::{self, Request, Response, Status, Write, WriteResult};
 use crate::note::BlindedId;
 
 pub const NOTE_MAX: usize = 1024 * 1024;
@@ -46,25 +48,67 @@ impl Server {
 			return reject(Status::Conflict);
 		}
 
+		WriteResult {
+			status: Status::Accepted,
+			v: write.v,
+			seq: self.record(write.clone()),
+		}
+	}
+
+	fn record(&mut self, write: Write) -> u64 {
 		self.seq += 1;
 		self.notes.insert(
 			write.blinded_id,
 			Record {
 				seq: self.seq,
-				write: write.clone(),
+				write,
 			},
 		);
-		WriteResult {
-			status: Status::Accepted,
-			v: write.v,
-			seq: self.seq,
-		}
+		self.seq
 	}
 
 	pub fn changes_since(&self, since: u64) -> Vec<Write> {
 		let mut pending: Vec<&Record> = self.notes.values().filter(|r| r.seq > since).collect();
 		pending.sort_by_key(|r| r.seq);
 		pending.into_iter().map(|r| r.write.clone()).collect()
+	}
+
+	pub fn sync(&mut self, since: u64, writes: &[Write]) -> (Vec<WriteResult>, Vec<Write>) {
+		let results = writes.iter().map(|write| self.apply(write)).collect();
+		(results, self.changes_since(since))
+	}
+
+	pub fn handle(
+		&mut self,
+		envelope_key: &[u8],
+		sealed: &[u8],
+		response_nonce: &[u8; NONCE_LEN],
+	) -> Option<Vec<u8>> {
+		let request_nonce = sealed.first_chunk()?;
+		let unpadded = envelope::open_request(envelope_key, sealed).ok()?;
+		let response = match unpadded.and_then(|inner| frame::decode_request(&inner).ok()) {
+			Some(Request::Sync { since, writes }) => {
+				let (results, changes) = self.sync(since, &writes);
+				Response::Sync {
+					results,
+					changes,
+					next_seq: self.seq,
+					more: false,
+				}
+			}
+			Some(Request::GetRecovery) => self.get_recovery(),
+			Some(Request::PutRecovery { v, blob }) => self.put_recovery(v, &blob),
+			None => Response::Error,
+		};
+		let inner = frame::encode_response(&response);
+		Some(
+			envelope::seal_response(envelope_key, response_nonce, request_nonce, &inner)
+				.expect("the reference never answers past the body limit"),
+		)
+	}
+
+	pub fn recovery_blob(&self) -> &[u8] {
+		&self.recovery_blob
 	}
 
 	pub fn get_recovery(&self) -> Response {
@@ -103,17 +147,6 @@ mod tests {
 		}
 	}
 
-	fn holding(server: &mut Server, write: Write) {
-		server.seq += 1;
-		server.notes.insert(
-			write.blinded_id,
-			Record {
-				seq: server.seq,
-				write,
-			},
-		);
-	}
-
 	#[test]
 	fn a_write_failing_both_checks_gets_too_large() {
 		for (too_large, conflicts, expected) in [
@@ -123,7 +156,7 @@ mod tests {
 			(true, true, Status::TooLarge),
 		] {
 			let mut server = Server::new();
-			holding(&mut server, write(1, 0));
+			server.record(write(1, 0));
 			let v = if conflicts { 1 } else { 2 };
 			let size = if too_large { NOTE_MAX + 1 } else { NOTE_MAX };
 
@@ -137,7 +170,7 @@ mod tests {
 	#[test]
 	fn a_note_at_the_last_version_accepts_no_further_writes() {
 		let mut server = Server::new();
-		holding(&mut server, write(u32::MAX, 0));
+		server.record(write(u32::MAX, 0));
 
 		for v in [0, 1, u32::MAX] {
 			let result = server.apply(&write(v, 0));

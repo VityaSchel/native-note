@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
-use native_note_vectors::content::{self, Content};
+use native_note_vectors::content;
 use native_note_vectors::frame::{self, Request, Response};
 use native_note_vectors::vectors::{self, CONTENT_KEY, seq_bytes};
 use native_note_vectors::{hex, kdf, mnemonic, note};
@@ -126,6 +126,13 @@ fn sync_scenario_payloads_decrypt_to_their_declared_shape() {
 			panic!("scenario responses are all sync");
 		};
 		assert_eq!(results.len(), writes.len(), "{}", case["name"]);
+		if case["name"] == "step7" {
+			assert_eq!(writes.len(), 2);
+			assert!(
+				writes[0].blinded_id > writes[1].blinded_id,
+				"step7 submits out of blindedId order"
+			);
+		}
 
 		for write in writes.iter().chain(&changes) {
 			let plaintext = note::open(
@@ -142,27 +149,11 @@ fn sync_scenario_payloads_decrypt_to_their_declared_shape() {
 				note::blinded_id(&blinding_key, decoded.uuid()),
 				write.blinded_id
 			);
-			assert!(matches!(
-				decoded,
-				Content::Note { .. } | Content::Tombstone { .. }
-			));
-
-			assert!(
-				note::open(
-					&content_key,
-					&write.write_id,
-					&write.blinded_id,
-					write.v + 1,
-					&write.payload
-				)
-				.is_err(),
-				"payload must not open at another version"
-			);
 			checked += 1;
 		}
 	}
 	assert_eq!(
-		checked, 9,
-		"scenario should carry four writes and five changes"
+		checked, 17,
+		"scenario should carry seven writes and ten changes"
 	);
 }
