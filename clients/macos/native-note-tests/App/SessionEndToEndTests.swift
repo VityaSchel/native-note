@@ -79,7 +79,7 @@ struct SessionEndToEndTests {
 		await exchange.receive(file)
 		#expect(exchange.sheet == .passphrase)
 		await exchange.importPending(passphrase: "session passphrase")
-		#expect(exchange.lastImport == ImportSummary(unchanged: 3))
+		#expect(exchange.lastImport == ImportSummary(skipped: 3))
 		#expect(exchange.showsSummary)
 
 		let saved = Set(model.notes.map(\.body))

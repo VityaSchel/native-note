@@ -97,7 +97,7 @@ struct LibraryEndToEndTests {
 		#expect(snapshot(read) == snapshot(model.notes))
 	}
 
-	@Test func editsAndDeletionsSinceAnExportComeBackAsConflictsAndTombstones() async throws {
+	@Test func anImportAddsNewNotesAndLeavesEditsAndDeletionsSinceTheExport() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery")
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = directory.appending(path: "Native Note.zip")
@@ -106,28 +106,29 @@ struct LibraryEndToEndTests {
 		let ids = model.notes.map(\.id).sorted { $0.uuidString < $1.uuidString }
 		let edited = Array(ids.prefix(25))
 		let deleted = Array(ids.dropFirst(25).prefix(5))
+
+		let (other, otherDirectory) = try await realLibrary(password: "second machine", filled: false)
+		defer { try? FileManager.default.removeItem(at: otherDirectory) }
+		#expect(await other.importLibrary(from: file, passphrase: nil) == ImportSummary(added: corpus.count))
+		try await fill(other, with: Array(corpus.suffix(40)))
+		let written = snapshot(other.notes.filter { exported[$0.id] == nil })
+		try #require(written.count == 40)
+		#expect(await other.exportLibrary(to: file, passphrase: nil))
+
 		for id in edited { model.edit(id, (exported[id]?.body ?? "") + "\nedited after the export") }
-		for id in deleted {
-			model.selection = id
-			await model.deleteSelected()
-		}
+		for id in deleted { await model.delete(id) }
 		await model.flushPendingSaves()
+		let kept = snapshot(model.notes)
 
 		let summary = await model.importLibrary(from: file, passphrase: nil)
 
-		#expect(summary == ImportSummary(unchanged: corpus.count - 30, conflicting: 25, deletedHere: 5))
-		for conflict in model.conflicts.sorted(by: { $0.id.uuidString < $1.id.uuidString }).enumerated().map({ $1 }) {
-			await model.resolve(conflict, edited.firstIndex(of: conflict.id)! < 12 ? .keepTheirs : .keepMine)
-		}
-		#expect(model.conflicts.isEmpty)
+		#expect(summary == ImportSummary(added: 40, skipped: corpus.count))
 		await model.lock()
-
 		let relaunched = try await launch(in: directory, password: "correct horse battery")
 		let restored = snapshot(relaunched.notes)
-		#expect(restored.count == corpus.count - 5)
-		for (index, id) in edited.enumerated() {
-			let expected = index < 12 ? exported[id]?.body : (exported[id]?.body ?? "") + "\nedited after the export"
-			#expect(restored[id]?.body == expected)
+		#expect(restored == kept.merging(written) { $1 })
+		for id in edited {
+			#expect(restored[id]?.body == (exported[id]?.body ?? "") + "\nedited after the export")
 		}
 		#expect(deleted.allSatisfy { restored[$0] == nil })
 	}

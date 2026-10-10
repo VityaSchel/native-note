@@ -97,11 +97,6 @@ struct ContentView: View {
 				} cancel: {
 					exchange.dismiss(.passphrase)
 				}
-			case .conflicts:
-				ConflictSheet(conflicts: model.conflicts) { conflict, choice in
-					Task { await model.resolve(conflict, choice) }
-				}
-				.interactiveDismissDisabled()
 			}
 		}
 	}

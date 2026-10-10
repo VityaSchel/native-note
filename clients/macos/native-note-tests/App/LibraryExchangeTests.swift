@@ -29,7 +29,10 @@ struct LibraryExchangeTests {
 
 		#expect(exchange.sheet == nil)
 		#expect(exchange.lastImport == ImportSummary(added: 1))
+		#expect(exchange.showsSummary)
 		#expect(target.notes.map(\.body) == ["Shopping"])
+		exchange.showsSummary = false
+		#expect(exchange.lastImport == nil)
 	}
 
 	@Test func anEncryptedExportAsksForItsPassphraseFirst() async throws {
@@ -68,27 +71,10 @@ struct LibraryExchangeTests {
 		#expect(target.notes.isEmpty)
 	}
 
-	@Test func conflictsHoldTheSheetUntilResolved() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = directory.appending(path: "export.zip")
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		model.edit(try #require(model.notes.first?.id), "Shopping list")
-		let exchange = LibraryExchange(model: model)
-
-		await exchange.receive(file)
-		#expect(exchange.sheet == .conflicts)
-		exchange.dismiss(.conflicts)
-		#expect(exchange.sheet == .conflicts)
-
-		await model.resolve(try #require(model.conflicts.first), .keepMine)
-		#expect(exchange.sheet == nil)
-	}
-
 	@Test func theSummarySaysWhatHappened() {
 		#expect(ImportSummary(added: 1).message == "Imported 1 note.")
 		#expect(ImportSummary(added: 3).message == "Imported 3 notes.")
-		#expect(ImportSummary(added: 0, unchanged: 2, conflicting: 3, deletedHere: 4).message == "Imported 0 notes. 2 already here, 3 differ, 4 deleted here.")
+		#expect(ImportSummary(added: 0, skipped: 2, notImported: 5).message == "Imported 0 notes. 2 already here or deleted here, 5 not imported because Native Note locked.")
 		#expect(ImportSummary(added: 1, notImported: 5).message == "Imported 1 note. 5 not imported because Native Note locked.")
 	}
 
@@ -149,39 +135,6 @@ struct LibraryExchangeTests {
 		exchange.presentedSheet = nil
 
 		#expect(exchange.sheet == nil)
-	}
-
-	@Test func exportAndPassphraseShowOverPendingConflicts() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let plain = directory.appending(path: "export.zip")
-		#expect(await model.exportLibrary(to: plain, passphrase: nil))
-		model.edit(try #require(model.notes.first?.id), "Shopping list")
-		let exchange = LibraryExchange(model: model)
-		await exchange.receive(plain)
-		try #require(exchange.sheet == .conflicts)
-
-		exchange.isExporting = true
-
-		#expect(exchange.sheet == .export)
-	}
-
-	@Test func theSummaryWaitsForTheConflicts() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = directory.appending(path: "export.zip")
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		model.edit(try #require(model.notes.first?.id), "Shopping list")
-		let exchange = LibraryExchange(model: model)
-
-		await exchange.receive(file)
-		#expect(exchange.lastImport == ImportSummary(conflicting: 1))
-		#expect(!exchange.showsSummary)
-
-		await model.resolve(try #require(model.conflicts.first), .keepMine)
-		#expect(exchange.showsSummary)
-		exchange.showsSummary = false
-		#expect(exchange.lastImport == nil)
 	}
 
 	@Test func aWrongPassphraseKeepsTheSheetOpenToTryAgain() async throws {

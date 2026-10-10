@@ -160,13 +160,9 @@ struct PreviewRenderTests {
 	}
 
 	@Test func exchangeSheets() {
-		let notes = NoteGroup.samples.flatMap(\.notes)
-		var theirs = notes[0]
-		theirs.body = "Shopping\nonly bread"
 		render(ExportSheet(export: { _ in }, cancel: {}))
 		render(ImportPassphraseSheet(refused: true, working: false, submit: { _ in }, cancel: {}))
 		render(ImportPassphraseSheet(refused: false, working: true, submit: { _ in }, cancel: {}))
-		render(ConflictSheet(conflicts: [NoteConflict(mine: notes[0], theirs: theirs)], resolve: { _, _ in }), width: 560, height: 420)
 	}
 
 	@Test func firstRunShell() {

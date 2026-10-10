@@ -209,4 +209,4 @@ Exports use the Argon2id floor, so any device can open them. A reader refuses mo
 
 The zip holds one uncompressed markdown file per live note, named from its title. Each file starts with front matter `id`, `created`, `updated` (ISO 8601 UTC with milliseconds) and `v`, then the body byte for byte.
 
-Import reads only this format, one import at a time, and waits until earlier conflicts are resolved. It refuses files over 512 MiB unread. A note already in the library is skipped when identical and otherwise raises the [conflict](#conflicts) choice; keep theirs saves the export's text as a new edit. A note deleted here stays deleted.
+Import reads only this format, one import at a time, and refuses files over 512 MiB unread. It adds notes whose `id` the library does not hold, at `v = 0`, and skips every `id` it holds, live or deleted.

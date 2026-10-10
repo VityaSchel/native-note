@@ -6,7 +6,6 @@ import Observation
 	enum Sheet: Identifiable {
 		case export
 		case passphrase
-		case conflicts
 
 		var id: Self { self }
 	}
@@ -24,7 +23,6 @@ import Observation
 	var sheet: Sheet? {
 		if isExporting { return .export }
 		if pendingImport != nil { return .passphrase }
-		if !model.conflicts.isEmpty { return .conflicts }
 		return nil
 	}
 
@@ -62,8 +60,6 @@ import Observation
 			guard !isImporting else { return }
 			pendingImport = nil
 			if passphraseRefused { model.dismissFailure() }
-		case .conflicts:
-			break
 		}
 	}
 

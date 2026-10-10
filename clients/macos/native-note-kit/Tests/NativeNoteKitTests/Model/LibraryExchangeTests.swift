@@ -69,82 +69,67 @@ struct LibraryExchangeTests {
 		#expect(!AppModel.isEncryptedExport(at: file))
 	}
 
-	@Test func importingTheSameExportAgainChangesNothing() async throws {
-		let (model, directory) = try await library(["Shopping\nbread", "Trip"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = exportFile(in: directory)
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		let before = model.notes
-
-		#expect(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(unchanged: 2))
-		#expect(model.notes == before)
-		#expect(model.conflicts.isEmpty)
-	}
-
-	@Test func aNoteChangedSinceTheExportAsksWhichToKeep() async throws {
+	@Test func aNoteChangedSinceTheExportKeepsItsTextHere() async throws {
 		let (model, directory) = try await library(["Shopping\nbread"])
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = exportFile(in: directory)
 		#expect(await model.exportLibrary(to: file, passphrase: nil))
 		let id = try #require(model.notes.first?.id)
 		model.edit(id, "Shopping\nbread and milk")
+		let edited = try #require(model.notes.first)
 
-		#expect(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(conflicting: 1))
+		#expect(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(skipped: 1))
 
-		let conflict = try #require(model.conflicts.first)
-		#expect(conflict.mine.body == "Shopping\nbread and milk")
-		#expect(conflict.theirs.body == "Shopping\nbread")
-		await model.resolve(conflict, .keepMine)
-		#expect(model.conflicts.isEmpty)
-		#expect(model.notes.first?.body == "Shopping\nbread and milk")
-	}
-
-	@Test func keepingTheirsSavesTheExportedTextAsANewEdit() async throws {
-		let (model, directory) = try await library(["Shopping\nbread"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = exportFile(in: directory)
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		let id = try #require(model.notes.first?.id)
-		model.edit(id, "Shopping\nbread and milk")
+		#expect(model.notes == [edited])
 		await model.flushPendingSaves()
-		await model.importLibrary(from: file, passphrase: nil)
-		let resolving = Date()
-
-		await model.resolve(try #require(model.conflicts.first), .keepTheirs)
-
-		#expect(model.conflicts.isEmpty)
-		let kept = try #require(model.notes.first)
-		#expect(kept.body == "Shopping\nbread")
-		#expect(kept.updatedAt >= resolving)
 		let disk = try #require(try await observer(of: directory).note(id: id))
-		#expect(disk.body == "Shopping\nbread")
-		#expect(disk.updatedAt.epochMilliseconds == kept.updatedAt.epochMilliseconds)
+		#expect(disk.body == "Shopping\nbread and milk")
+		#expect(disk.updatedAt.epochMilliseconds == edited.updatedAt.epochMilliseconds)
 	}
 
-	@Test func resolvingOneConflictLeavesTheOthers() async throws {
-		let (model, directory) = try await library(["Shopping", "Trip"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = exportFile(in: directory)
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		for note in model.notes { model.edit(note.id, note.body + " changed") }
-		await model.importLibrary(from: file, passphrase: nil)
-		try #require(model.conflicts.count == 2)
+	@Test func anImportAddsOnlyNotesTheLibraryHasNeverHeld() async throws {
+		let (source, sourceDirectory) = try await library(["Shopping\nbread", "Trip\nferry at 07:20"])
+		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
+		let (target, targetDirectory) = try await library([])
+		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let file = exportFile(in: sourceDirectory)
+		#expect(await source.exportLibrary(to: file, passphrase: nil))
+		#expect(await target.importLibrary(from: file, passphrase: nil) == ImportSummary(added: 2))
+		let edited = try #require(target.notes.first { $0.title == "Shopping" }?.id)
+		let deleted = try #require(target.notes.first { $0.title == "Trip" }?.id)
+		target.edit(edited, "Shopping\nbread and milk")
+		await target.delete(deleted)
+		await target.flushPendingSaves()
+		let disk = try await observer(of: targetDirectory)
+		let held = try await [disk.note(id: edited), disk.note(id: deleted)]
+		try #require(held.map { $0?.deleted } == [false, true])
+		try await fill(source, with: ["Plans\nbook the ferry"])
+		let added = try #require(source.notes.first { $0.title == "Plans" })
+		#expect(await source.exportLibrary(to: file, passphrase: nil))
 
-		await model.resolve(model.conflicts[0], .keepMine)
+		#expect(await target.importLibrary(from: file, passphrase: nil) == ImportSummary(added: 1, skipped: 2))
 
-		#expect(model.conflicts.count == 1)
+		#expect(target.notes.map(\.body).sorted() == ["Plans\nbook the ferry", "Shopping\nbread and milk"])
+		#expect(try await [disk.note(id: edited), disk.note(id: deleted)] == held)
+		let stored = try #require(try await disk.note(id: added.id))
+		#expect(stored.body == added.body)
+		#expect(stored.updatedAt.epochMilliseconds == added.updatedAt.epochMilliseconds)
+		#expect(stored.dirty)
 	}
 
-	@Test func aSecondImportWaitsUntilTheConflictsAreResolved() async throws {
-		let (model, directory) = try await library(["Shopping"])
+	@Test func anImportedNoteStartsAtVersionZero() async throws {
+		let (model, directory) = try await library([])
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = exportFile(in: directory)
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		model.edit(try #require(model.notes.first?.id), "Shopping list")
-		await model.importLibrary(from: file, passphrase: nil)
+		var synced = sampleNote(body: "Synced elsewhere")
+		synced.v = 12
+		try LibraryArchive.archive([synced]).write(to: file)
 
-		#expect(await model.importLibrary(from: file, passphrase: nil) == nil)
-		#expect(model.conflicts.count == 1)
+		#expect(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(added: 1))
+
+		let stored = try #require(try await observer(of: directory).note(id: synced.id))
+		#expect(stored.v == 0)
+		#expect(stored.dirty)
 	}
 
 	@Test func twoImportsAtOnceAddEachNoteOnce() async throws {
@@ -239,17 +224,6 @@ struct LibraryExchangeTests {
 		#expect(model.failure == .unexpected("The file is too large to be a Native Note export."))
 	}
 
-	@Test func aNoteDeletedHereIsNotBroughtBack() async throws {
-		let (model, directory) = try await library(["Gone soon"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = exportFile(in: directory)
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		await model.deleteSelected()
-
-		#expect(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(deletedHere: 1))
-		#expect(model.notes.isEmpty)
-	}
-
 	@Test func theExportCarriesEditsNotYetSaved() async throws {
 		let (source, sourceDirectory) = try await library(["Draft"])
 		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
@@ -272,20 +246,6 @@ struct LibraryExchangeTests {
 
 		#expect(await model.importLibrary(from: file, passphrase: nil) == nil)
 		#expect(model.failure == .unexpected("This file is not a Native Note export, or it is damaged."))
-	}
-
-	@Test func lockingDropsUnresolvedConflicts() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let file = exportFile(in: directory)
-		#expect(await model.exportLibrary(to: file, passphrase: nil))
-		model.edit(try #require(model.notes.first?.id), "Shopping list")
-		await model.importLibrary(from: file, passphrase: nil)
-		try #require(!model.conflicts.isEmpty)
-
-		await model.lock()
-
-		#expect(model.conflicts.isEmpty)
 	}
 }
 

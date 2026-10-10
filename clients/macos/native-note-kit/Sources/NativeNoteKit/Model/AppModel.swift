@@ -21,7 +21,6 @@ import Observation
 	public private(set) var phase: Phase = .loading
 	private(set) var notes: [Note] = []
 	public private(set) var failure: Failure?
-	public private(set) var conflicts: [NoteConflict] = []
 	public private(set) var isImporting = false
 	public private(set) var isBiometricUnlockEnabled = false
 	public private(set) var touchID = TouchID.hidden
@@ -157,7 +156,6 @@ import Observation
 		failure = nil
 		failingSaves = [:]
 		searchFailing = false
-		conflicts = []
 		unlockParameters = nil
 		refreshBiometricUnlock()
 		await scheduler.flushAll()
@@ -188,11 +186,12 @@ import Observation
 	}
 
 	public func edit(_ id: UUID, _ body: String) {
-		guard var edited = notes.first(where: { $0.id == id }), edited.body != body else { return }
+		guard let index = notes.firstIndex(where: { $0.id == id }), notes[index].body != body else { return }
+		var edited = notes[index]
 		edited.body = body
 		edited.updatedAt = Date()
 		edited.dirty = true
-		replaceInMemory(edited)
+		notes[index] = edited
 
 		guard let store else { return }
 		scheduleSave(edited, to: store)
@@ -516,7 +515,7 @@ import Observation
 
 	@discardableResult
 	public func importLibrary(from url: URL, passphrase: String?) async -> ImportSummary? {
-		guard let store, !isImporting, conflicts.isEmpty else { return nil }
+		guard let store, !isImporting else { return nil }
 		isImporting = true
 		defer { isImporting = false }
 		let incoming: [Note]
@@ -538,50 +537,24 @@ import Observation
 			summary.notImported = incoming.count - index
 			return summary
 		}
-		for (index, theirs) in incoming.enumerated() {
+		for (index, var note) in incoming.enumerated() {
 			guard store === self.store else { return stopped(at: index) }
-			if let mine = notes.first(where: { $0.id == theirs.id }) {
-				if mine.body == theirs.body {
-					summary.unchanged += 1
-				} else {
-					conflicts.append(NoteConflict(mine: mine, theirs: theirs))
-					summary.conflicting += 1
-				}
-				continue
-			}
-			let deletedHere: Bool
 			do {
-				deletedHere = try await store.note(id: theirs.id) != nil
+				if try await store.note(id: note.id) != nil {
+					summary.skipped += 1
+					continue
+				}
+				note.v = 0
+				try await store.save(note)
 			} catch {
 				guard store === self.store else { return stopped(at: index) }
 				report(error)
 				return nil
 			}
-			if deletedHere {
-				summary.deletedHere += 1
-				continue
-			}
-			guard await write({ try await $0.save(theirs) }) else {
-				guard store === self.store else { return stopped(at: index) }
-				return nil
-			}
 			summary.added += 1
-			if store === self.store { notes.append(theirs) }
+			if store === self.store { notes.append(note) }
 		}
 		return summary
-	}
-
-	public func resolve(_ conflict: NoteConflict, _ choice: NoteConflict.Choice) async {
-		conflicts.removeAll { $0.id == conflict.id }
-		guard choice == .keepTheirs, var kept = notes.first(where: { $0.id == conflict.id }) else { return }
-		await scheduler.discard(kept.id)
-		kept.body = conflict.theirs.body
-		kept.updatedAt = Date()
-		kept.dirty = true
-		replaceInMemory(kept)
-		guard let store else { return }
-		scheduleSave(kept, to: store)
-		_ = await scheduler.flush(kept.id)
 	}
 
 	nonisolated private static func search(_ store: NoteStore, for text: String) async throws -> [Note] {
@@ -621,11 +594,6 @@ import Observation
 	private static func newer(_ held: Note?, _ other: Note) -> Note {
 		guard let held, held.updatedAt > other.updatedAt else { return other }
 		return held
-	}
-
-	private func replaceInMemory(_ note: Note) {
-		guard let index = notes.firstIndex(where: { $0.id == note.id }) else { return }
-		notes[index] = note
 	}
 
 	@discardableResult
