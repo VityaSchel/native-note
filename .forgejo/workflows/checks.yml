@@ -81,6 +81,7 @@ jobs:
             [ -f "$project/Cargo.toml" ] || continue
             ( cd "$project" && cargo fmt --check )
           done
+          rustfmt --check --edition 2024 server/native-note-core/fuzz/fuzz_targets/*.rs
 
       - name: Clippy
         run: |
@@ -100,6 +101,9 @@ jobs:
 
       - name: Generator line coverage
         run: cd "$WORKSPACE" && ./.forgejo/scripts/rust-coverage.sh
+
+      - name: Server core coverage
+        run: cd "$WORKSPACE" && ./.forgejo/scripts/server-coverage.sh
 
       - name: Vectors match the generator
         run: |

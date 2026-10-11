@@ -35,4 +35,4 @@ Claims in the README and these documents are verified against the code before ea
 
 No custom primitives. AES-256-GCM, HKDF-SHA256, HMAC-SHA256, and Argon2id, taken from platform crypto where available.
 
-The server is not written yet; [server/DESIGN.md](server/DESIGN.md) allows it two direct dependencies. The client adds Argon2 and SQLCipher to platform frameworks, both pinned to commit revisions in `Package.resolved` and SQLCipher's framework also by SHA-256; neither is vendored.
+Only the server's core exists so far, and it depends on `ring` alone; [server/DESIGN.md](server/DESIGN.md) allows the server one more direct dependency, `rusqlite`. The client adds Argon2 and SQLCipher to platform frameworks, both pinned to commit revisions in `Package.resolved` and SQLCipher's framework also by SHA-256; neither is vendored.

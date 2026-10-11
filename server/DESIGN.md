@@ -9,6 +9,25 @@ Dependencies:
 
 Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. With `ring` the server's tree is 20 crates on Linux, against 43 with RustCrypto's `aes-gcm`, `hkdf`, `sha2` and `getrandom`, and needs no compiler beyond the one bundled SQLite already needs; the [vector generator](../spec/README.md) keeps RustCrypto, so the vectors cross-check two implementations.
 
+`native-note-core` depends on `ring` alone. Test and fuzz dependencies never reach the binary:
+
+- `serde_json`: std has no JSON parser, and the core's tests replay [spec/vectors](../spec/README.md), which are JSON
+- `proptest`: generated inputs for the property tests
+- `libfuzzer-sys`: runs the fuzz targets, which sit in their own workspace and lockfile under `native-note-core/fuzz`
+
+## Server core
+
+`server/` is a Cargo workspace. `native-note-core` is the request path as pure logic: no sockets, files, clock, randomness, logging or SQLite. `native-note-server` adds those and the binary.
+
+- The core runs inside the caller's [transaction](#server-storage) and never commits or rolls back; a fault it returns means roll back and answer `error`.
+- The response nonce is drawn before the transaction begins, so a failed draw answers `500` with nothing stored. `seal` refuses a response nonce equal to the request nonce, which also answers `500`.
+- The core assigns [`seq`](../docs/PROTOCOL.md#ordering) and storage only persists it: a `sync` reads the latest `seq` once and stamps accepted writes in submission order. A `seq` past `u64::MAX` answers `error`.
+- Storage yields changes one row per call, so a pull never loads more than one change past the response budget.
+- A sync response takes changes until the next one would pass the [body limit](../docs/PROTOCOL.md#limits). When not even the first pending change fits, the request answers `error`, since [`more` needs a change](../docs/PROTOCOL.md#action-sync).
+- `Envelope`, `Opened` and `Reply`, which hold whole sealed or padded frames, have no `Debug`.
+- The non-test build forbids panicking APIs and unchecked arithmetic by lint; [lib.rs](native-note-core/src/lib.rs) and [clippy.toml](native-note-core/clippy.toml) list the bans.
+- Every line, branch and region of `native-note-core/src` outside its `tests.rs` files runs under a deterministic test, property tests excluded, measured with the nightly pinned in [server-coverage.sh](../.forgejo/scripts/server-coverage.sh).
+
 ## Server API
 
 HTTP layer is hand-rolled on `std::net::TcpListener` — ~300 lines over 2 direct dependencies vs `axum` (~200 crates) or `hyper`+`tokio` (~50-60 crates). Blocking:
@@ -24,7 +43,7 @@ HTTP layer is hand-rolled on `std::net::TcpListener` — ~300 lines over 2 direc
 
 The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`, and the loader parses it as that section says. When the file is absent, the server generates a key and writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path.
 
-Secrets are wrapped in `Secret<T>`, whose `Debug` prints `[redacted]`. No zeroize and no constant-time helper: the GCM tag check inside `ring` is the only comparison of secret data.
+Secrets are wrapped in `Secret<T>`, whose `Debug` prints `[redacted]` and which has no `PartialEq`. No zeroize and no constant-time helper: the GCM tag check inside `ring` is the only comparison of secret data.
 
 SQLite: WAL, `synchronous=FULL`, one connection shared by every thread behind a mutex, `busy_timeout` set so an operator's `sqlite3 .backup` does not fail requests. A thread takes the mutex after the request is read and unsealed and releases it before the response is written.
 

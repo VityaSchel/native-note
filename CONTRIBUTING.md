@@ -7,7 +7,7 @@ docs/              cross-cutting design, sync protocol, roadmap
 spec/vectors/      language-neutral conformance vectors
 spec/generator/    Rust tool that generates and verifies them
 spec/wordlists/    BIP39 wordlists, pinned by hash
-server/            Rust server, not written yet — docs in its root
+server/            Rust server workspace, docs in its root
 clients/           shared client design, one directory per platform
 clients/macos/     Xcode project, docs in its root
 devtools/          development-only tools, never shipped
@@ -46,8 +46,41 @@ cargo audit --deny warnings
 
 ### Server
 
-Not written yet — the design is in [server/DESIGN.md](server/DESIGN.md). It needs no workflow change
-to gain CI: both workflows already run over `server/` as soon as a `server/Cargo.toml` exists.
+Design: [server/DESIGN.md](server/DESIGN.md). Only `native-note-core`, the request path without IO, exists so far.
+
+```sh
+cd server
+cargo fmt --check
+rustfmt --check --edition 2024 native-note-core/fuzz/fuzz_targets/*.rs
+cargo clippy --all-targets -- -D warnings
+cargo test
+../.forgejo/scripts/server-coverage.sh   # line, branch and region coverage of native-note-core/src, excluding tests.rs
+```
+
+The coverage script enforces the [coverage gate](server/DESIGN.md#server-core) and lists anything missed. Property tests live in modules named `props`, which the coverage run skips, and no other test's path contains `props`.
+
+A new vector file, or a new case in a file the server replays, fails the suite until `native-note-core/tests/suite/support/vectors.rs` lists it as replayed or client-only.
+
+Fuzzing is manual, not in CI, on the nightly pinned in the coverage script. Run each target overnight:
+
+```sh
+cargo install --locked cargo-fuzz@0.13.2
+cd server/native-note-core
+nightly="$(sed -n 's/^nightly="\(.*\)"$/\1/p' ../../.forgejo/scripts/server-coverage.sh)"
+rustup toolchain install "$nightly" --profile minimal
+cargo "+$nightly" fuzz run frame -- -max_total_time=28800 -malloc_limit_mb=16
+cargo "+$nightly" fuzz run envelope -- -max_total_time=28800 -malloc_limit_mb=16
+```
+
+Minimize a finding with `cargo "+$nightly" fuzz tmin <target> <artifact>` and add its bytes as a regression test in `tests/suite`.
+
+Supply chain, with cargo-deny and cargo-audit installed as above:
+
+```sh
+cd server
+cargo deny --config ../deny.toml check
+cargo audit --deny warnings
+```
 
 ### macOS client
 
