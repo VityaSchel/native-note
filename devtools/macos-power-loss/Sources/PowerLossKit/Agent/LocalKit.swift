@@ -52,26 +52,29 @@ public enum LocalKit {
 	}
 
 	private static func extract(from descriptor: Int32, byteCount: Int, into staging: URL) throws {
-		let tar = Process()
-		tar.executableURL = URL(filePath: "/usr/bin/tar")
-		tar.arguments = ["-xf", "-", "-C", staging.path]
-		let input = Pipe()
-		tar.standardInput = input
-		tar.standardOutput = FileHandle.nullDevice
-		tar.standardError = FileHandle.nullDevice
-		try tar.run()
+		let archive = staging.appendingPathExtension("tar")
+		defer { try? FileManager.default.removeItem(at: archive) }
+		FileManager.default.createFile(atPath: archive.path, contents: nil)
+		let file = try FileHandle(forWritingTo: archive)
 		var remaining = byteCount
 		var buffer = [UInt8](repeating: 0, count: 65536)
 		while remaining > 0 {
 			let count = buffer.withUnsafeMutableBytes { read(descriptor, $0.baseAddress, min($0.count, remaining)) }
 			if count < 0, errno == EINTR { continue }
 			guard count > 0 else { break }
-			try input.fileHandleForWriting.write(contentsOf: buffer[..<count])
+			try file.write(contentsOf: buffer[..<count])
 			remaining -= count
 		}
-		try input.fileHandleForWriting.close()
-		tar.waitUntilExit()
+		try file.close()
 		guard remaining == 0 else { throw Failure(description: "the kit stopped \(remaining) bytes short") }
+
+		let tar = Process()
+		tar.executableURL = URL(filePath: "/usr/bin/tar")
+		tar.arguments = ["-xf", archive.path, "-C", staging.path]
+		tar.standardOutput = FileHandle.nullDevice
+		tar.standardError = FileHandle.nullDevice
+		try tar.run()
+		tar.waitUntilExit()
 		guard tar.terminationStatus == 0 else { throw Failure(description: "tar could not unpack the kit") }
 	}
 }

@@ -27,13 +27,17 @@ struct LocalKitTests {
 		return kit
 	}
 
-	private func install(_ archive: Data, declaring byteCount: Int? = nil, into folder: URL) throws {
+	private func install(_ archive: Data, declaring byteCount: Int? = nil, pausingAfter pause: Int? = nil, into folder: URL) throws {
 		var ends: [Int32] = [-1, -1]
 		try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0)
 		let (host, guest) = (ends[0], ends[1])
 		defer { close(guest) }
 		Thread {
-			archive.withUnsafeBytes { _ = write(host, $0.baseAddress, $0.count) }
+			let parts = pause.map { [archive.prefix($0), archive.dropFirst($0)] } ?? [archive]
+			for (index, part) in parts.enumerated() {
+				if index > 0 { Thread.sleep(forTimeInterval: 0.5) }
+				part.withUnsafeBytes { _ = write(host, $0.baseAddress, $0.count) }
+			}
 			close(host)
 		}.start()
 		try LocalKit.unpack(from: guest, byteCount: byteCount ?? archive.count, into: folder)
@@ -64,6 +68,17 @@ struct LocalKitTests {
 
 		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "new")
 		#expect(!FileManager.default.fileExists(atPath: local.appending(path: "leftover").path))
+	}
+
+	@Test func zerosArrivingAfterTarHasFinishedStillInstall() throws {
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
+		let archive = try LocalKit.archive(from: try kit(typist: "late"))
+
+		try install(archive + Data(count: 65536), pausingAfter: archive.count, into: local)
+
+		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "late")
+		#expect(!FileManager.default.fileExists(atPath: local.path + ".new.tar"))
 	}
 
 	@Test func aKitWithoutItsFrameworkIsRefusedAndTheLastOneStays() throws {
