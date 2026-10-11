@@ -26,6 +26,7 @@
 mod codec;
 mod envelope;
 mod frame;
+pub mod http;
 mod padding;
 mod process;
 mod reply;

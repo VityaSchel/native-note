@@ -112,7 +112,7 @@ response = AES-256-GCM(envelopeKey, padded, aad: requestNonce)
 
 ## API
 
-`POST /` is the only route, and the request target is exactly `/`. Requests are HTTP/1.1 with lines ending in CRLF and one `Content-Length` of ASCII digits. The request line and headers, through the blank line that ends them, fit in 8 KiB with at most 100 headers. Other headers are ignored, and `Expect` gets no `100 Continue`. Any other method, target, version or framing, `Transfer-Encoding` included, a header line that is folded, lacks a colon or has whitespace before it, or headers past these caps, is `400`. Responses carry `Content-Length` and `Connection: close`, and only `200` has a body. A client posts to its server URL as configured, so a reverse proxy may map a path prefix to `/`.
+`POST /` is the only route, and the request target is exactly `/`. Requests are HTTP/1.1 with lines ending in CRLF and one `Content-Length` of ASCII digits. The request line and headers, through the blank line that ends them, fit in 8 KiB with at most 100 headers. Other headers are ignored, and `Expect` gets no `100 Continue`. Any other method, target, version or framing is `400`, as are `Transfer-Encoding`, a header line that is folded, lacks a colon, or has whitespace before it or a name that is not a token, a CR outside a line ending, and headers past these caps. Responses carry `Content-Length` and `Connection: close`, and only `200` has a body. A client posts to its server URL as configured, so a reverse proxy may map a path prefix to `/`.
 
 Distinct HTTP status codes exist only for outcomes with no sealed response and carry no application meaning: `400` malformed or unopenable, `413` oversize, `500` fault.
 

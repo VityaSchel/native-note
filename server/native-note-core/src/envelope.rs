@@ -8,7 +8,7 @@ use ring::hkdf::{HKDF_SHA256, Salt};
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 const SEALED_MIN: usize = NONCE_LEN + TAG_LEN;
-const SEALED_MAX: usize = BODY_MAX + SEALED_MIN;
+pub(crate) const SEALED_MAX: usize = BODY_MAX + SEALED_MIN;
 const ENVELOPE_INFO: &[u8] = b"native-note/envelope/v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

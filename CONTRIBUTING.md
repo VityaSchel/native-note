@@ -70,6 +70,7 @@ nightly="$(sed -n 's/^nightly="\(.*\)"$/\1/p' ../../.forgejo/scripts/server-cove
 rustup toolchain install "$nightly" --profile minimal
 cargo "+$nightly" fuzz run frame -- -max_total_time=28800 -malloc_limit_mb=16
 cargo "+$nightly" fuzz run envelope -- -max_total_time=28800 -malloc_limit_mb=16
+cargo "+$nightly" fuzz run http -- -max_total_time=28800 -malloc_limit_mb=16
 ```
 
 Minimize a finding with `cargo "+$nightly" fuzz tmin <target> <artifact>` and add its bytes as a regression test in `tests/suite`.

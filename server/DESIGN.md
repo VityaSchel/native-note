@@ -25,6 +25,7 @@ Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. With `ring` the server
 - Storage yields changes one row per call, so a pull never loads more than one change past the response budget.
 - A sync response takes changes until the next one would pass the [body limit](../docs/PROTOCOL.md#limits). When not even the first pending change fits, the request answers `error`, since [`more` needs a change](../docs/PROTOCOL.md#action-sync).
 - `Envelope`, `Opened` and `Reply`, which hold whole sealed or padded frames, have no `Debug`.
+- The HTTP request head is parsed in the core, so it falls under the coverage gate and a fuzz target.
 - The non-test build forbids panicking APIs and unchecked arithmetic by lint; [lib.rs](native-note-core/src/lib.rs) and [clippy.toml](native-note-core/clippy.toml) list the bans.
 - Every line, branch and region of `native-note-core/src` outside its `tests.rs` files runs under a deterministic test, property tests excluded, measured with the nightly pinned in [server-coverage.sh](../.forgejo/scripts/server-coverage.sh).
 
