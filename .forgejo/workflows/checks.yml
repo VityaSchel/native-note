@@ -102,7 +102,7 @@ jobs:
       - name: Generator line coverage
         run: cd "$WORKSPACE" && ./.forgejo/scripts/rust-coverage.sh
 
-      - name: Server core coverage
+      - name: Server coverage
         run: cd "$WORKSPACE" && ./.forgejo/scripts/server-coverage.sh
 
       - name: Vectors match the generator

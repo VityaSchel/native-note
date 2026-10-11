@@ -2,6 +2,7 @@ pub mod client;
 pub mod corpus;
 pub mod model;
 pub mod scenario;
+pub mod scratch;
 pub mod session;
 
 pub const NOTE_MAX: usize = 1 << 20;

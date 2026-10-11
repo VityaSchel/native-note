@@ -2,6 +2,8 @@ use crate::BODY_MAX;
 use native_note_core::{BlindedNoteId, Record, Request, Seq, Version};
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::hkdf::{HKDF_SHA256, KeyType, Salt};
+use std::fs;
+use std::path::Path;
 
 const LEN_PREFIX: usize = 4;
 const SYNC_HEADER: usize = 1 + 8 + 4;
@@ -13,6 +15,18 @@ pub fn sync(since: u64, writes: &[Record]) -> Request {
 		since: Seq(since),
 		writes: writes.to_vec(),
 	}
+}
+
+/// Reads an API key file as a server writes it.
+pub fn read_api_key(path: &Path) -> [u8; 32] {
+	let text = fs::read_to_string(path).expect("reads the API key file");
+	let text = text.trim();
+	assert_eq!(text.len(), 64, "the API key is 64 hex characters");
+	let mut key = [0; 32];
+	for (index, byte) in key.iter_mut().enumerate() {
+		*byte = u8::from_str_radix(&text[index * 2..index * 2 + 2], 16).expect("hex");
+	}
+	key
 }
 
 pub fn encode_request(request: &Request) -> Vec<u8> {

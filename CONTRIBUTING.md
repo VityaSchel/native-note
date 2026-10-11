@@ -46,7 +46,7 @@ cargo audit --deny warnings
 
 ### Server
 
-Design: [server/DESIGN.md](server/DESIGN.md). Only `native-note-core`, the request path without IO, exists so far.
+Design: [server/DESIGN.md](server/DESIGN.md). `native-note-core` is the request path without IO, `native-note-server` the binary, and `native-note-testkit` the test client both share.
 
 ```sh
 cd server
@@ -54,10 +54,10 @@ cargo fmt --check
 rustfmt --check --edition 2024 native-note-core/fuzz/fuzz_targets/*.rs
 cargo clippy --all-targets -- -D warnings
 cargo test
-../.forgejo/scripts/server-coverage.sh   # line, branch and region coverage of native-note-core/src, excluding tests.rs
+../.forgejo/scripts/server-coverage.sh   # line, branch and region coverage of both crates' src, excluding tests
 ```
 
-The coverage script enforces the [coverage gate](server/DESIGN.md#server-core) and lists anything missed. Property tests live in modules named `props`, which the coverage run skips, and no other test's path contains `props`.
+The coverage script enforces the [coverage gate](server/DESIGN.md#server-core), 100% for the core and 90% for the server, and lists anything missed. Property tests live in modules named `props`, which the coverage run skips, and no other test's path contains `props`.
 
 A new vector file, or a new case in a file the server replays, fails the suite until `native-note-core/tests/suite/support/vectors.rs` lists it as replayed or client-only.
 
@@ -74,6 +74,22 @@ cargo "+$nightly" fuzz run http -- -max_total_time=28800 -malloc_limit_mb=16
 ```
 
 Minimize a finding with `cargo "+$nightly" fuzz tmin <target> <artifact>` and add its bytes as a regression test in `tests/suite`.
+
+Run a server locally, and talk to it with curl through the development-only `envelope` tool, which seals a request and opens its reply:
+
+```sh
+cd server
+cargo run -p native-note-server -- 127.0.0.1:8080 /tmp/native-note-data
+printf '02' | xxd -r -p | cargo run -q -p native-note-testkit --bin envelope -- seal /tmp/native-note-data/api-key >get.body
+curl -sS -H 'Expect:' --data-binary @get.body -o get.reply http://127.0.0.1:8080/
+cargo run -q -p native-note-testkit --bin envelope -- open /tmp/native-note-data/api-key get.body <get.reply | xxd -p
+```
+
+Release binaries, static for `x86_64` and `aarch64` Linux, land in `releases/` with their SHA-256; compare hashes only between builds on the same host:
+
+```sh
+.forgejo/scripts/server-release.sh
+```
 
 Supply chain, with cargo-deny and cargo-audit installed as above:
 
