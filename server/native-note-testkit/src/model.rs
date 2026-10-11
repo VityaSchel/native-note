@@ -1,5 +1,5 @@
-use super::NOTE_MAX;
-use super::client::{INNER_MAX, Response, Status, WriteResult};
+use crate::NOTE_MAX;
+use crate::client::{INNER_MAX, Response, Status, WriteResult};
 use native_note_core::{BlindedNoteId, Record, Seq, Version};
 use std::collections::BTreeMap;
 use std::ops::Bound;

@@ -1,8 +1,13 @@
-use super::client::{self, Response, WriteResult};
-use super::harness::Harness;
-use super::memory::MemoryStorage;
-use super::model::{Model, View};
+use crate::client::{self, Response, Status, WriteResult};
+use crate::model::{Model, View};
 use native_note_core::{BlindedNoteId, Record, Request, Seq, Version};
+
+pub trait Exchange {
+	fn seal(&mut self, inner: &[u8]) -> Vec<u8>;
+
+	/// Posts a sealed request and returns the opened reply, panicking on anything but a sealed reply.
+	fn post(&mut self, body: &[u8]) -> Vec<u8>;
+}
 
 #[derive(Clone, Copy)]
 pub enum Sent {
@@ -19,6 +24,14 @@ pub enum Sent {
 pub struct Captured {
 	pub body: Vec<u8>,
 	pub sent: Sent,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Replays {
+	pub conflicts: usize,
+	pub too_large: usize,
+	pub gets: usize,
+	pub puts: usize,
 }
 
 pub struct Device {
@@ -55,16 +68,16 @@ impl Device {
 	}
 }
 
-pub struct Session {
-	pub harness: Harness,
+pub struct Session<E> {
+	pub server: E,
 	pub model: Model,
 	pub captured: Vec<Captured>,
 }
 
-impl Session {
-	pub fn new(api_key: [u8; 32]) -> Self {
+impl<E: Exchange> Session<E> {
+	pub fn new(server: E) -> Self {
 		Self {
-			harness: Harness::new(api_key, MemoryStorage::default()),
+			server,
 			model: Model::default(),
 			captured: Vec::new(),
 		}
@@ -80,8 +93,8 @@ impl Session {
 			since,
 			writes: writes.to_vec(),
 		});
-		let body = self.harness.seal(&inner);
-		let inner = self.harness.post(&body);
+		let body = self.server.seal(&inner);
+		let inner = self.server.post(&body);
 		let Response::Sync {
 			results,
 			changes,
@@ -117,8 +130,8 @@ impl Session {
 	}
 
 	pub fn get(&mut self) -> Response {
-		let body = self.harness.seal(&client::encode_request(&Request::Get));
-		let response = client::decode_response(&self.harness.post(&body));
+		let body = self.server.seal(&client::encode_request(&Request::Get));
+		let response = client::decode_response(&self.server.post(&body));
 		assert_eq!(response, self.model.get());
 		self.captured.push(Captured {
 			body,
@@ -132,13 +145,63 @@ impl Session {
 			v,
 			blob: blob.to_vec(),
 		};
-		let body = self.harness.seal(&client::encode_request(&request));
-		let response = client::decode_response(&self.harness.post(&body));
+		let body = self.server.seal(&client::encode_request(&request));
+		let response = client::decode_response(&self.server.post(&body));
 		assert_eq!(response, self.model.put(v, blob));
 		self.captured.push(Captured {
 			body,
 			sent: Sent::Put { v },
 		});
 		response
+	}
+
+	/// Checks the reply to a captured request posted again, which must change nothing.
+	pub fn check_replay(&self, index: usize, inner: &[u8], replays: &mut Replays) {
+		match (self.captured[index].sent, client::decode_response(inner)) {
+			(
+				Sent::Sync {
+					since,
+					writes: sent,
+				},
+				Response::Sync {
+					results,
+					changes,
+					next_seq,
+					more,
+				},
+			) => {
+				let expected: Vec<_> = sent.iter().map(|write| self.model.judge(write)).collect();
+				assert_eq!(results, expected, "replay {index}");
+				for result in results {
+					assert_eq!(result.seq, Seq(0), "replay {index}");
+					match result.status {
+						Status::Conflict => replays.conflicts += 1,
+						Status::TooLarge => replays.too_large += 1,
+						Status::Accepted => panic!("replay {index} stored a write"),
+					}
+				}
+				self.model
+					.check_changes(since, &changes, next_seq, more, inner.len());
+			}
+			(Sent::Get, response) => {
+				assert_eq!(response, self.model.get(), "replay {index}");
+				replays.gets += 1;
+			}
+			(Sent::Put { v }, response) => {
+				assert_eq!(response, self.model.judge_put(v), "replay {index}");
+				assert!(
+					matches!(
+						response,
+						Response::Put {
+							status: Status::Conflict,
+							..
+						}
+					),
+					"replay {index}"
+				);
+				replays.puts += 1;
+			}
+			(_, response) => panic!("replay {index} got the wrong action: {response:?}"),
+		}
 	}
 }

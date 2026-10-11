@@ -1,4 +1,4 @@
-use super::NOTE_MAX;
+use crate::NOTE_MAX;
 use native_note_core::{BlindedNoteId, Record, Version};
 use std::sync::OnceLock;
 
@@ -39,6 +39,18 @@ impl SplitMix64 {
 			let word = self.next_u64().to_le_bytes();
 			chunk.copy_from_slice(&word[..chunk.len()]);
 		}
+	}
+}
+
+/// A write whose `writeId` is the id repeated with `v` in its last four bytes.
+pub fn write(id: u8, v: u32, len: usize) -> Record {
+	let mut write_id = [id; 16];
+	write_id[12..].copy_from_slice(&v.to_be_bytes());
+	Record {
+		id: BlindedNoteId([id; 16]),
+		v: Version(v),
+		write_id,
+		payload: payload(len, u64::from(id) << 32 | u64::from(v)),
 	}
 }
 

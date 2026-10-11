@@ -5,6 +5,9 @@ use super::memory::{Injected, MemoryStorage};
 use native_note_core::{
 	DecodeError, Envelope, EnvelopeKey, Fault, Rejection, Reply, Request, Secret, admit, process,
 };
+use native_note_testkit::session::Exchange;
+
+pub use native_note_testkit::nonce_of;
 
 const NONCE_SEED: u64 = 0x6e6f_6e63_6573;
 
@@ -28,10 +31,6 @@ pub struct Harness {
 	nonces: SplitMix64,
 	pub storage: MemoryStorage,
 	pub failures: Vec<Failure>,
-}
-
-pub fn nonce_of(body: &[u8]) -> [u8; 12] {
-	*body.first_chunk().expect("a body holds a nonce")
 }
 
 impl Harness {
@@ -107,5 +106,15 @@ impl Harness {
 
 	pub fn call(&mut self, request: &Request) -> Response {
 		client::decode_response(&self.send(&client::encode_request(request)))
+	}
+}
+
+impl Exchange for Harness {
+	fn seal(&mut self, inner: &[u8]) -> Vec<u8> {
+		Harness::seal(self, inner)
+	}
+
+	fn post(&mut self, body: &[u8]) -> Vec<u8> {
+		Harness::post(self, body)
 	}
 }

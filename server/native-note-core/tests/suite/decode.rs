@@ -1,17 +1,10 @@
 use crate::support::BODY_MAX;
-use crate::support::client::{self, INNER_MAX};
+use crate::support::client::{self, INNER_MAX, sync};
 use crate::support::corpus::{SplitMix64, corpus, payload};
-use native_note_core::{BlindedNoteId, DecodeError, Record, Request, Seq, Version};
+use native_note_core::{BlindedNoteId, DecodeError, Record, Request, Version};
 use std::collections::BTreeSet;
 
 const SMALL_NOTE_MAX: usize = 4 << 10;
-
-fn sync(since: u64, writes: &[Record]) -> Request {
-	Request::Sync {
-		since: Seq(since),
-		writes: writes.to_vec(),
-	}
-}
 
 fn small_notes() -> Vec<Record> {
 	corpus()

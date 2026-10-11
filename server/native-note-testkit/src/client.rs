@@ -1,4 +1,4 @@
-use super::BODY_MAX;
+use crate::BODY_MAX;
 use native_note_core::{BlindedNoteId, Record, Request, Seq, Version};
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::hkdf::{HKDF_SHA256, KeyType, Salt};
@@ -7,6 +7,13 @@ const LEN_PREFIX: usize = 4;
 const SYNC_HEADER: usize = 1 + 8 + 4;
 const WRITE_HEADER: usize = 16 + 4 + 16 + 4;
 pub const INNER_MAX: usize = BODY_MAX - LEN_PREFIX;
+
+pub fn sync(since: u64, writes: &[Record]) -> Request {
+	Request::Sync {
+		since: Seq(since),
+		writes: writes.to_vec(),
+	}
+}
 
 pub fn encode_request(request: &Request) -> Vec<u8> {
 	let mut out = Vec::new();

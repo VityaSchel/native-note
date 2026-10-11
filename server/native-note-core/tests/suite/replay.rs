@@ -1,9 +1,10 @@
-use crate::support::client::{self, INNER_MAX, Response, Status};
+use crate::support::client::{self, INNER_MAX, Response};
 use crate::support::corpus::{SplitMix64, corpus, payload};
-use crate::support::harness::{Http, nonce_of};
+use crate::support::harness::{Harness, Http, nonce_of};
 use crate::support::open;
-use crate::support::session::{Captured, Sent, Session};
+use crate::support::session::{Replays, Session};
 use native_note_core::{EnvelopeKey, Record, Rejection, Reply, Request, Secret, Seq, Version};
+use native_note_testkit::scenario::shuffled;
 use std::collections::BTreeSet;
 
 const API_KEY: [u8; 32] = [
@@ -60,14 +61,6 @@ impl Script {
 	}
 }
 
-fn shuffled(count: usize, rng: &mut SplitMix64) -> Vec<usize> {
-	let mut order: Vec<usize> = (0..count).collect();
-	for last in (1..count).rev() {
-		order.swap(last, rng.between(0, last));
-	}
-	order
-}
-
 #[test]
 fn a_captured_session_replayed_in_order_and_shuffled_opens_to_the_same_requests() {
 	let key = server_key(API_KEY);
@@ -86,7 +79,6 @@ fn a_captured_session_replayed_in_order_and_shuffled_opens_to_the_same_requests(
 	assert!(script.syncs.len() >= 25, "{} syncs", script.syncs.len());
 
 	let order = shuffled(script.len(), &mut rng);
-	assert!(order.windows(2).any(|pair| pair[0] > pair[1]));
 	let mut replayed = vec![0; script.len()];
 	for index in (0..script.len()).chain(order) {
 		let body = captured[index].clone();
@@ -124,89 +116,40 @@ fn a_sealed_reply_replayed_as_a_request_is_unopenable() {
 	}
 }
 
-pub fn replay_captured(session: &mut Session) {
-	let Session {
-		harness,
-		model,
-		captured,
-	} = session;
-	let before = harness.storage.state().clone();
-	let transactions = harness.storage.transactions();
+pub fn replay_captured(session: &mut Session<Harness>) {
+	let before = session.server.storage.state().clone();
+	let transactions = session.server.storage.transactions();
 	let mut rng = SplitMix64::new(0x0050_4c41_5953);
-	let order = shuffled(captured.len(), &mut rng);
-	assert!(order.windows(2).any(|pair| pair[0] > pair[1]));
-
-	let (mut conflicts, mut too_large, mut gets, mut puts) = (0, 0, 0, 0);
-	for index in (0..captured.len()).chain(order) {
-		let Captured { body, sent } = &captured[index];
+	let count = session.captured.len();
+	let mut replays = Replays::default();
+	for index in (0..count).chain(shuffled(count, &mut rng)) {
+		let body = &session.captured[index].body;
 		let request_nonce = nonce_of(body);
-		let Http::Ok(reply) = harness.exchange(body.clone(), rng.array()) else {
+		let Http::Ok(reply) = session.server.exchange(body.clone(), rng.array()) else {
 			panic!("replay {index} got no sealed reply");
 		};
-		let inner = harness
+		let inner = session
+			.server
 			.open(&request_nonce, &reply)
 			.unwrap_or_else(|| panic!("replay {index} does not open under its own nonce"));
 		let mut other = request_nonce;
 		other[index % 12] ^= 0x01;
-		assert_eq!(harness.open(&other, &reply), None, "replay {index}");
-
-		match (*sent, client::decode_response(&inner)) {
-			(
-				Sent::Sync {
-					since,
-					writes: sent,
-				},
-				Response::Sync {
-					results,
-					changes,
-					next_seq,
-					more,
-				},
-			) => {
-				let expected: Vec<_> = sent.iter().map(|write| model.judge(write)).collect();
-				assert_eq!(results, expected, "replay {index}");
-				for result in results {
-					assert_eq!(result.seq, Seq(0), "replay {index}");
-					match result.status {
-						Status::Conflict => conflicts += 1,
-						Status::TooLarge => too_large += 1,
-						Status::Accepted => panic!("replay {index} stored a write"),
-					}
-				}
-				model.check_changes(since, &changes, next_seq, more, inner.len());
-			}
-			(Sent::Get, response) => {
-				assert_eq!(response, model.get(), "replay {index}");
-				gets += 1;
-			}
-			(Sent::Put { v }, response) => {
-				assert_eq!(response, model.judge_put(v), "replay {index}");
-				assert!(
-					matches!(
-						response,
-						Response::Put {
-							status: Status::Conflict,
-							..
-						}
-					),
-					"replay {index}"
-				);
-				puts += 1;
-			}
-			(_, response) => panic!("replay {index} got the wrong action: {response:?}"),
-		}
+		assert_eq!(session.server.open(&other, &reply), None, "replay {index}");
+		session.check_replay(index, &inner, &mut replays);
 	}
 
-	assert!(
-		harness.storage.state() == &before,
-		"a replay changed the store"
-	);
-	assert_eq!(harness.storage.state().latest(), model.latest());
+	let storage = &session.server.storage;
+	assert!(storage.state() == &before, "a replay changed the store");
+	assert_eq!(storage.state().latest(), session.model.latest());
+	assert_eq!(storage.transactions(), transactions + 2 * count);
+	assert!(session.server.failures.is_empty());
 	assert_eq!(
-		harness.storage.transactions(),
-		transactions + 2 * captured.len()
+		replays,
+		Replays {
+			conflicts: 2 * 2_301,
+			too_large: 2,
+			gets: 2 * 4,
+			puts: 2 * 4,
+		}
 	);
-	assert!(harness.failures.is_empty());
-	assert_eq!((conflicts, too_large), (2 * 2_301, 2));
-	assert_eq!((gets, puts), (2 * 4, 2 * 4));
 }
