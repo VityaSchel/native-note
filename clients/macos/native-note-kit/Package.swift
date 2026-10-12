@@ -24,6 +24,7 @@ let package = Package(
 				.product(name: "SQLCipher", package: "SQLCipher.swift"),
 				.product(name: "argon2", package: "phc-winner-argon2"),
 			],
+			resources: [.copy("Resources/english.txt")],
 			swiftSettings: [.defaultIsolation(MainActor.self)] + upcomingFeatures
 		),
 		.executableTarget(

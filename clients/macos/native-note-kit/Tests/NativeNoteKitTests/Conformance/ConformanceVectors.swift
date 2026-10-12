@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-private enum Hex {
+enum Hex {
 	static func decode(_ string: String) -> Data? {
 		guard string.count.isMultiple(of: 2) else { return nil }
 		var bytes = Data(capacity: string.count / 2)
@@ -21,14 +21,6 @@ enum VectorFile: String, CaseIterable {
 	case blinding, content, note, frames, envelope, padding, sync, recovery
 	case mnemonic
 
-	var deferredToPhase: Int? {
-		switch self {
-		case .argon2, .hkdf, .export, .markdown: nil
-		case .blinding, .content, .note, .frames, .envelope, .padding, .sync, .recovery: 5
-		case .mnemonic: 6
-		}
-	}
-
 	var fileName: String { "\(rawValue).json" }
 }
 
@@ -47,6 +39,7 @@ enum Vectors {
 		func bool(_ key: String) -> Bool? { fields[key] as? Bool }
 		func bytes(_ key: String) -> Data? { string(key).flatMap(Hex.decode) }
 		func objects(_ key: String) -> [[String: Any]]? { fields[key] as? [[String: Any]] }
+		func object(_ key: String) -> [String: Any]? { fields[key] as? [String: Any] }
 
 		func require(_ key: String) throws -> Data {
 			try #require(bytes(key), "case \(name) is missing hex field \(key)")
@@ -60,7 +53,6 @@ enum Vectors {
 	}
 
 	static func load(_ file: VectorFile) throws -> [Case] {
-		try #require(file.deferredToPhase == nil, "\(file.fileName) is listed as deferred")
 		let url = try bundledVectorsDirectory.appending(path: file.fileName)
 		let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url))
 		let cases = try #require((object as? [String: Any])?["cases"] as? [[String: Any]], "\(file.fileName) has no cases")

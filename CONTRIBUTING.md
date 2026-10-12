@@ -155,7 +155,7 @@ xcrun xccov view --report --only-targets build/coverage.xcresult
 
 Views below `ContentView` take plain data, not `AppModel`, so the Xcode canvas can render them without a database. Sample fixtures live behind `#if DEBUG` — and so must the `#Preview` blocks that use them, because previews are compiled in Release too.
 
-Package tests read `spec/vectors` from their bundle, copied in through the `Tests/NativeNoteKitTests/vectors` symlink. A new vector file fails the tests until `VectorFile` marks it replayed or deferred to a phase.
+Package tests read `spec/vectors` from their bundle, copied in through the `Tests/NativeNoteKitTests/vectors` symlink. A new vector file fails the tests until `VectorFile` lists it.
 
 **Verified locally only.** CI has no macOS runner, so run both test commands before a pull request that touches the client.
 
