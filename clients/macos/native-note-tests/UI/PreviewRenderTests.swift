@@ -33,6 +33,10 @@ struct PreviewRenderTests {
 		render(SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }), width: 440, height: 300)
 		render(ChangePasswordView(turnsTouchIDOff: true, change: { _, _ in nil }, done: {}), width: 360, height: 300)
 		render(TurnOnTouchIDView(turnOn: { _ in nil }, done: {}), width: 360, height: 160)
+		let status = AppModel.SyncStatus(phase: .idle, server: "http://notes.example:8080/", lastSynced: Date(), problems: ["A note is larger than 1 MB."])
+		render(SecuritySettings(touchIDAvailable: true, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }, sync: SyncControls(status: status)), width: 440, height: 520)
+		render(SyncSetupView(mode: .setUp, controls: SyncControls(), done: {}), width: 440, height: 300)
+		render(RecoveryWords(words: (1 ... 24).map { "word\($0)" }), width: 440, height: 260)
 	}
 
 	@Test func noteRows() {

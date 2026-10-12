@@ -26,7 +26,7 @@ private let textsWithoutFrontMatter: [String] = {
 }()
 
 private func note(_ body: String, created: Int64 = 1_790_283_600_123, updated: Int64 = 1_790_325_015_456, v: UInt32 = 0) -> Note {
-	Note(id: UUID(), body: body, createdAt: Date(epochMilliseconds: created), updatedAt: Date(epochMilliseconds: updated), v: v)
+	Note(id: UUID(), body: body, createdAt: created, updatedAt: updated, v: v)
 }
 
 private func document(_ fields: [String]) -> String {
@@ -104,6 +104,7 @@ struct NoteMarkdownTests {
 		(-8_640_000_000_000_000, "-271821-04-20T00:00:00.000Z"),
 		(31_494_784_780_799_000, "+999999-12-31T23:59:59.000Z"),
 		(.min, "-292275055-05-16T16:47:04.192Z"),
+		(.max, "+292278994-08-17T07:12:55.807Z"),
 	])
 	func timestampsKeepEveryMillisecond(milliseconds: Int64, expected: String) throws {
 		let rendered = NoteMarkdown.render(note("Timed", created: milliseconds, updated: milliseconds))
@@ -111,8 +112,8 @@ struct NoteMarkdownTests {
 		#expect(rendered.contains("\ncreated: \(expected)\nupdated: \(expected)\n"))
 
 		let parsed = try NoteMarkdown.parse(rendered)
-		#expect(parsed.createdAt.epochMilliseconds == milliseconds)
-		#expect(parsed.updatedAt.epochMilliseconds == milliseconds)
+		#expect(parsed.createdAt == milliseconds)
+		#expect(parsed.updatedAt == milliseconds)
 	}
 
 	@Test(arguments: [Int64(4_398_996_285_164_484), -4_399_850_991_844_399, 8_639_999_999_999_999, -8_639_999_999_999_999])
@@ -121,8 +122,8 @@ struct NoteMarkdownTests {
 
 		let parsed = try NoteMarkdown.parse(NoteMarkdown.render(original))
 
-		#expect(abs(parsed.createdAt.timeIntervalSince(original.createdAt)) < 0.002)
-		#expect(abs(parsed.updatedAt.timeIntervalSince(original.updatedAt)) < 0.002)
+		#expect(parsed.createdAt == original.createdAt)
+		#expect(parsed.updatedAt == original.updatedAt)
 	}
 
 	@Test(arguments: textsWithoutFrontMatter)
@@ -167,7 +168,6 @@ struct NoteMarkdownTests {
 		("created", "created: 002026-09-24T21:00:00.123Z"),
 		("created", "created: -000000-01-01T00:00:00.000Z"),
 		("created", "created: +0999999-12-31T23:59:59.000Z"),
-		("created", "created: +292278994-08-17T07:12:55.807Z"),
 		("created", "created: +292278994-08-17T07:12:55.808Z"),
 		("created", "created: +1000000000-01-01T00:00:00.000Z"),
 		("created", "created:X2026-09-24T21:00:00.123Z"),

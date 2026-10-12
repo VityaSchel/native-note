@@ -17,7 +17,8 @@ CREATE TABLE note (
     deleted   INTEGER NOT NULL DEFAULT 0,
     dirty     INTEGER NOT NULL DEFAULT 0,
     v         INTEGER NOT NULL DEFAULT 0,
-    seq       INTEGER
+    seq       INTEGER,
+    pulled    INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 CREATE INDEX note_updatedAt ON note (updatedAt DESC);
 CREATE INDEX note_dirty ON note (dirty) WHERE dirty = 1;
@@ -40,7 +41,7 @@ CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 
 `content=note` is an external-content index: without the three triggers it is populated once and never updated again.
 
-Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `seq` stays `NULL`, since a change carries no `seq`. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
+Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion; notes hold them as `Int64` and convert to `Date` only to display, so a pulled timestamp anywhere in `i64` survives. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `seq` stays `NULL`, since a change carries no `seq`. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
 
 ### Local DB encryption
 
@@ -140,7 +141,7 @@ Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-ke
 **Setup:**
 1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to restore before any words are shown.
 2. Generate the Content key and the Recovery key with a CSPRNG.
-3. Show the 24 words, selectable and copyable as text, and require three random words to be filled back in.
+3. Show the 24 words, selectable and copyable as text, and require three random words to be filled back in, ignoring case and surrounding spaces.
 4. `put` the Content key encrypted under the Recovery key and, once that `put` has landed, store the Content key, API key, URL and pin in `meta`, and enable sync.
 
 **Rotation:** shows new words the same way as setup, then `put`s the Content key under the new Recovery key. After it reports that another device rotated, rotation asks for the current words; once the fetched blob opens under them and holds this library's Content key, the pin takes its `v` and rotation can run again.
@@ -150,6 +151,14 @@ Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-ke
 2. `get` the blob and open it with the Recovery key; nothing is stored unless it opens.
 3. Store the Content key, API key, URL and the `get`'s `v` as the pin in `meta`.
 4. Sync as usual from `seq = 0`. The library's existing notes are dirty, so they push.
+
+## Sync
+
+A sync runs 30 s after the last edit, when the app becomes or stops being the active app, after unlock, and on Sync Now, one at a time. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. While one applies, saves that fall due wait, and an edit typed meanwhile on a note a pull replaced moves to that note's copy. Requests made during a sync share the next one.
+
+A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text whichever path flushes it.
+
+The server URL may be plain `http`: everything after the URL is sealed, so the app allows arbitrary loads under App Transport Security.
 
 ## Pull verification
 

@@ -11,7 +11,7 @@ nonisolated enum LibraryArchive {
 
 	static func archive(_ notes: [Note]) throws -> Data {
 		let entries = zip(notes, NoteMarkdown.fileNames(for: notes)).map { note, name in
-			ZipEntry(name: name, data: Data(NoteMarkdown.render(note).utf8), modified: note.updatedAt)
+			ZipEntry(name: name, data: Data(NoteMarkdown.render(note).utf8), modified: note.updated)
 		}
 		return try ZipArchive.write(entries)
 	}

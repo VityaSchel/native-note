@@ -1,7 +1,7 @@
 import Foundation
 
 nonisolated enum Schema {
-	static let migrations = [version1]
+	static let migrations = [version1, version2]
 
 	static func migrate(_ connection: SQLiteConnection) throws {
 		let applied = Int(try connection.scalar("PRAGMA user_version").flatMap(Int.init) ?? 0)
@@ -52,5 +52,10 @@ nonisolated enum Schema {
 			k TEXT PRIMARY KEY NOT NULL,
 			v BLOB NOT NULL
 		) STRICT;
+		"""
+
+	/// Marks a row whose text a pull wrote, so a save of an edit begun before that pull lands as a copy.
+	private static let version2 = """
+		ALTER TABLE note ADD COLUMN pulled INTEGER NOT NULL DEFAULT 0;
 		"""
 }

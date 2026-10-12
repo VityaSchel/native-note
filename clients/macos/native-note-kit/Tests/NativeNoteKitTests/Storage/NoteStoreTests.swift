@@ -31,12 +31,12 @@ struct NoteStoreTests {
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var note = sampleNote()
-		note.updatedAt = Date(epochMilliseconds: 1_760_000_000_123)
+		note.updatedAt = 1_760_000_000_123
 
 		try await notes.save(note)
 
 		let stored = try await notes.note(id: note.id)
-		#expect(stored?.updatedAt.epochMilliseconds == 1_760_000_000_123)
+		#expect(stored?.updatedAt == 1_760_000_000_123)
 	}
 
 	@Test func updatesInPlaceRatherThanInserting() async throws {
@@ -52,7 +52,7 @@ struct NoteStoreTests {
 
 		#expect(try await notes.liveNotes().count == 1)
 		#expect(try await notes.note(id: note.id)?.body == "rewritten")
-		#expect(try await notes.note(id: note.id)?.v == 2)
+		#expect(try await notes.note(id: note.id)?.v == 0, "a local save never changes the version")
 	}
 
 	@Test func deletionSetsAFlagInsteadOfRemovingTheRow() async throws {
@@ -62,7 +62,7 @@ struct NoteStoreTests {
 		let note = sampleNote()
 		try await notes.save(note)
 
-		try await notes.markDeleted(id: note.id, at: Date(epochMilliseconds: 1_760_000_009_000))
+		try await notes.markDeleted(id: note.id, at: 1_760_000_009_000)
 
 		let tombstone = try await notes.note(id: note.id)
 		#expect(tombstone?.deleted == true)
@@ -90,7 +90,7 @@ struct NoteStoreTests {
 		let notes = try await openStore(at: url)
 		var note = sampleNote(body: "kayak")
 		try await notes.save(note)
-		try await notes.markDeleted(id: note.id, at: Date(epochMilliseconds: 1_760_000_009_000))
+		try await notes.markDeleted(id: note.id, at: 1_760_000_009_000)
 
 		note.body = "kayak, typed before the delete"
 		try await notes.save(note)
@@ -106,9 +106,9 @@ struct NoteStoreTests {
 		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var older = sampleNote(body: "older")
-		older.updatedAt = Date(epochMilliseconds: 1_000)
+		older.updatedAt = 1_000
 		var newer = sampleNote(body: "newer")
-		newer.updatedAt = Date(epochMilliseconds: 2_000)
+		newer.updatedAt = 2_000
 		newer.dirty = true
 
 		try await notes.save(older)
@@ -141,7 +141,7 @@ struct NoteStoreTests {
 		#expect(try await notes.note(id: note.id)?.seq == 4_294_967_296)
 
 		let created = note.createdAt
-		note.createdAt = Date(epochMilliseconds: 1)
+		note.createdAt = 1
 		note.body = "edited"
 		try await notes.save(note)
 
@@ -156,9 +156,9 @@ struct NoteStoreTests {
 		let note = sampleNote()
 		try await notes.save(note)
 
-		try await notes.markDeleted(id: note.id, at: Date(epochMilliseconds: 1_760_000_009_000))
+		try await notes.markDeleted(id: note.id, at: 1_760_000_009_000)
 
-		#expect(try await notes.note(id: note.id)?.updatedAt.epochMilliseconds == 1_760_000_009_000)
+		#expect(try await notes.note(id: note.id)?.updatedAt == 1_760_000_009_000)
 	}
 
 	@Test func aMissingNoteReadsAsNil() async throws {
@@ -224,7 +224,7 @@ struct NoteStoreTests {
 		#expect(try await notes.search("kayak").isEmpty)
 		#expect(try await notes.search("canoe").count == 1)
 
-		try await notes.markDeleted(id: note.id, at: Date())
+		try await notes.markDeleted(id: note.id, at: Date().epochMilliseconds)
 		#expect(try await notes.search("canoe").isEmpty)
 	}
 

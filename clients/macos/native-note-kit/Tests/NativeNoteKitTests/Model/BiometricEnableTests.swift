@@ -16,7 +16,7 @@ private func keyMaterial(in subject: Any, at path: String, seen: inout Set<Objec
 	}
 }
 
-private let modelDependencies: Set = ["keyStore", "makeParameters", "calibrate", "searchNotes", "shakeTimer"]
+private let modelDependencies: Set = ["keyStore", "makeParameters", "calibrate", "searchNotes", "shakeTimer", "makeTransport"]
 
 private func isOpaque(_ value: Any) -> Bool {
 	let mirror = Mirror(reflecting: value)

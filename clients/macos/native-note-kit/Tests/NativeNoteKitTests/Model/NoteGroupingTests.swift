@@ -21,7 +21,7 @@ private func today(hour: Int) -> Date {
 }
 
 private func note(_ body: String, at moment: Date) -> Note {
-	Note(id: UUID(), body: body, createdAt: moment, updatedAt: moment)
+	Note(id: UUID(), body: body, createdAt: moment.epochMilliseconds, updatedAt: moment.epochMilliseconds)
 }
 
 struct NoteGroupingTests {

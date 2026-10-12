@@ -73,8 +73,8 @@ nonisolated enum NoteMarkdown {
 	private static func value(of field: Field, in note: Note) -> String {
 		switch field {
 		case .id: note.id.uuidString.lowercased()
-		case .created: Timestamp.string(from: note.createdAt.epochMilliseconds)
-		case .updated: Timestamp.string(from: note.updatedAt.epochMilliseconds)
+		case .created: Timestamp.string(from: note.createdAt)
+		case .updated: Timestamp.string(from: note.updatedAt)
 		case .v: String(note.v)
 		}
 	}
@@ -111,12 +111,8 @@ nonisolated enum NoteMarkdown {
 		return values
 	}
 
-	private static func moment(_ field: Field, from values: [Field: String]) throws -> Date {
-		let date = Date(epochMilliseconds: try decode(field, from: values, Timestamp.milliseconds(from:), canonical: Timestamp.string(from:)))
-		guard Int64(exactly: (date.timeIntervalSince1970 * 1000).rounded()) != nil else {
-			throw Failure.invalidField(field.rawValue)
-		}
-		return date
+	private static func moment(_ field: Field, from values: [Field: String]) throws -> Int64 {
+		try decode(field, from: values, Timestamp.milliseconds(from:), canonical: Timestamp.string(from:))
 	}
 
 	private static func decode<Value>(

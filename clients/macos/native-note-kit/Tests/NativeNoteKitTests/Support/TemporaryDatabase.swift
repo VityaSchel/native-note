@@ -34,6 +34,6 @@ func openStore(at url: URL, key: SymmetricKey = databaseKey) async throws -> Not
 }
 
 func sampleNote(body: String = "first line\nsecond line") -> Note {
-	let moment = Date(epochMilliseconds: 1_760_000_000_000)
+	let moment: Int64 = 1_760_000_000_000
 	return Note(id: UUID(), body: body, createdAt: moment, updatedAt: moment)
 }

@@ -27,7 +27,7 @@ struct LibraryArchiveTests {
 
 	@Test func aNoteRepeatedInTheArchiveIsRefused() throws {
 		let note = sampleNote(body: "twice")
-		let entries = ["a.md", "b.md"].map { ZipEntry(name: $0, data: Data(NoteMarkdown.render(note).utf8), modified: note.updatedAt) }
+		let entries = ["a.md", "b.md"].map { ZipEntry(name: $0, data: Data(NoteMarkdown.render(note).utf8), modified: note.updated) }
 
 		#expect(throws: LibraryArchive.Failure.repeatedNote(note.id)) {
 			try LibraryArchive.notes(in: ZipArchive.write(entries))

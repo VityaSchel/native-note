@@ -14,6 +14,7 @@ final class SaveScheduler {
 	private var pending: [UUID: Pending] = [:]
 	private var writing: [UUID: Task<Bool, Never>] = [:]
 	private var discarding = false
+	private var holds = 0
 
 	init(delay: Duration = .milliseconds(300), sleep: @escaping Sleep = { try await Task.sleep(for: $0) }) {
 		self.delay = delay
@@ -28,7 +29,7 @@ final class SaveScheduler {
 		}
 		let deadline = Task { [delay, sleep] in
 			try? await sleep(delay)
-			guard !Task.isCancelled else { return }
+			guard !Task.isCancelled, holds == 0 else { return }
 			await flush(id)
 		}
 		pending[id] = Pending(save: save, deadline: deadline)
@@ -61,6 +62,25 @@ final class SaveScheduler {
 			landed = saved && landed
 		}
 		return landed
+	}
+
+	func isPending(_ id: UUID) -> Bool {
+		pending[id] != nil
+	}
+
+	/// Keeps saves that fall due from landing until every hold is released, so a sync applies with none landing under it.
+	func hold() {
+		holds += 1
+	}
+
+	func release() {
+		holds -= 1
+		guard holds == 0 else { return }
+		Task { await flushAll() }
+	}
+
+	func cancel(_ id: UUID) {
+		pending.removeValue(forKey: id)?.deadline.cancel()
 	}
 
 	func discard(_ id: UUID) async {

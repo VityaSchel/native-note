@@ -123,7 +123,7 @@ rm -rf "/Applications/Native Note.app"
 ditto "build/Build/Products/Release/Native Note.app" "/Applications/Native Note.app"
 ```
 
-Package tests run without the app host:
+Package tests run without the app host. Like `xcodebuild`, they need Xcode selected, and the sync tests build and run the server from `server/`, so they need the Rust toolchain too:
 
 ```sh
 cd clients/macos/native-note-kit

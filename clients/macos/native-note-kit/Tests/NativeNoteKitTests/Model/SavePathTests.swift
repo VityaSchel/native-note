@@ -182,7 +182,7 @@ struct SavePathTests {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		let created = Date(epochMilliseconds: 1_760_000_000_000)
+		let created: Int64 = 1_760_000_000_000
 		let seeded = Note(id: UUID(), body: "from sync", createdAt: created, updatedAt: created, v: 3, seq: 7)
 		let seeding = try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: try await workspaceKey())
 		try await seeding.save(seeded)

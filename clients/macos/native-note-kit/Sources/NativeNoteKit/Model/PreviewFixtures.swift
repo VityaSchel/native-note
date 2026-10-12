@@ -5,7 +5,7 @@ import Foundation
 		public static let sampleNow = Date(timeIntervalSince1970: 1_786_000_000)
 
 		public static func sample(_ number: Int, _ body: String, minutesAgo: Int) -> Note {
-			let moment = sampleNow.addingTimeInterval(-Double(minutesAgo) * 60)
+			let moment = sampleNow.addingTimeInterval(-Double(minutesAgo) * 60).epochMilliseconds
 			let id = UUID(uuidString: String(format: "00000000-0000-4000-8000-%012d", number))!
 			return Note(id: id, body: body, createdAt: moment, updatedAt: moment)
 		}

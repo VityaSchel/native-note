@@ -27,7 +27,7 @@ struct NoteRow: View {
 	}
 
 	var dateLabel: String {
-		NoteGrouping.dateLabel(for: note.updatedAt, now: now)
+		NoteGrouping.dateLabel(for: note.updated, now: now)
 	}
 
 	var body: some View {

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SQLCipher
 
@@ -26,9 +27,11 @@ nonisolated final class SQLiteStatement {
 	deinit { sqlite3_finalize(handle) }
 
 	func bind(_ index: Int32, _ value: Data) {
-		value.withUnsafeBytes { bytes in
-			_ = sqlite3_bind_blob(handle, index, bytes.baseAddress, Int32(bytes.count), transientBinding)
-		}
+		value.withUnsafeBytes { bind(index, $0) }
+	}
+
+	func bind(_ index: Int32, _ bytes: UnsafeRawBufferPointer) {
+		sqlite3_bind_blob(handle, index, bytes.baseAddress, Int32(bytes.count), transientBinding)
 	}
 
 	func bind(_ index: Int32, _ value: String) {
@@ -62,6 +65,12 @@ nonisolated final class SQLiteStatement {
 	func data(_ column: Int32) -> Data {
 		guard let bytes = sqlite3_column_blob(handle, column) else { return Data() }
 		return Data(bytes: bytes, count: Int(sqlite3_column_bytes(handle, column)))
+	}
+
+	/// Reads a blob in place, so key material read from it leaves no copy behind.
+	func key(_ column: Int32) -> SymmetricKey {
+		let bytes = sqlite3_column_blob(handle, column)
+		return SymmetricKey(data: UnsafeRawBufferPointer(start: bytes, count: Int(sqlite3_column_bytes(handle, column))))
 	}
 
 	func string(_ column: Int32) -> String {

@@ -34,8 +34,8 @@ struct LibraryExchangeTests {
 		let original = source.notes.sorted { $0.id.uuidString < $1.id.uuidString }
 		#expect(restored.map(\.id) == original.map(\.id))
 		#expect(restored.map(\.body) == original.map(\.body))
-		#expect(restored.map(\.createdAt.epochMilliseconds) == original.map(\.createdAt.epochMilliseconds))
-		#expect(restored.map(\.updatedAt.epochMilliseconds) == original.map(\.updatedAt.epochMilliseconds))
+		#expect(restored.map(\.createdAt) == original.map(\.createdAt))
+		#expect(restored.map(\.updatedAt) == original.map(\.updatedAt))
 		let disk = try await observer(of: targetDirectory)
 		#expect(try await disk.liveNotes().count == 3)
 	}
@@ -84,7 +84,7 @@ struct LibraryExchangeTests {
 		await model.flushPendingSaves()
 		let disk = try #require(try await observer(of: directory).note(id: id))
 		#expect(disk.body == "Shopping\nbread and milk")
-		#expect(disk.updatedAt.epochMilliseconds == edited.updatedAt.epochMilliseconds)
+		#expect(disk.updatedAt == edited.updatedAt)
 	}
 
 	@Test func anImportAddsOnlyNotesTheLibraryHasNeverHeld() async throws {
@@ -113,7 +113,7 @@ struct LibraryExchangeTests {
 		#expect(try await [disk.note(id: edited), disk.note(id: deleted)] == held)
 		let stored = try #require(try await disk.note(id: added.id))
 		#expect(stored.body == added.body)
-		#expect(stored.updatedAt.epochMilliseconds == added.updatedAt.epochMilliseconds)
+		#expect(stored.updatedAt == added.updatedAt)
 		#expect(stored.dirty)
 	}
 

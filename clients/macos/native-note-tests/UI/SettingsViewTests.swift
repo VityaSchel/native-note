@@ -267,6 +267,19 @@ struct SettingsViewTests {
 		}
 	}
 
+	/// Wrapping labels size the form over several layout passes, so the size counts once it holds.
+	private func settledSize(of controller: NSHostingController<SettingsView>, in window: NSWindow) async -> NSSize {
+		var size = controller.preferredContentSize
+		var held = 0
+		for _ in 0 ..< 400 where held < 20 {
+			spin(window)
+			await Task.yield()
+			held = controller.preferredContentSize == size ? held + 1 : 0
+			size = controller.preferredContentSize
+		}
+		return size
+	}
+
 	private func spin(_ window: NSWindow) {
 		window.contentView?.layoutSubtreeIfNeeded()
 		RunLoop.current.run(until: Date().addingTimeInterval(0.005))
@@ -298,7 +311,7 @@ struct SettingsViewTests {
 		defer { window.contentViewController = nil }
 		await settle(window) { controller.preferredContentSize.height > 0 && !scrollViews(in: controller.view).isEmpty }
 
-		let unlocked = controller.preferredContentSize
+		let unlocked = await settledSize(of: controller, in: window)
 		let form = try #require(scrollViews(in: controller.view).first)
 		#expect(unlocked.width == SettingsView.width)
 		#expect(unlocked.height != SettingsView.lockedHeight)
@@ -308,10 +321,10 @@ struct SettingsViewTests {
 		#expect(try #require(form.documentView).frame.height <= form.contentSize.height + 0.5)
 		#expect(form.contentSize.height >= unlocked.height - 1)
 
-		await model.lock()
-		await settle(window) { controller.preferredContentSize != unlocked }
-
 		let locked = NSSize(width: SettingsView.width, height: SettingsView.lockedHeight)
+		await model.lock()
+		await settle(window) { isAbout(window.contentMaxSize, locked) && isAbout(content(of: window), locked) }
+
 		#expect(controller.preferredContentSize == locked)
 		#expect(isAbout(window.contentMinSize, locked))
 		#expect(isAbout(window.contentMaxSize, locked))
@@ -321,7 +334,7 @@ struct SettingsViewTests {
 		#expect(isAbout(content(of: window), locked))
 
 		await model.submit(password: workspacePassword)
-		await settle(window) { controller.preferredContentSize == unlocked }
+		await settle(window) { controller.preferredContentSize == unlocked && isAbout(content(of: window), unlocked) }
 
 		#expect(model.phase == .unlocked)
 		#expect(controller.preferredContentSize == unlocked)

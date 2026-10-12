@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 actor NoteStore {
-	private static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, seq"
+	static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, seq"
 
 	private let url: URL
 	private var opened: SQLiteConnection?
@@ -30,35 +30,71 @@ actor NoteStore {
 		opened = nil
 	}
 
-	private var connection: SQLiteConnection {
+	var connection: SQLiteConnection {
 		get throws {
 			guard let opened else { throw SQLiteError.closed }
 			return opened
 		}
 	}
 
-	func save(_ note: Note) throws {
+	enum Saved: Equatable {
+		case saved
+		/// A pull replaced the note after the edit began, at the `v` the note carries, so the edit became this new note.
+		case copied(UUID)
+	}
+
+	/// Writes a local edit, never `v`, never over a tombstone, and never over text a pull wrote after the edit began.
+	@discardableResult
+	func save(_ note: Note) throws -> Saved {
+		try connection.transaction {
+			let held = try connection.prepare("SELECT v, pulled FROM note WHERE uuid = ?1")
+			held.bind(1, note.id.bytes)
+			guard try held.step() else {
+				try put(note, pulled: false)
+				return .saved
+			}
+			if held.int(0) != Int64(note.v), held.int(1) != 0 {
+				let copy = Note(id: UUID(), body: note.body, createdAt: note.createdAt, updatedAt: note.updatedAt, dirty: true)
+				try put(copy, pulled: false)
+				return .copied(copy.id)
+			}
+			let statement = try connection.prepare(
+				"UPDATE note SET body = ?2, updatedAt = ?3, deleted = ?4, dirty = ?5, pulled = 0 WHERE uuid = ?1 AND deleted = 0"
+			)
+			statement.bind(1, note.id.bytes)
+			statement.bind(2, note.body)
+			statement.bind(3, note.updatedAt)
+			statement.bind(4, note.deleted ? 1 : 0)
+			statement.bind(5, note.dirty ? 1 : 0)
+			try statement.step()
+			return .saved
+		}
+	}
+
+	/// Writes every column, tombstones included, unlike a local save.
+	func put(_ note: Note, pulled: Bool) throws {
 		let statement = try connection.prepare(
 			"""
-			INSERT INTO note (\(Self.columns)) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+			INSERT INTO note (\(Self.columns), pulled) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
 			ON CONFLICT(uuid) DO UPDATE SET
 				body = excluded.body,
+				createdAt = excluded.createdAt,
 				updatedAt = excluded.updatedAt,
 				deleted = excluded.deleted,
 				dirty = excluded.dirty,
 				v = excluded.v,
-				seq = excluded.seq
-			WHERE note.deleted = 0
+				pulled = excluded.pulled
 			"""
 		)
 		statement.bind(1, note.id.bytes)
 		statement.bind(2, note.body)
-		statement.bind(3, note.createdAt.epochMilliseconds)
-		statement.bind(4, note.updatedAt.epochMilliseconds)
+		statement.bind(3, note.createdAt)
+		statement.bind(4, note.updatedAt)
 		statement.bind(5, note.deleted ? 1 : 0)
 		statement.bind(6, note.dirty ? 1 : 0)
 		statement.bind(7, Int64(note.v))
 		if let seq = note.seq { statement.bind(8, seq) } else { statement.bindNull(8) }
+		statement.bind(9, pulled ? 1 : 0)
 		try statement.step()
 	}
 
@@ -117,16 +153,16 @@ actor NoteStore {
 		return try collect(statement)
 	}
 
-	func markDeleted(id: UUID, at moment: Date) throws {
+	func markDeleted(id: UUID, at moment: Int64) throws {
 		let statement = try connection.prepare(
-			"UPDATE note SET deleted = 1, dirty = 1, body = '', updatedAt = ?2 WHERE uuid = ?1"
+			"UPDATE note SET deleted = 1, dirty = 1, body = '', updatedAt = ?2, pulled = 0 WHERE uuid = ?1"
 		)
 		statement.bind(1, id.bytes)
-		statement.bind(2, moment.epochMilliseconds)
+		statement.bind(2, moment)
 		try statement.step()
 	}
 
-	private func collect(_ statement: SQLiteStatement) throws -> [Note] {
+	func collect(_ statement: SQLiteStatement) throws -> [Note] {
 		var notes: [Note] = []
 		while try statement.step() {
 			if let note = Self.note(from: statement) { notes.append(note) }
@@ -134,13 +170,13 @@ actor NoteStore {
 		return notes
 	}
 
-	private static func note(from statement: SQLiteStatement) -> Note? {
+	static func note(from statement: SQLiteStatement) -> Note? {
 		guard let id = UUID(bytes: statement.data(0)) else { return nil }
 		return Note(
 			id: id,
 			body: statement.string(1),
-			createdAt: Date(epochMilliseconds: statement.int(2)),
-			updatedAt: Date(epochMilliseconds: statement.int(3)),
+			createdAt: statement.int(2),
+			updatedAt: statement.int(3),
 			deleted: statement.int(4) != 0,
 			dirty: statement.int(5) != 0,
 			v: UInt32(statement.int(6)),

@@ -19,12 +19,13 @@ import Observation
 	}
 
 	public private(set) var phase: Phase = .loading
-	private(set) var notes: [Note] = []
+	var notes: [Note] = []
 	public private(set) var failure: Failure?
 	public private(set) var isImporting = false
 	public private(set) var isBiometricUnlockEnabled = false
 	public private(set) var touchID = TouchID.hidden
 	public private(set) var shake = Shake()
+	public internal(set) var syncStatus = SyncStatus()
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
@@ -63,7 +64,9 @@ import Observation
 	}
 
 	private let directory: URL
-	private let scheduler: SaveScheduler
+	let scheduler: SaveScheduler
+	let makeTransport: @Sendable (URL) -> any SyncTransport
+	let syncDelay: Duration
 	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private let calibrate: @Sendable () throws -> Argon2.Parameters
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
@@ -72,7 +75,13 @@ import Observation
 	private let shakeTimer: SaveScheduler.Sleep
 	private var unlockParameters: UnlockParameters?
 	private var passwordChangesInFlight = 0
-	private var store: NoteStore?
+	var store: NoteStore?
+	var engine: SyncEngine?
+	var idleSync: Task<Void, Never>?
+	var syncLoop: Task<Void, Never>?
+	var syncRequests = 0
+	var syncedThrough = 0
+	var recovery: RecoverySession?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
 	private var searchFailing = false
@@ -101,7 +110,9 @@ import Observation
 		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search,
 		exportParameters: Argon2.Parameters = Argon2.floor,
 		keyStore: (any UnlockKeyStore)? = nil,
-		shakeTimer: @escaping SaveScheduler.Sleep = { try await Task.sleep(for: $0) }
+		shakeTimer: @escaping SaveScheduler.Sleep = { try await Task.sleep(for: $0) },
+		makeTransport: @escaping @Sendable (URL) -> any SyncTransport = { HTTPTransport(url: $0) },
+		syncDelay: Duration = .seconds(30)
 	) {
 		self.directory = directory
 		self.scheduler = scheduler
@@ -111,6 +122,8 @@ import Observation
 		self.exportParameters = exportParameters
 		self.keyStore = keyStore ?? KeychainUnlockKeyStore(directory: directory)
 		self.shakeTimer = shakeTimer
+		self.makeTransport = makeTransport
+		self.syncDelay = syncDelay
 	}
 
 	public func start() {
@@ -148,6 +161,7 @@ import Observation
 	public func lock() async {
 		let closing = store
 		cancelTurningOnTouchID()
+		stopSync()
 		phase = .locked
 		touchIDStop = nil
 		selection = nil
@@ -170,6 +184,7 @@ import Observation
 
 	public func close() async {
 		cancelTurningOnTouchID()
+		stopSync()
 		await scheduler.flushAll()
 		let open = [store, retiring].compactMap(\.self)
 		store = nil
@@ -178,23 +193,25 @@ import Observation
 	}
 
 	public func createNote() async {
-		let now = Date()
+		let now = Date().epochMilliseconds
 		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: true)
 		guard await write({ try await $0.save(note) }) else { return }
 		notes.insert(note, at: 0)
 		selection = note.id
+		syncSoon()
 	}
 
 	public func edit(_ id: UUID, _ body: String) {
 		guard let index = notes.firstIndex(where: { $0.id == id }), notes[index].body != body else { return }
 		var edited = notes[index]
 		edited.body = body
-		edited.updatedAt = Date()
+		edited.updatedAt = Date().epochMilliseconds
 		edited.dirty = true
 		notes[index] = edited
 
 		guard let store else { return }
 		scheduleSave(edited, to: store)
+		syncSoon()
 	}
 
 	public func deleteSelected() async {
@@ -204,9 +221,10 @@ import Observation
 
 	public func delete(_ id: UUID) async {
 		if selection == id { selection = nil }
-		guard await write({ try await $0.markDeleted(id: id, at: Date()) }) else { return }
+		guard await write({ try await $0.markDeleted(id: id, at: Date().epochMilliseconds) }) else { return }
 		await scheduler.discard(id)
 		notes.removeAll { $0.id == id }
+		syncSoon()
 	}
 
 	public func runSearch() async {
@@ -342,10 +360,12 @@ import Observation
 	public func appBecameActive() {
 		isActive = true
 		refreshBiometricUnlock()
+		Task { await syncNow() }
 	}
 
 	public func appResignedActive() {
 		isActive = false
+		Task { await syncNow() }
 		if touchIDStop == .cancel { touchIDStop = nil }
 		settleTouchID()
 	}
@@ -554,6 +574,7 @@ import Observation
 			summary.added += 1
 			if store === self.store { notes.append(note) }
 		}
+		syncSoon()
 		return summary
 	}
 
@@ -561,10 +582,12 @@ import Observation
 		try await store.search(text)
 	}
 
-	private func scheduleSave(_ note: Note, to store: NoteStore) {
+	func scheduleSave(_ note: Note, to store: NoteStore) {
 		scheduler.schedule(note.id) { [weak self] in
 			do {
-				try await store.save(note)
+				if case let .copied(copy) = try await store.save(note) {
+					await self?.saveBecameCopy(note, copy: copy, in: store)
+				}
 				await self?.saveLanded(note.id, in: store)
 				return true
 			} catch {
@@ -620,6 +643,7 @@ import Observation
 			if !search.isEmpty { await runSearch() }
 			phase = .unlocked
 			refreshBiometricUnlock()
+			await startSync(opened)
 			return nil
 		} catch {
 			if case Unlock.Failure.alreadySetUp = error { phase = .locked }

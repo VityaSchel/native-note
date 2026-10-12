@@ -16,7 +16,7 @@ struct LibraryEndToEndTests {
 
 	private func snapshot(_ notes: [Note]) -> [UUID: Snapshot] {
 		Dictionary(uniqueKeysWithValues: notes.map {
-			($0.id, Snapshot(body: $0.body, created: $0.createdAt.epochMilliseconds, updated: $0.updatedAt.epochMilliseconds))
+			($0.id, Snapshot(body: $0.body, created: $0.createdAt, updated: $0.updatedAt))
 		})
 	}
 

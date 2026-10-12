@@ -11,7 +11,7 @@ private func seed(_ password: String, in directory: URL) async throws -> UnlockP
 		url: AppLock.databaseFile(in: directory),
 		key: try Unlock.localDbKey(password: password, parameters: parameters)
 	)
-	try await store.save(Note(id: UUID(), body: "seeded", createdAt: Date(), updatedAt: Date()))
+	try await store.save(Note(id: UUID(), body: "seeded", createdAt: Date().epochMilliseconds, updatedAt: Date().epochMilliseconds))
 	return parameters
 }
 

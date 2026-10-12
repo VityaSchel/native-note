@@ -50,7 +50,7 @@ nonisolated public enum NoteGrouping {
 		let months: [String] = monthNames.monthSymbols
 		var grouped: [(title: String, notes: [Note])] = []
 		for note in notes.sorted(by: { $0.updatedAt > $1.updatedAt }) {
-			let title = boundaries.title(for: note.updatedAt, months: months)
+			let title = boundaries.title(for: note.updated, months: months)
 			if grouped.last?.title == title {
 				grouped[grouped.count - 1].notes.append(note)
 			} else {
