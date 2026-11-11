@@ -46,7 +46,6 @@ extension AppModel {
 		case serverHasLibrary
 		case serverHoldsAnotherLibrary
 		case serverHasNoLibrary
-		case serverLostLibrary
 		case alreadySetUp
 		case rotatedElsewhere
 		case serverBehind
@@ -65,7 +64,6 @@ extension AppModel {
 			case .serverHasLibrary: "This server now holds a library. Enter its recovery phrase to sync this Mac with it."
 			case .serverHoldsAnotherLibrary: "This server holds another library. Native Note cannot merge two libraries; choose a server that holds this one, or an empty one."
 			case .serverHasNoLibrary: "This server no longer holds a library. Continue to start a new one."
-			case .serverLostLibrary: "The server no longer holds this library as this Mac last saw it. It may have been reset or restored from a backup."
 			case .alreadySetUp: "Sync is already set up on this Mac."
 			case .rotatedElsewhere: "The recovery phrase was changed on another device, so this phrase was not saved. Enter the current phrase to continue."
 			case .serverBehind: "The server holds an older recovery phrase than this Mac last saw. It may have been restored from a backup."
@@ -143,10 +141,10 @@ extension AppModel {
 	@discardableResult
 	func stopSync() -> Task<Void, Never>? {
 		let loop = syncLoop
-		let change = keyChange
+		let change = serverChange
 		loop?.cancel()
 		change?.cancel()
-		keyChange = nil
+		serverChange = nil
 		idleSync?.cancel()
 		idleSync = nil
 		engine = nil
@@ -163,7 +161,7 @@ extension AppModel {
 		do {
 			let endpoint = try Self.endpoint(server: server, apiKey: apiKey)
 			if let store, let kept = try await store.keptLibrary() {
-				return try await reattachOrMove(kept, to: endpoint.server, apiKey: endpoint.apiKey, in: store)
+				return await changeServer(kept, to: endpoint.server, apiKey: endpoint.apiKey, in: store)
 			}
 			let settings = SyncSettings(server: endpoint.server, apiKey: endpoint.apiKey, contentKey: SymmetricKey(size: .bits256))
 			guard try await flow(settings).storedVersion() == 0 else { return .success(.existingLibrary) }
@@ -209,40 +207,6 @@ extension AppModel {
 		recovery = nil
 		await startSync(store)
 		return nil
-	}
-
-	/// After the server's key was replaced, as for a lost Mac. Locking cancels it, so neither key outlives the lock.
-	public func changeAPIKey(_ hex: String) async -> SyncSetupFailure? {
-		guard let store else { return .failed("Sync is not set up.") }
-		guard let apiKey = EnvelopeKey.apiKey(fromHex: hex) else { return .invalidAPIKey }
-		let change = Task { [makeTransport] in await Self.adopt(apiKey, in: store, makeTransport) }
-		keyChange = change
-		let failure = await withTaskCancellationHandler { await change.value } onCancel: { change.cancel() }
-		guard keyChange == change else { return failure }
-		keyChange = nil
-		guard failure == nil, store === self.store else { return failure }
-		await stopSync()?.value
-		await startSync(store)
-		return nil
-	}
-
-	/// Keeps the new key only once the server it reaches holds this library: a blob at or past the pin, and the write this Mac's last pull ended on or one that replaced it.
-	private static func adopt(_ apiKey: SymmetricKey, in store: NoteStore, _ makeTransport: @Sendable (URL) -> any SyncTransport) async -> SyncSetupFailure? {
-		do {
-			guard let settings = try await store.syncSettings() else { return .failed("Sync is not set up.") }
-			let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(settings.server))
-			let stored = try await RecoveryFlow(connection: connection).storedVersion()
-			guard stored > 0 else { return .serverLostLibrary }
-			guard stored >= (try await store.pin()) else { return .serverBehind }
-			if let mark = try await store.lastPulled(), try await !SyncEngine.holds(mark, through: connection, since: store.since()) {
-				return .serverLostLibrary
-			}
-			try Task.checkCancellation()
-			try await store.setAPIKey(apiKey)
-			return nil
-		} catch {
-			return setupFailure(error)
-		}
 	}
 
 	public func prepareRotation() async -> RecoveryPhrase? {
@@ -293,25 +257,40 @@ extension AppModel {
 	}
 
 	/// A server that holds this library takes it back at once; an empty one gets it under a new phrase; another library is refused.
-	private func reattachOrMove(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async throws -> Result<SyncSetupStart, SyncSetupFailure> {
-		let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(server))
-		let stored = try await RecoveryFlow(connection: connection).storedVersion()
-		guard stored > 0 else {
-			let settings = SyncSettings(server: server, apiKey: apiKey, contentKey: kept.contentKey)
-			guard let phrase = newPhrase(for: settings) else { return .failure(.failed("The recovery wordlist is missing.")) }
-			recovery?.moving = true
-			return .success(.newLibrary(phrase))
-		}
-		guard stored >= kept.pin else { return .failure(.serverBehind) }
-		if let mark = kept.mark, try await !SyncEngine.holds(mark, through: connection, since: kept.since) {
-			return .failure(.serverHoldsAnotherLibrary)
-		}
-		try Task.checkCancellation()
+	/// Change Server, which also takes the server's replaced API key, and Set Up Sync on a library that synced before. Locking cancels the check and waits for it, so no key outlives the lock.
+	private func changeServer(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
+		let change = Task { await self.check(server, apiKey, holds: kept, in: store) }
+		serverChange = change
+		let result = await withTaskCancellationHandler { await change.value } onCancel: { change.cancel() }
+		guard serverChange == change else { return result }
+		serverChange = nil
+		guard result == .success(.reattached), store === self.store else { return result }
 		await stopSync()?.value
-		try await store.reattachSync(server: server, apiKey: apiKey)
-		guard store === self.store else { return .success(.reattached) }
 		await startSync(store)
-		return .success(.reattached)
+		return result
+	}
+
+	/// Takes the library back only from a server that holds it: a blob at or past the pin, and the write this Mac's last pull ended on or one that replaced it, whether or not it opens, so a write forged with a leaked key cannot block it. An empty server gets the library under a new phrase.
+	private func check(_ server: URL, _ apiKey: SymmetricKey, holds kept: NoteStore.KeptLibrary, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
+		do {
+			let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(server))
+			let stored = try await RecoveryFlow(connection: connection).storedVersion()
+			guard stored > 0 else {
+				let settings = SyncSettings(server: server, apiKey: apiKey, contentKey: kept.contentKey)
+				guard let phrase = newPhrase(for: settings) else { return .failure(.failed("The recovery wordlist is missing.")) }
+				recovery?.moving = true
+				return .success(.newLibrary(phrase))
+			}
+			guard stored >= kept.pin else { return .failure(.serverBehind) }
+			if let mark = kept.mark, try await !SyncEngine.holds(mark, through: connection, since: kept.since) {
+				return .failure(.serverHoldsAnotherLibrary)
+			}
+			try Task.checkCancellation()
+			try await store.reattachSync(server: server, apiKey: apiKey)
+			return .success(.reattached)
+		} catch {
+			return .failure(Self.setupFailure(error))
+		}
 	}
 
 	private func newPhrase(for settings: SyncSettings) -> RecoveryPhrase? {

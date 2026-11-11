@@ -14,7 +14,7 @@ private struct FailingSheet: View {
 	@State private var error: String?
 
 	var body: some View {
-		SheetScaffold(title: "Change API Key", error: error) {
+		SheetScaffold(title: "Change Server", error: error) {
 			Button("Try") { error = "The server did not accept this API key." }
 		} buttons: {
 			EmptyView()
@@ -37,7 +37,7 @@ struct SheetScaffoldTests {
 
 	@Test func anErrorOfUpToTwoLinesMovesNothing() {
 		func height(error: String?) -> CGFloat {
-			NSHostingView(rootView: SheetScaffold(title: "Change API Key", error: error) {
+			NSHostingView(rootView: SheetScaffold(title: "Change Server", error: error) {
 				SecureField("API Key:", text: .constant(""))
 			} buttons: {
 				Button("Change") {}

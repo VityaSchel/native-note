@@ -40,7 +40,6 @@ struct SecuritySettings: View {
 		case changePassword
 		case setUpSync
 		case changeRecoveryPhrase
-		case changeAPIKey
 		case changeServer
 
 		var id: Self { self }
@@ -80,8 +79,6 @@ struct SecuritySettings: View {
 			SyncSetupView(form: SyncSetupForm(mode: .changeServer, server: sync.status.server ?? ""), controls: sync, done: done)
 		case .changeRecoveryPhrase:
 			SyncSetupView(mode: .rotate, controls: sync, done: done)
-		case .changeAPIKey:
-			ChangeAPIKeyView(change: sync.changeAPIKey, done: done)
 		}
 	}
 }
@@ -164,12 +161,6 @@ struct SyncSection: View {
 				} label: {
 					Text("Recovery phrase")
 					Text("Restores your notes on another Mac. Native Note never keeps it.")
-				}
-				LabeledContent {
-					Button("Change API Key…") { present(.changeAPIKey) }
-				} label: {
-					Text("API key")
-					Text("Lets this Mac in to the server. Replace it after the server's key changes.")
 				}
 				LabeledContent {
 					Button("Turn Off Sync…") { confirmingTurnOff = true }

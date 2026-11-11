@@ -100,9 +100,9 @@ struct SyncSectionTests {
 		try press("Sync Now", in: offscreen)
 		try press("Change Server…", in: offscreen)
 		try press("Change Recovery Phrase…", in: offscreen)
-		try press("Change API Key…", in: offscreen)
-		await offscreen.pump { requests.synced > 0 && requests.presented.count == 3 }
-		#expect(requests.presented == [.changeServer, .changeRecoveryPhrase, .changeAPIKey])
+		await offscreen.pump { requests.synced > 0 && requests.presented.count == 2 }
+		#expect(requests.presented == [.changeServer, .changeRecoveryPhrase])
+		#expect(!offscreen.accessibilityElements(.button).contains { $0.label == "Change API Key…" })
 		#expect(offscreen.accessibilityElements(.button).contains { $0.label == "Turn Off Sync…" })
 	}
 

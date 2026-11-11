@@ -88,7 +88,7 @@ import Observation
 	var engine: SyncEngine?
 	var idleSync: Task<Void, Never>?
 	var syncLoop: Task<Void, Never>?
-	var keyChange: Task<SyncSetupFailure?, Never>?
+	var serverChange: Task<Result<SyncSetupStart, SyncSetupFailure>, Never>?
 	private var awayEvents = 0
 	var syncRequests = 0
 	var syncedThrough = 0

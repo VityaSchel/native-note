@@ -11,7 +11,6 @@ struct SyncControls {
 	var prepareRotation: () async -> AppModel.RecoveryPhrase? = { nil }
 	var finishRotation: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var adoptCurrentPhrase: (String) async -> AppModel.SyncSetupFailure? = { _ in nil }
-	var changeAPIKey: (String) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var turnOffSync: () async -> Bool = { false }
 	var cancel: () -> Void = {}
 }
@@ -27,7 +26,6 @@ extension SyncControls {
 			prepareRotation: model.prepareRotation,
 			finishRotation: model.finishRotation(answers:),
 			adoptCurrentPhrase: model.adoptCurrentPhrase,
-			changeAPIKey: model.changeAPIKey,
 			turnOffSync: model.turnOffSync,
 			cancel: model.cancelRecovery
 		)
@@ -121,7 +119,7 @@ struct SyncSetupView: View {
 	private var explanation: String? {
 		switch form.step {
 		case .preparing: nil
-		case .server where form.mode == .changeServer: "Enter where this library's server is now, or an empty server to move the library to. A server that holds another library is refused."
+		case .server where form.mode == .changeServer: "Enter this library's server and its API key, also after the server moved or its key was replaced. An empty server takes the library under new recovery words; one that holds another library is refused."
 		case .server: nil
 		case .words: "These words are used to encrypt your notes on your sync server. Keep them safe and never share with anyone."
 		case let .confirm(phrase): "Enter words \(Self.list(phrase.checked.map { $0 + 1 })) from the phrase you wrote down."

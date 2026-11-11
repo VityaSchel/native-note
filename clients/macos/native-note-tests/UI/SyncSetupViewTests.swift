@@ -202,6 +202,7 @@ struct SyncSetupViewTests {
 		let offscreen = offscreen(.changeServer, calls, prepare: .success(.reattached), server: "http://old.example:8080")
 		defer { offscreen.close() }
 		#expect(texts(offscreen).contains("Change Server"))
+		#expect(texts(offscreen).contains { $0.contains("its API key, also after the server moved or its key was replaced") })
 		let address = try #require(fields(offscreen).first { !($0 is NSSecureTextField) })
 		#expect(address.stringValue == "http://old.example:8080")
 

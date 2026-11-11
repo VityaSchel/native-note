@@ -29,13 +29,6 @@ extension NoteStore {
 		}
 	}
 
-	func setAPIKey(_ apiKey: SymmetricKey) throws {
-		try connection.transaction {
-			guard try key(.contentKey) != nil else { throw SyncNotSetUp() }
-			try apiKey.withUnsafeBytes { try setMeta(.apiKey, $0) }
-		}
-	}
-
 	struct SyncNotSetUp: Error {}
 
 	/// What a library that synced keeps after Turn Off Sync, so it can reattach or move without a new identity.
