@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Every sheet's frame, as Apple's own sheets are laid out: a title, one line saying what the sheet does, labeled fields, the error under them, and the buttons at the bottom trailing edge.
+/// Every sheet's frame, as Apple's own sheets are laid out: a title, one line saying what the sheet does, labeled fields, the error under them, and the buttons at the bottom trailing edge. The error has room kept for it, so one appearing moves nothing.
 struct SheetScaffold<Fields: View, Buttons: View>: View {
 	let title: String
 	var explanation: String?
@@ -24,12 +24,17 @@ struct SheetScaffold<Fields: View, Buttons: View>: View {
 					.fixedSize(horizontal: false, vertical: true)
 			}
 			fields
-			if let error {
-				Text(error)
-					.font(.callout)
-					.foregroundStyle(.red)
-					.fixedSize(horizontal: false, vertical: true)
+			ZStack(alignment: .topLeading) {
+				Text(verbatim: "\n")
+					.hidden()
+					.accessibilityHidden(true)
+				if let error {
+					Text(error)
+						.foregroundStyle(.red)
+						.fixedSize(horizontal: false, vertical: true)
+				}
 			}
+			.font(.callout)
 			HStack {
 				if working {
 					ProgressView().controlSize(.small)

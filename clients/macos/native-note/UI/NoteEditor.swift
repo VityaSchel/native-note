@@ -6,7 +6,7 @@ struct NoteEditor: NSViewRepresentable {
 	/// New Note puts the insertion point in the note it made; picking a note in the list leaves focus there.
 	var takesFocus = false
 	var tookFocus: () -> Void = {}
-	var magnification = 1.0
+	var zoom = 1.0
 	var dateLine = ""
 
 	func makeCoordinator() -> Coordinator {
@@ -22,9 +22,7 @@ struct NoteEditor: NSViewRepresentable {
 		if context.coordinator.dateLabel?.stringValue != dateLine {
 			context.coordinator.dateLabel?.stringValue = dateLine
 		}
-		if abs(scrollView.magnification - magnification) > 0.001 {
-			scrollView.magnification = magnification
-		}
+		context.coordinator.zoom(to: zoom)
 		guard takesFocus, let textView = scrollView.documentView as? NSTextView else { return }
 		DispatchQueue.main.async { [tookFocus] in
 			guard let window = textView.window else { return }
@@ -64,13 +62,10 @@ struct NoteEditor: NSViewRepresentable {
 		textView.autoresizingMask = [.width]
 		textView.isVerticallyResizable = true
 		textView.textContainer?.widthTracksTextView = true
-		textView.defaultParagraphStyle = Coordinator.bodyParagraphStyle
-		textView.typingAttributes = Coordinator.headingAttributes
+		textView.defaultParagraphStyle = delegate.styles.bodyParagraph
+		textView.typingAttributes = delegate.styles.headingTyping
 
 		let scrollView = NSScrollView()
-		scrollView.allowsMagnification = true
-		scrollView.minMagnification = EditorZoom.range.lowerBound
-		scrollView.maxMagnification = EditorZoom.range.upperBound
 		scrollView.documentView = textView
 		scrollView.hasVerticalScroller = true
 		scrollView.drawsBackground = false
@@ -89,8 +84,9 @@ struct NoteEditor: NSViewRepresentable {
 		storage.delegate = nil
 		textView.string = text
 		let whole = NSRange(location: 0, length: storage.length)
-		storage.setAttributes(Coordinator.bodyAttributes, range: whole)
-		Coordinator.style(storage, in: whole)
+		let styles = coordinator?.styles ?? EditorStyles(zoom: 1)
+		storage.setAttributes(styles.bodyTyping, range: whole)
+		Coordinator.style(storage, in: whole, with: styles)
 		storage.delegate = delegate
 		textView.undoManager?.removeAllActions()
 	}
@@ -101,6 +97,7 @@ struct NoteEditor: NSViewRepresentable {
 		fileprivate weak var textView: NSTextView?
 		fileprivate weak var dateLabel: NSTextField?
 		fileprivate var shown: String?
+		fileprivate private(set) var styles = EditorStyles(zoom: 1)
 		private weak var editedStorage: NSTextStorage?
 		private var unpushed = false
 
@@ -116,13 +113,23 @@ struct NoteEditor: NSViewRepresentable {
 			history
 		}
 
+		/// Zoom changes the text's size, as in Notes, so it rewraps; margins and the date line keep their size.
+		fileprivate func zoom(to zoom: Double) {
+			guard abs(styles.zoom - zoom) > 0.001 else { return }
+			styles = EditorStyles(zoom: zoom)
+			guard let textView, let storage = textView.textStorage else { return }
+			Self.style(storage, in: NSRange(location: 0, length: storage.length), with: styles)
+			textView.defaultParagraphStyle = styles.bodyParagraph
+			textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification))
+		}
+
 		func textStorage(
 			_ textStorage: NSTextStorage,
 			willProcessEditing editedMask: NSTextStorageEditActions,
 			range editedRange: NSRange,
 			changeInLength delta: Int
 		) {
-			Self.style(textStorage, in: editedRange)
+			Self.style(textStorage, in: editedRange, with: styles)
 			guard editedMask.contains(.editedCharacters) else { return }
 			editedStorage = textStorage
 			unpushed = true
@@ -145,7 +152,7 @@ struct NoteEditor: NSViewRepresentable {
 			let text = textView.string as NSString
 			let newline = text.rangeOfCharacter(from: .newlines)
 			let titleEnd = newline.location == NSNotFound ? text.length : newline.location
-			let typing = textView.selectedRange().location <= titleEnd ? Self.headingAttributes : Self.bodyAttributes
+			let typing = textView.selectedRange().location <= titleEnd ? styles.headingTyping : styles.bodyTyping
 			guard textView.typingAttributes[.font] as? NSFont != typing[.font] as? NSFont else { return }
 			textView.typingAttributes = typing
 		}
@@ -154,43 +161,15 @@ struct NoteEditor: NSViewRepresentable {
 			pushText()
 			guard let storage = editedStorage else { return }
 			editedStorage = nil
-			Self.style(storage, in: NSRange(location: 0, length: storage.length))
+			Self.style(storage, in: NSRange(location: 0, length: storage.length), with: styles)
 		}
 
-		fileprivate static let bodyParagraphStyle: NSParagraphStyle = {
-			let style = NSMutableParagraphStyle()
-			style.lineSpacing = 3
-			style.paragraphSpacing = 2
-			return style
-		}()
-
-		private static let bodyFont = NSFont.preferredFont(forTextStyle: .body).withSingleStoreyA
-
-		private static let bodyStyle: [NSAttributedString.Key: Any] = [
-			.font: bodyFont,
-			.paragraphStyle: bodyParagraphStyle,
-		]
-
-		fileprivate static let bodyAttributes = bodyStyle.merging([.foregroundColor: NSColor.textColor]) { $1 }
-
-		fileprivate static let headingAttributes = headingStyle.merging([.foregroundColor: NSColor.textColor]) { $1 }
-
-		private static let headingStyle: [NSAttributedString.Key: Any] = {
-			let style = NSMutableParagraphStyle()
-			style.lineHeightMultiple = 1.15
-			style.paragraphSpacing = 8
-			return [
-				.font: NSFont.preferredFont(forTextStyle: .largeTitle).bold.withSingleStoreyA,
-				.paragraphStyle: style,
-			]
-		}()
-
-		fileprivate static func style(_ storage: NSTextStorage, in range: NSRange) {
+		fileprivate static func style(_ storage: NSTextStorage, in range: NSRange, with styles: EditorStyles) {
 			let heading = storage.mutableString.lineRange(for: NSRange(location: 0, length: 0))
 			let body = NSRange(location: heading.upperBound, length: storage.length - heading.upperBound)
 			storage.beginEditing()
-			apply(headingStyle, to: NSIntersectionRange(range, heading), in: storage)
-			apply(bodyStyle, to: NSIntersectionRange(range, body), in: storage)
+			apply(styles.heading, to: NSIntersectionRange(range, heading), in: storage)
+			apply(styles.body, to: NSIntersectionRange(range, body), in: storage)
 			storage.endEditing()
 		}
 
@@ -205,6 +184,33 @@ struct NoteEditor: NSViewRepresentable {
 	}
 }
 
+/// The title and body attributes at one zoom level; sizes and spacing scale together, from the system text styles.
+struct EditorStyles {
+	let zoom: Double
+	let heading: [NSAttributedString.Key: Any]
+	let body: [NSAttributedString.Key: Any]
+	let bodyParagraph: NSParagraphStyle
+
+	var headingTyping: [NSAttributedString.Key: Any] { heading.merging([.foregroundColor: NSColor.textColor]) { $1 } }
+	var bodyTyping: [NSAttributedString.Key: Any] { body.merging([.foregroundColor: NSColor.textColor]) { $1 } }
+
+	init(zoom: Double) {
+		self.zoom = zoom
+		let bodyParagraph = NSMutableParagraphStyle()
+		bodyParagraph.lineSpacing = 3 * zoom
+		bodyParagraph.paragraphSpacing = 2 * zoom
+		self.bodyParagraph = bodyParagraph
+		body = [.font: Self.bodyFont.scaled(by: zoom), .paragraphStyle: bodyParagraph]
+		let headingParagraph = NSMutableParagraphStyle()
+		headingParagraph.lineHeightMultiple = 1.15
+		headingParagraph.paragraphSpacing = 8 * zoom
+		heading = [.font: Self.headingFont.scaled(by: zoom), .paragraphStyle: headingParagraph]
+	}
+
+	static let bodyFont = NSFont.preferredFont(forTextStyle: .body).withSingleStoreyA
+	static let headingFont = NSFont.preferredFont(forTextStyle: .largeTitle).bold.withSingleStoreyA
+}
+
 private final class ComposingTextView: NSTextView {
 	override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
 		super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
@@ -213,6 +219,10 @@ private final class ComposingTextView: NSTextView {
 }
 
 private extension NSFont {
+	func scaled(by zoom: Double) -> NSFont {
+		NSFont(descriptor: fontDescriptor, size: pointSize * zoom) ?? self
+	}
+
 	var bold: NSFont {
 		let descriptor = fontDescriptor.withSymbolicTraits(.bold)
 		return NSFont(descriptor: descriptor, size: pointSize) ?? self

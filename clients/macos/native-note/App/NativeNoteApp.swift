@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct NativeNoteApp: App {
 	@NSApplicationDelegateAdaptor private var delegate: AppDelegate
-	@AppStorage(EditorZoom.key) private var magnification = 1.0
+	@AppStorage(EditorZoom.key) private var zoom = 1.0
 
 	var body: some Scene {
 		Window("Native Note", id: "library") {
@@ -19,16 +19,15 @@ struct NativeNoteApp: App {
 			SidebarCommands()
 			ToolbarCommands()
 			CommandGroup(before: .toolbar) {
-				Button("Actual Size") { magnification = 1 }
-					.keyboardShortcut("0")
-					.disabled(magnification == 1)
-				Button("Zoom In") { magnification = EditorZoom.larger(magnification) }
+				Button("Zoom In", systemImage: "plus.magnifyingglass") { zoom = EditorZoom.larger(zoom) }
 					.keyboardShortcut("+")
-					.disabled(magnification >= EditorZoom.range.upperBound)
-				Button("Zoom Out") { magnification = EditorZoom.smaller(magnification) }
+					.disabled(zoom >= EditorZoom.range.upperBound)
+				Button("Zoom Out", systemImage: "minus.magnifyingglass") { zoom = EditorZoom.smaller(zoom) }
 					.keyboardShortcut("-")
-					.disabled(magnification <= EditorZoom.range.lowerBound)
-				Divider()
+					.disabled(zoom <= EditorZoom.range.lowerBound)
+				Button("Actual Size", systemImage: "square.resize") { zoom = 1 }
+					.keyboardShortcut("0")
+					.disabled(zoom == 1)
 			}
 			CommandGroup(after: .textEditing) {
 				Button("Search Notes") { delegate.exchange.focusSearch() }

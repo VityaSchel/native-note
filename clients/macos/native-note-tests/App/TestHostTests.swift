@@ -62,6 +62,33 @@ struct TestHostTests {
 		#expect(actual.keyEquivalent == "0" && actual.keyEquivalentModifierMask == .command)
 	}
 
+	@Test func zoomingLeavesTheViewMenuWithOneSeparatorBetweenGroups() async throws {
+		let view = try #require(menu(containing: "Zoom In")?.menu)
+		let defaults = UserDefaults.standard
+		let kept = defaults.object(forKey: EditorZoom.key)
+		defer { defaults.set(kept, forKey: EditorZoom.key) }
+
+		for zoom in [1.2, 1.44, 1.2, 1.0] {
+			defaults.set(zoom, forKey: EditorZoom.key)
+			try await Task.sleep(for: .milliseconds(200))
+		}
+		NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: NSApp.mainMenu)
+
+		let shown = view.items.filter { !$0.isHidden }
+		#expect(shown.map { $0.isSeparatorItem ? "—" : $0.title } == ["Zoom In", "Zoom Out", "Actual Size", "—", "Show Toolbar", "Customize Toolbar…", "—", "Show Sidebar"])
+	}
+
+	@Test func aSeparatorNextToAnotherOrAtAnEndIsHidden() {
+		let menu = NSMenu()
+		for title in ["—", "A", "—", "—", "B", "—"] {
+			menu.addItem(title == "—" ? .separator() : NSMenuItem(title: title, action: nil, keyEquivalent: ""))
+		}
+
+		MenuSeparators.tidy(menu)
+
+		#expect(menu.items.filter { !$0.isHidden }.map { $0.isSeparatorItem ? "—" : $0.title } == ["A", "—", "B"])
+	}
+
 	@Test func syncNowIsCommandRInTheFileMenu() throws {
 		let item = try #require(try fileMenu().item(withTitle: "Sync Now"))
 

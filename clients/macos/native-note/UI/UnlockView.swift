@@ -4,46 +4,30 @@ import NativeNoteKit
 import SwiftUI
 
 struct UnlockView: View {
-	let isSetup: Bool
 	let failure: AppModel.Failure?
 	let submit: (String) async -> AppModel.Failure?
 	let dismissFailure: () -> Void
 	var touchID = TouchIDControls()
 	var shake = AppModel.Shake()
 	var eraseLibrary: (() -> Void)?
-	var hasSecureEnclave = true
 	var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
 	@State private var form = UnlockForm()
 	@State private var confirmingErase = false
 	@State private var anchor = WindowAnchor()
 	@FocusState private var typingPassword: Bool
-	@FocusState private var confirming: Bool
 
 	var body: some View {
 		VStack(spacing: 18) {
-			Image(systemName: isSetup ? "key.shield.fill" : "lock.shield.fill")
+			Image(systemName: "lock.shield.fill")
 				.font(.system(size: 56))
 				.foregroundStyle(.tint)
 				.accessibilityHidden(true)
 
-			VStack(spacing: 6) {
-				Text(isSetup ? "Set an Unlock Password" : "Native Note")
-					.font(.largeTitle.bold())
-				if isSetup {
-					Text("Notes are encrypted with this password. It cannot be recovered.")
-						.font(.callout)
-						.foregroundStyle(.secondary)
-						.multilineTextAlignment(.center)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-			}
+			Text("Native Note")
+				.font(.largeTitle.bold())
 
-			if isSetup {
-				setupForm
-			} else {
-				lockForm
-			}
+			lockForm
 		}
 		.confirmationDialog(Self.eraseTitle, isPresented: $confirmingErase) {
 			Button(Self.eraseAction, role: .destructive) { eraseLibrary?() }
@@ -53,39 +37,6 @@ struct UnlockView: View {
 		.frame(width: 300)
 		.padding(32)
 		.failureAlert(failure, dismiss: dismissFailure)
-	}
-
-	@ViewBuilder private var setupForm: some View {
-		if let setupWarning {
-			Label(setupWarning, systemImage: "exclamationmark.triangle")
-				.font(.callout)
-				.foregroundStyle(.orange)
-				.fixedSize(horizontal: false, vertical: true)
-		}
-
-		VStack(spacing: 10) {
-			SecureField("Password", text: $form.password)
-				.onSubmit { if form.confirmation.isEmpty { confirming = true } else { send() } }
-			SecureField("Confirm Password", text: $form.confirmation)
-				.focused($confirming)
-				.onSubmit(send)
-		}
-		.textFieldStyle(.roundedBorder)
-		.controlSize(.extraLarge)
-
-		Text(form.inlineMessage ?? " ")
-			.font(.callout)
-			.foregroundStyle(.red)
-			.frame(minHeight: 18)
-			.accessibilityHidden(form.inlineMessage == nil)
-
-		Button(action: send) {
-			working("Create", spinning: form.working)
-		}
-		.buttonStyle(.borderedProminent)
-		.keyboardShortcut(.defaultAction)
-		.controlSize(.extraLarge)
-		.disabled(!form.canSubmit)
 	}
 
 	private var lockForm: some View {
@@ -168,20 +119,6 @@ struct UnlockView: View {
 		.animation(.linear(duration: ShakeEffect.duration)) { $0.modifier(ShakeEffect(animatableData: CGFloat(shake.count))) }
 	}
 
-	private func working(_ title: String, spinning: Bool) -> some View {
-		ZStack {
-			Text(title).opacity(spinning ? 0 : 1)
-			if spinning {
-				ProgressView().controlSize(.small)
-			}
-		}
-		.frame(maxWidth: .infinity)
-	}
-
-	var setupWarning: String? {
-		isSetup && !hasSecureEnclave ? Self.noSecureEnclaveWarning : nil
-	}
-
 	private var opensWithTouchID: Bool {
 		touchID.state == .working
 	}
@@ -198,7 +135,6 @@ struct UnlockView: View {
 		}
 	}
 
-	static let noSecureEnclaveWarning = "This Mac has no Secure Enclave, so only this password protects your notes."
 	static let eraseTitle = "Erase all notes and start over?"
 	static let eraseAction = "Erase Notes"
 	static let eraseMessage = "Without the password these notes cannot be recovered. Erasing deletes every note on this Mac and returns to setup."
@@ -211,7 +147,7 @@ struct UnlockView: View {
 	static let coveredGlyphSide: CGFloat = 16
 
 	private func send() {
-		guard let password = form.submit(confirming: isSetup) else { return }
+		guard let password = form.submit(confirming: false) else { return }
 		Task {
 			let failure = await submit(password)
 			form.finish(failure)
@@ -269,28 +205,27 @@ private struct WindowAnchorView: NSViewRepresentable {
 }
 
 #Preview("Unlock") {
-	UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {})
+	UnlockView(failure: nil, submit: { _ in nil }, dismissFailure: {})
 }
 
 #Preview("Unlock, listening for Touch ID") {
-	UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .listening(LAContext())), eraseLibrary: {})
+	UnlockView(failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .listening(LAContext())), eraseLibrary: {})
 }
 
 #Preview("Unlock, Touch ID locked") {
-	UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .lockedOut), eraseLibrary: {})
+	UnlockView(failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .lockedOut), eraseLibrary: {})
 }
 
 #Preview("Unlock, opening with Touch ID") {
-	UnlockView(isSetup: false, failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .working), eraseLibrary: {})
+	UnlockView(failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .working), eraseLibrary: {})
 }
 
 #Preview("Unlock, forgotten password") {
-	UnlockView(isSetup: false, failure: .wrongPassword, submit: { _ in .wrongPassword }, dismissFailure: {}, eraseLibrary: {})
+	UnlockView(failure: .wrongPassword, submit: { _ in .wrongPassword }, dismissFailure: {}, eraseLibrary: {})
 }
 
 #Preview("Unlock, internal failure") {
 	UnlockView(
-		isSetup: false,
 		failure: .unexpected("The notes database could not be opened. unable to open database file"),
 		submit: { _ in nil },
 		dismissFailure: {}
@@ -299,17 +234,8 @@ private struct WindowAnchorView: NSViewRepresentable {
 
 #Preview("Locked, edits not saved") {
 	UnlockView(
-		isSetup: false,
 		failure: .unsaved("disk I/O error"),
 		submit: { _ in nil },
 		dismissFailure: {}
 	)
-}
-
-#Preview("First run") {
-	UnlockView(isSetup: true, failure: nil, submit: { _ in nil }, dismissFailure: {})
-}
-
-#Preview("First run, no Secure Enclave") {
-	UnlockView(isSetup: true, failure: nil, submit: { _ in nil }, dismissFailure: {}, hasSecureEnclave: false)
 }

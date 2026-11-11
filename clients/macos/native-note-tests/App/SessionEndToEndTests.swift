@@ -27,7 +27,12 @@ struct SessionEndToEndTests {
 		window.pump()
 	}
 
+	/// A first run starts on the welcome step, whose Next leads to the password fields.
 	private func submit(_ password: String, in window: OffscreenWindow<ContentView>, confirming: Bool) throws {
+		if confirming {
+			try #require(window.accessibilityElements(.button).first { $0.label == "Next" }).press()
+			window.pump()
+		}
 		let first = try field("Password", in: window)
 		try type(password, into: first, of: window)
 		if confirming {
@@ -54,7 +59,7 @@ struct SessionEndToEndTests {
 		try #require(model.phase == .unlocked, "\(String(describing: model.failure))")
 		await window.pump { window.accessibilityElements(.button).contains { $0.label == "Not Now" } }
 		try #require(window.accessibilityElements(.button).first { $0.label == "Not Now" }).press()
-		await window.pump { !model.offersSyncSetup }
+		await window.pump { !model.isOnboarding }
 
 		for text in typed {
 			await model.createNote()

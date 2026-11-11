@@ -15,7 +15,23 @@ struct ContentViewTests {
 		return (model, directory, OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560))
 	}
 
-	@Test func aFirstSetupShowsTheSyncStepInTheWindowAndNotNowOpensTheLibrary() async throws {
+	private func press(_ label: String, in offscreen: OffscreenWindow<ContentView>) async throws {
+		await offscreen.pump { offscreen.accessibilityElements(.button).contains { $0.label == label } }
+		try #require(offscreen.accessibilityElements(.button).first { $0.label == label }, "\(label)").press()
+		offscreen.pump()
+	}
+
+	private func typePasswords(_ password: String, in offscreen: OffscreenWindow<ContentView>) throws {
+		for placeholder in ["Password", "Confirm Password"] {
+			let field = try #require(offscreen.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
+			try #require(offscreen.window.makeFirstResponder(field))
+			try #require(field.currentEditor()).insertText(password)
+			offscreen.pump()
+		}
+		offscreen.window.firstResponder?.insertNewline(nil)
+	}
+
+	@Test func aFirstLaunchWalksWelcomePasswordTouchIDAndSyncInTheWindowThenOpensTheLibrary() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
@@ -23,15 +39,40 @@ struct ContentViewTests {
 		defer { offscreen.close() }
 		await offscreen.pump { model.phase == .needsSetup }
 
-		await model.submit(password: workspacePassword)
-		await offscreen.pump { offscreen.accessibilityElements(.staticText).contains { $0.value == "Sync Your Notes" } }
-
-		#expect(offscreen.sheet == nil)
+		try await press("Next", in: offscreen)
+		try typePasswords(workspacePassword, in: offscreen)
+		await offscreen.pump { offscreen.accessibilityElements().contains { $0.label == "Unlock with Touch ID?" || $0.value == "Unlock with Touch ID?" } }
+		#expect(model.phase == .unlocked && model.isOnboarding)
 		#expect(offscreen.window.title != "All Notes")
-		try #require(offscreen.accessibilityElements(.button).first { $0.label == "Not Now" }).press()
+
+		try await press("Skip", in: offscreen)
+		await offscreen.pump { offscreen.accessibilityElements().contains { $0.label == "Sync Your Notes" || $0.value == "Sync Your Notes" } }
+		#expect(offscreen.sheet == nil)
+		try await press("Not Now", in: offscreen)
 		await offscreen.pump { offscreen.window.title == "All Notes" }
 
-		#expect(!model.offersSyncSetup)
+		#expect(!model.isOnboarding)
+		#expect(offscreen.window.title == "All Notes")
+	}
+
+	@Test func aRelaunchAfterThePasswordStepUnlocksStraightIntoTheLibrary() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let first = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		first.start()
+		await first.submit(password: workspacePassword)
+		try #require(first.isOnboarding)
+		await first.lock()
+
+		let relaunched = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: relaunched)), width: 980, height: 560)
+		defer { offscreen.close() }
+		await offscreen.pump { relaunched.phase == .locked }
+		#expect(!offscreen.accessibilityElements().contains { $0.label == "Welcome to Native Note" || $0.value == "Welcome to Native Note" })
+		await relaunched.submit(password: workspacePassword)
+		await offscreen.pump { offscreen.window.title == "All Notes" }
+
+		#expect(!relaunched.isOnboarding)
 		#expect(offscreen.window.title == "All Notes")
 	}
 
@@ -51,6 +92,33 @@ struct ContentViewTests {
 		#expect(rows.count == 5)
 		#expect(rows.first?.spoken.hasPrefix("Shopping, ") == true)
 		#expect(rows.first?.spoken.hasSuffix(", quartz, bread, and a new kettle") == true)
+	}
+
+	@Test func theToolbarButtonsKeepTheirGapsToSearchAsTheWindowWidens() throws {
+		func edges(width: CGFloat) throws -> [CGFloat] {
+			let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes)))), width: width, height: 420)
+			defer { offscreen.close() }
+			offscreen.host.sceneBridgingOptions = .all
+			offscreen.window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+			offscreen.window.setContentSize(NSSize(width: width, height: 420))
+			offscreen.pump(for: 0.5)
+			let items = offscreen.window.toolbar?.items ?? []
+			return try ["New Note", "Delete", "Lock", "Search"].map { label in
+				let item = try #require(items.first { $0.label == label }, "\(label)")
+				return try #require(Self.frame(of: item), "\(label)").minX
+			}
+		}
+
+		let narrow = try edges(width: 900)
+		let wide = try edges(width: 1400)
+
+		#expect(zip(narrow, wide).map { $1 - $0 } == [500, 500, 500, 500])
+	}
+
+	private static func frame(of item: NSToolbarItem) -> NSRect? {
+		let viewer = class_getInstanceVariable(NSToolbarItem.self, "_itemViewer") != nil ? item.value(forKey: "_itemViewer") as? NSView : nil
+		guard let view = item.view ?? viewer else { return nil }
+		return view.convert(view.bounds, to: nil)
 	}
 
 	@Test func newNotePutsTheInsertionPointInTheNewNote() async throws {

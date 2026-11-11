@@ -34,4 +34,20 @@ struct SheetScaffoldTests {
 
 		#expect(announcements.heard == ["The server did not accept this API key."])
 	}
+
+	@Test func anErrorOfUpToTwoLinesMovesNothing() {
+		func height(error: String?) -> CGFloat {
+			NSHostingView(rootView: SheetScaffold(title: "Change API Key", error: error) {
+				SecureField("API Key:", text: .constant(""))
+			} buttons: {
+				Button("Change") {}
+			}).fittingSize.height
+		}
+
+		let empty = height(error: nil)
+
+		#expect(height(error: "The server did not accept this API key.") == empty)
+		#expect(height(error: "The server could not be reached. Check the address, and that the server is running and reachable from this Mac.") == empty)
+		#expect(height(error: String(repeating: "The server could not be reached. ", count: 8)) > empty)
+	}
 }

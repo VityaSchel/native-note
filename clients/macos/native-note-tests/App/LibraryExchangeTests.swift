@@ -98,11 +98,11 @@ struct LibraryExchangeTests {
 		let exchange = LibraryExchange(model: model)
 
 		await model.submit(password: workspacePassword)
-		#expect(model.offersSyncSetup)
+		#expect(model.isOnboarding)
 		#expect(!exchange.acceptsCommands)
 		#expect(!exchange.canExchange)
 
-		model.dismissSyncSetupOffer()
+		model.finishOnboarding()
 		#expect(exchange.acceptsCommands)
 		#expect(exchange.canExchange)
 	}

@@ -35,6 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		#endif
 	}
 
+	@objc private func tidyMenus(_ notification: Notification) {
+		guard let menu = notification.object as? NSMenu, menu === NSApp.mainMenu else { return }
+		MenuSeparators.tidy(menu)
+	}
+
 	func applicationWillFinishLaunching(_ notification: Notification) {
 		if Self.hostsTests {
 			NSApp.setActivationPolicy(.prohibited)
@@ -42,6 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
+		NotificationCenter.default.addObserver(self, selector: #selector(tidyMenus), name: NSMenu.didBeginTrackingNotification, object: nil)
 		for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
 			workspace.addObserver(self, selector: #selector(lockWhileAway), name: name, object: nil)
 		}

@@ -6,7 +6,7 @@ struct ContentView: View {
 	@Bindable var model: AppModel
 	let clipboard: RecoveryClipboard
 	@Environment(\.undoManager) private var undoManager
-	@AppStorage(EditorZoom.key) private var magnification = 1.0
+	@AppStorage(EditorZoom.key) private var zoom = 1.0
 
 	init(exchange: LibraryExchange, clipboard: RecoveryClipboard = .shared) {
 		self.exchange = exchange
@@ -47,45 +47,52 @@ struct ContentView: View {
 
 	@ViewBuilder
 	private var screen: some View {
-		switch model.phase {
-			case .loading:
-				ProgressView().onAppear { model.start() }
-			case .needsSetup, .locked:
-				UnlockView(
-					isSetup: model.phase == .needsSetup,
-					failure: model.failure,
-					submit: { password in
-						await model.submit(password: password)
-						return model.failure
-					},
-					dismissFailure: model.dismissFailure,
-					touchID: TouchIDControls(model),
-					shake: model.shake,
-					eraseLibrary: { Task { await model.eraseLibrary() } },
-					hasSecureEnclave: AppModel.hasSecureEnclave
-				)
-			case .unlocked:
-				if model.offersSyncSetup {
-					syncOnboarding
-				} else {
+		if model.phase == .needsSetup || (model.phase == .unlocked && model.isOnboarding) {
+			onboarding
+		} else {
+			switch model.phase {
+				case .loading:
+					ProgressView().onAppear { model.start() }
+				case .needsSetup, .locked:
+					UnlockView(
+						failure: model.failure,
+						submit: { password in
+							await model.submit(password: password)
+							return model.failure
+						},
+						dismissFailure: model.dismissFailure,
+						touchID: TouchIDControls(model),
+						shake: model.shake,
+						eraseLibrary: { Task { await model.eraseLibrary() } }
+					)
+				case .unlocked:
 					library
-				}
+			}
 		}
+	}
+
+	/// One view from the first screen to the last, so the new password reaches the Touch ID step after the library opens.
+	private var onboarding: some View {
+		OnboardingView(
+			libraryExists: model.phase == .unlocked,
+			createLibrary: { password in
+				await model.submit(password: password)
+				return model.failure
+			},
+			failure: model.failure,
+			dismissFailure: model.dismissFailure,
+			hasSecureEnclave: AppModel.hasSecureEnclave,
+			touchIDAvailable: model.isBiometricUnlockAvailable,
+			turnOnTouchID: model.enableBiometricUnlock(password:),
+			touchID: TouchIDControls(model),
+			sync: SyncControls(model),
+			clipboard: clipboard,
+			finish: model.finishOnboarding
+		)
 	}
 
 	static func noteCount(_ count: Int) -> String {
 		count == 1 ? "1 note" : "\(count) notes"
-	}
-
-	private var syncOnboarding: some View {
-		SyncSetupView(
-			form: SyncSetupForm(mode: .setUp),
-			controls: SyncControls(model),
-			clipboard: clipboard,
-			declineTitle: "Not Now",
-			isPage: true,
-			done: model.dismissSyncSetupOffer
-		)
 	}
 
 	private static let allNotes = "all"
@@ -98,7 +105,7 @@ struct ContentView: View {
 				text: Binding(get: { note.body }, set: { model.edit(note.id, $0) }),
 				takesFocus: model.focusesEditor == note.id,
 				tookFocus: model.editorTookFocus,
-				magnification: magnification,
+				zoom: zoom,
 				dateLine: NoteGrouping.editorDateLine(for: note.updated)
 			)
 			.id(note.id)
@@ -106,6 +113,29 @@ struct ContentView: View {
 			ContentUnavailableView("No Note Selected", systemImage: "note.text")
 		} else {
 			Color.clear
+		}
+	}
+
+	/// Window-level, so the buttons sit beside the search field with fixed gaps, as in Mail; column toolbars get a flexible space before search.
+	@ToolbarContentBuilder
+	private var libraryToolbar: some ToolbarContent {
+		ToolbarItemGroup {
+			Button { Task { await model.createNote() } } label: {
+				Label("New Note", systemImage: "square.and.pencil")
+			}
+			Button { model.selection.map(delete) } label: {
+				Label("Delete", systemImage: "trash")
+			}
+			.disabled(model.selection == nil)
+		}
+		ToolbarSpacer(.fixed)
+		ToolbarItemGroup {
+			if model.syncStatus.server != nil {
+				SyncButton(status: model.syncStatus) { Task { await model.syncNow() } }
+			}
+			Button { Task { await model.lock() } } label: {
+				Label("Lock", systemImage: "lock")
+			}
 		}
 	}
 
@@ -124,14 +154,6 @@ struct ContentView: View {
 				}
 			}
 			.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
-			.toolbar {
-				ToolbarItem {
-					Button { model.selection.map(delete) } label: {
-						Label("Delete", systemImage: "trash")
-					}
-					.disabled(model.selection == nil)
-				}
-			}
 			.navigationTitle("All Notes")
 			.navigationSubtitle(Self.noteCount(model.noteCount))
 			.onChange(of: model.search) { Task { await model.runSearch() } }
@@ -140,23 +162,8 @@ struct ContentView: View {
 			}
 		} detail: {
 			detail
-				.toolbar {
-					ToolbarItem {
-						Button { Task { await model.createNote() } } label: {
-							Label("New Note", systemImage: "square.and.pencil")
-						}
-					}
-					ToolbarSpacer(.flexible)
-					ToolbarItemGroup {
-						if model.syncStatus.server != nil {
-							SyncButton(status: model.syncStatus) { Task { await model.syncNow() } }
-						}
-						Button { Task { await model.lock() } } label: {
-							Label("Lock", systemImage: "lock")
-						}
-					}
-				}
 		}
+		.toolbar { libraryToolbar }
 		.failureAlert(model.failure, dismiss: model.dismissFailure)
 		.sheet(item: $exchange.presentedSheet) { sheet in
 			switch sheet {

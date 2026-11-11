@@ -127,6 +127,14 @@ struct SyncSetupViewTests {
 		offscreen.pump()
 	}
 
+	@Test func theServerStepNamesOnlyItsFields() {
+		let offscreen = offscreen(.setUp, Calls())
+		defer { offscreen.close() }
+		offscreen.pump()
+
+		#expect(!texts(offscreen).contains { $0.contains("api-key file") })
+	}
+
 	@Test func setupTakesTheServerShowsTheWordsAndChecksThreeBeforeTurningSyncOn() async throws {
 		let calls = Calls()
 		let offscreen = offscreen(.setUp, calls)

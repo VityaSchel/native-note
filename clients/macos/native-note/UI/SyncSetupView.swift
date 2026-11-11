@@ -38,9 +38,6 @@ struct SyncSetupView: View {
 	let controls: SyncControls
 	let done: () -> Void
 	let clipboard: RecoveryClipboard
-	let declineTitle: String
-	/// The first-run step fills the window like the password page before it; elsewhere this is a sheet.
-	let isPage: Bool
 
 	@State private var form: SyncSetupForm
 	@State private var copied = false
@@ -56,20 +53,16 @@ struct SyncSetupView: View {
 		form: SyncSetupForm,
 		controls: SyncControls,
 		clipboard: RecoveryClipboard = .shared,
-		declineTitle: String = "Cancel",
-		isPage: Bool = false,
 		done: @escaping () -> Void
 	) {
 		self.controls = controls
 		self.clipboard = clipboard
-		self.declineTitle = declineTitle
-		self.isPage = isPage
 		self.done = done
 		_form = State(initialValue: form)
 	}
 
 	var body: some View {
-		layout
+		sheet
 			.textFieldStyle(.roundedBorder)
 		.defaultFocus($serverFocused, true)
 		.onDisappear {
@@ -82,15 +75,6 @@ struct SyncSetupView: View {
 		}
 	}
 
-	@ViewBuilder
-	private var layout: some View {
-		if isPage {
-			page
-		} else {
-			sheet
-		}
-	}
-
 	private var sheet: some View {
 		SheetScaffold(title: title, explanation: explanation, error: form.message, working: form.working, width: 440) {
 			content
@@ -100,66 +84,13 @@ struct SyncSetupView: View {
 		}
 	}
 
-	private var page: some View {
-		VStack(spacing: 18) {
-			Image(systemName: "arrow.triangle.2.circlepath")
-				.font(.system(size: 56))
-				.foregroundStyle(.tint)
-				.accessibilityHidden(true)
-			VStack(spacing: 6) {
-				Text(form.step == .server ? "Sync Your Notes" : title)
-					.font(.largeTitle.bold())
-					.multilineTextAlignment(.center)
-				if let explanation {
-					Text(explanation)
-						.font(.callout)
-						.foregroundStyle(.secondary)
-						.multilineTextAlignment(.center)
-						.fixedSize(horizontal: false, vertical: true)
-				}
-			}
-			VStack(alignment: .leading, spacing: 12) {
-				content
-					.disabled(form.working)
-				message
-			}
-			.controlSize(.large)
-			HStack(spacing: 12) {
-				buttons
-			}
-			.controlSize(.extraLarge)
-			ProgressView()
-				.controlSize(.small)
-				.opacity(form.working ? 1 : 0)
-		}
-		.frame(width: form.step == .server ? 300 : 440)
-		.padding(32)
-	}
-
 	private func unknownAnswer(_ phrase: AppModel.RecoveryPhrase) -> Int? {
 		zip(phrase.checked, form.answers).first { !PhraseEntry.couldBeListWord($0.1) }.map { $0.0 + 1 }
 	}
 
-	private var apiKeyHint: some View {
-		Text("The API key is the api-key file in the server's data directory, which is /var/lib/native-note-server under the server's systemd unit.")
-			.font(.callout)
-			.foregroundStyle(.secondary)
-			.fixedSize(horizontal: false, vertical: true)
-	}
-
-	@ViewBuilder
-	private var message: some View {
-		if let message = form.message {
-			Text(message)
-				.font(.callout)
-				.foregroundStyle(.red)
-				.fixedSize(horizontal: false, vertical: true)
-		}
-	}
-
 	@ViewBuilder
 	private var buttons: some View {
-		Button(form.step == .server ? declineTitle : "Cancel", role: .cancel) {
+		Button("Cancel", role: .cancel) {
 			running?.cancel()
 			controls.cancel()
 			done()
@@ -182,7 +113,6 @@ struct SyncSetupView: View {
 	private var explanation: String? {
 		switch form.step {
 		case .preparing: nil
-		case .server where isPage: "Sync with a server you run, so these notes reach your other Macs and can be restored. They are encrypted on this Mac before they leave it."
 		case .server where form.mode == .changeServer: "Enter where this library's server is now, or an empty server to move the library to. A server that holds another library is refused."
 		case .server: nil
 		case .words: "With these words and the API key, your notes can be restored on another Mac. Native Note never keeps them, and anyone who has them can read your notes."
@@ -214,13 +144,6 @@ struct SyncSetupView: View {
 		switch form.step {
 		case .preparing:
 			EmptyView()
-		case .server where isPage:
-			TextField("Server address", text: $form.server, prompt: Text(verbatim: "http://notes.example:8080"))
-				.focused($serverFocused)
-				.onSubmit(send)
-			SecureField("API key", text: $form.apiKey)
-				.onSubmit(send)
-			apiKeyHint
 		case .server:
 			Form {
 				TextField("Server:", text: $form.server, prompt: Text(verbatim: "http://notes.example:8080"))
@@ -230,7 +153,6 @@ struct SyncSetupView: View {
 					.onSubmit(send)
 			}
 			.formStyle(.columns)
-			apiKeyHint
 		case let .words(phrase):
 			RecoveryWords(words: phrase.words)
 			Button("Copy Words") {

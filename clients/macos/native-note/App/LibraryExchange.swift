@@ -55,7 +55,7 @@ import UniformTypeIdentifiers
 	}
 
 	private var showsLibrary: Bool {
-		model.phase == .unlocked && !model.offersSyncSetup
+		model.phase == .unlocked && !model.isOnboarding
 	}
 
 	var passphraseRefused: Bool {

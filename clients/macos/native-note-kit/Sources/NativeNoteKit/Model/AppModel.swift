@@ -19,8 +19,8 @@ import Observation
 	}
 
 	public private(set) var phase: Phase = .loading
-	/// Once, right after the library is first set up, so a new or wiped Mac starts from its synced notes.
-	public private(set) var offersSyncSetup = false
+	/// From the library's first setup until its last onboarding step, so a new or wiped Mac is offered Touch ID and sync before the library shows.
+	public private(set) var isOnboarding = false
 	var notes: [Note] = []
 	public private(set) var failure: Failure?
 	public private(set) var isImporting = false
@@ -147,15 +147,15 @@ import Observation
 	}
 
 	func setUp(password: String) async {
-		await openLibrary(offeringSync: true) {
+		await openLibrary(onboarding: true) {
 			let unlocked = try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters)
 			try? self.keyStore.delete()
 			return unlocked
 		}
 	}
 
-	public func dismissSyncSetupOffer() {
-		offersSyncSetup = false
+	public func finishOnboarding() {
+		isOnboarding = false
 	}
 
 	func unlock(password: String) async {
@@ -187,7 +187,7 @@ import Observation
 		keptForUndo = [:]
 		createdHere = []
 		focusesEditor = nil
-		offersSyncSetup = false
+		isOnboarding = false
 		store = nil
 		failure = nil
 		failingSaves = [:]
@@ -701,8 +701,8 @@ import Observation
 	}
 
 	@discardableResult
-	/// A first setup offers sync before the library shows, so the library never flashes in front of the offer.
-	private func openLibrary(offeringSync: Bool = false, _ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
+	/// A first setup keeps onboarding up while the library opens, so the library never flashes in front of its last steps.
+	private func openLibrary(onboarding: Bool = false, _ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
 		failure = nil
 		let away = awayEvents
 		do {
@@ -729,7 +729,7 @@ import Observation
 				return nil
 			}
 			selection = groups.first?.notes.first?.id
-			offersSyncSetup = offeringSync
+			isOnboarding = onboarding
 			phase = .unlocked
 			refreshBiometricUnlock()
 			await startSync(opened)

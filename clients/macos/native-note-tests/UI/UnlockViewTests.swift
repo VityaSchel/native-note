@@ -29,7 +29,6 @@ struct UnlockViewTests {
 		submit: @escaping (String) async -> AppModel.Failure? = { _ in nil }
 	) -> UnlockView {
 		UnlockView(
-			isSetup: false,
 			failure: nil,
 			submit: submit,
 			dismissFailure: {},
@@ -272,7 +271,7 @@ struct UnlockViewTests {
 		}
 	}
 
-	@Test func unlockingHasNoUnlockButtonWhileSetupKeepsItsFieldsAndCreate() throws {
+	@Test func unlockingHasOnlyTheArrowAndForgotPassword() throws {
 		let unlock = lockScreen()
 		defer { unlock.close() }
 		try type("correct horse", into: try field("Password", in: unlock), of: unlock)
@@ -282,16 +281,6 @@ struct UnlockViewTests {
 		#expect(unlockButtons.allSatisfy { $0.frame.width == UnlockView.arrowSide })
 		#expect(unlock.accessibilityElements(.link).map(\.label) == ["Forgot Password?"])
 		#expect(unlock.views(of: NSSecureTextField.self).map(\.placeholderString) == ["Password"])
-
-		let setup = OffscreenWindow(UnlockView(isSetup: true, failure: nil, submit: { _ in nil }, dismissFailure: {}))
-		defer { setup.close() }
-		let setupButtons = setup.accessibilityElements(.button)
-
-		#expect(setupButtons.map(\.label) == ["Create"])
-		#expect((setupButtons.first?.frame.width ?? 0) > 290)
-		#expect(Set(setup.views(of: NSSecureTextField.self).map(\.placeholderString)) == ["Password", "Confirm Password"])
-		#expect(setup.views(of: NSSecureTextField.self).allSatisfy { $0.isBezeled })
-		#expect(setup.accessibilityElements(.link).isEmpty)
 	}
 
 	@Test func eachTouchIDStateSaysWhetherTouchIDCanStillBeUsed() {
@@ -977,61 +966,6 @@ struct UnlockViewTests {
 		offscreen.close()
 
 		#expect(isInvalidated(context))
-	}
-
-	@Test func settingUpWithMatchingPasswordsSubmitsOnce() async throws {
-		var submitted: [String] = []
-		let offscreen = OffscreenWindow(UnlockView(isSetup: true, failure: nil, submit: { submitted.append($0); return nil }, dismissFailure: {}))
-		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		let confirmation = try field("Confirm Password", in: offscreen)
-
-		try type("correct horse", into: password, of: offscreen)
-		try type("correct horse", into: confirmation, of: offscreen)
-		confirmation.currentEditor()?.insertNewline(nil)
-		await offscreen.pump { !submitted.isEmpty }
-
-		#expect(submitted == ["correct horse"])
-	}
-
-	@Test func settingUpWithMismatchedPasswordsSubmitsNothing() async throws {
-		var submitted: [String] = []
-		let offscreen = OffscreenWindow(UnlockView(isSetup: true, failure: nil, submit: { submitted.append($0); return nil }, dismissFailure: {}))
-		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		let confirmation = try field("Confirm Password", in: offscreen)
-
-		try type("correct horse", into: password, of: offscreen)
-		try type("correct hose", into: confirmation, of: offscreen)
-		confirmation.currentEditor()?.insertNewline(nil)
-		await offscreen.pump(turns: 40) { !submitted.isEmpty }
-
-		#expect(submitted.isEmpty)
-		#expect(password.stringValue == "correct horse")
-		#expect(offscreen.accessibilityElements(.staticText).contains { $0.value == "The passwords do not match." })
-	}
-
-	@Test func setupWarnsWithoutASecureEnclave() {
-		func warning(isSetup: Bool, hasSecureEnclave: Bool) -> String? {
-			UnlockView(isSetup: isSetup, failure: nil, submit: { _ in nil }, dismissFailure: {}, hasSecureEnclave: hasSecureEnclave).setupWarning
-		}
-
-		#expect(warning(isSetup: true, hasSecureEnclave: false) == UnlockView.noSecureEnclaveWarning)
-		#expect(warning(isSetup: true, hasSecureEnclave: true) == nil)
-		#expect(warning(isSetup: false, hasSecureEnclave: false) == nil)
-	}
-
-	@Test func setupNeverListensForTouchID() {
-		let glyphs = Glyphs()
-		let offscreen = OffscreenWindow(
-			UnlockView(isSetup: true, failure: nil, submit: { _ in nil }, dismissFailure: {}, touchID: TouchIDControls(state: .listening(LAContext()), listen: { glyphs.heard.append($0) }))
-		)
-		defer { offscreen.close() }
-		offscreen.pump(for: 0.1)
-
-		#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
-		#expect(glyphs.heard.isEmpty)
-		#expect(!offscreen.accessibilityElements(.staticText).contains { $0.value == UnlockView.touchIDLine })
 	}
 }
 

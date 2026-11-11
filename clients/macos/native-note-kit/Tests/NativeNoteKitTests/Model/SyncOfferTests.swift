@@ -25,20 +25,20 @@ struct SyncOfferTests {
 		return (model, directory)
 	}
 
-	@Test func settingUpTheLibraryOffersSyncOnceAndLockingDropsTheOffer() async throws {
+	@Test func settingUpTheLibraryStartsOnboardingOnceAndLockingEndsIt() async throws {
 		let (model, directory) = freshMac()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		try #require(model.phase == .needsSetup)
 
 		await model.submit(password: workspacePassword)
 		#expect(model.phase == .unlocked)
-		#expect(model.offersSyncSetup)
+		#expect(model.isOnboarding)
 
 		await model.lock()
-		#expect(!model.offersSyncSetup)
+		#expect(!model.isOnboarding)
 		await model.submit(password: workspacePassword)
 		#expect(model.phase == .unlocked)
-		#expect(!model.offersSyncSetup)
+		#expect(!model.isOnboarding)
 	}
 
 	@Test func notNowLeavesSyncToSettings() async throws {
@@ -46,13 +46,13 @@ struct SyncOfferTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.submit(password: workspacePassword)
 
-		model.dismissSyncSetupOffer()
+		model.finishOnboarding()
 
-		#expect(!model.offersSyncSetup)
+		#expect(!model.isOnboarding)
 		#expect(model.syncStatus.server == nil)
 	}
 
-	@Test func aWipedMacThatJoinsFromTheOfferStartsWithItsSyncedNotes() async throws {
+	@Test func aWipedMacThatJoinsDuringOnboardingStartsWithItsSyncedNotes() async throws {
 		let server = try SyncServer()
 		let (first, _) = try await syncingModel(server, idle: .seconds(3600))
 		try await fill(first, with: ["kept on the server", "and a second note"])
@@ -63,9 +63,9 @@ struct SyncOfferTests {
 		let (wiped, directory) = freshMac(server)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await wiped.submit(password: "a new password")
-		try #require(wiped.offersSyncSetup)
+		try #require(wiped.isOnboarding)
 		#expect(await wiped.joinSync(server: server.url.absoluteString, apiKey: try apiKeyText(server), phrase: entry(phrase.words)) == nil)
-		wiped.dismissSyncSetupOffer()
+		wiped.finishOnboarding()
 		await wiped.syncNow()
 
 		#expect(Set(wiped.notes.map(\.body)) == ["kept on the server", "and a second note"])
