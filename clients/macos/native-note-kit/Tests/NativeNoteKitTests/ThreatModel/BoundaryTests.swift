@@ -158,7 +158,7 @@ struct BoundaryTests {
 		#expect(found == workspacePassword)
 	}
 
-	@Test func sqlCipherUsesCommonCryptoAndBothCLibrariesArePinnedToCommits() async throws {
+	@Test func sqlCipherUsesCommonCryptoAndBothCLibrariesArePinned() async throws {
 		let url = temporaryDatabase()
 		try makeDirectory(for: url)
 		let connection = try SQLiteConnection(url: url, rawKey: SymmetricKey(size: .bits256))
@@ -166,14 +166,39 @@ struct BoundaryTests {
 		#expect(try connection.scalar("PRAGMA cipher") == "aes-256-cbc")
 		#expect(try connection.scalar("PRAGMA cipher_hmac_algorithm") == "HMAC_SHA512")
 
-		let package = try String(contentsOf: repository.appending(path: "clients/macos/native-note-kit/Package.swift"), encoding: .utf8)
-		let resolved = try JSONSerialization.jsonObject(with: Data(contentsOf: repository.appending(path: "clients/macos/native-note-kit/Package.resolved"))) as? [String: Any]
+		let kit = repository.appending(path: "clients/macos/native-note-kit")
+		let package = try String(contentsOf: kit.appending(path: "Package.swift"), encoding: .utf8)
+		let resolved = try JSONSerialization.jsonObject(with: Data(contentsOf: kit.appending(path: "Package.resolved"))) as? [String: Any]
 		let pins = try #require(resolved?["pins"] as? [[String: Any]])
-		for identity in ["phc-winner-argon2", "sqlcipher.swift"] {
-			let pin = try #require(pins.first { $0["identity"] as? String == identity })
-			let revision = try #require((pin["state"] as? [String: Any])?["revision"] as? String)
-			#expect(revision.count == 40 && revision.allSatisfy(\.isHexDigit), "\(identity)")
-			#expect(package.contains("revision: \"\(revision)\""), "\(identity)")
+		#expect(pins.compactMap { $0["identity"] as? String } == ["phc-winner-argon2"])
+		let argon2 = try #require((pins.first?["state"] as? [String: Any])?["revision"] as? String)
+		#expect(argon2.count == 40 && argon2.allSatisfy(\.isHexDigit))
+		#expect(package.contains("revision: \"\(argon2)\""))
+
+		let script = try String(contentsOf: kit.appending(path: "Scripts/sqlcipher-amalgamation.sh"), encoding: .utf8)
+		func pinned(_ name: String, digits: Int) throws -> String {
+			let line = try #require(script.split(separator: "\n").first { $0.hasPrefix("\(name)=\"") })
+			let value = String(line.dropFirst(name.count + 2).dropLast())
+			#expect(value.count == digits && value.allSatisfy(\.isHexDigit), "\(name)")
+			return value
 		}
+		#expect(try gitlink(of: "clients/macos/native-note-kit/sqlcipher") == (try pinned("commit", digits: 40)))
+		for (name, path) in [("sqlite3_c_sha256", "sqlite3.c"), ("sqlite3_h_sha256", "include/sqlite3.h")] {
+			let generated = try Data(contentsOf: kit.appending(path: "Sources/SQLCipher/\(path)"))
+			#expect(SHA256.hash(data: generated).map { String(format: "%02x", $0) }.joined() == (try pinned(name, digits: 64)), "\(path)")
+		}
+	}
+
+	private func gitlink(of path: String) throws -> String? {
+		let git = Process()
+		git.executableURL = URL(filePath: "/usr/bin/env")
+		git.arguments = ["git", "ls-files", "--stage", "--", path]
+		git.currentDirectoryURL = repository
+		let output = Pipe()
+		git.standardOutput = output
+		try git.run()
+		let entry = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(whereSeparator: \.isWhitespace)
+		git.waitUntilExit()
+		return entry.count == 4 && entry[0] == "160000" ? String(entry[1]) : nil
 	}
 }

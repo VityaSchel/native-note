@@ -9,7 +9,7 @@ struct BuildScriptTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let tools = directory.appending(path: "tools")
 		let products = directory.appending(path: "products")
-		try FileManager.default.createDirectory(at: products.appending(path: "SQLCipher.framework"), withIntermediateDirectories: true)
+		try FileManager.default.createDirectory(at: products, withIntermediateDirectories: true)
 		for product in ["power-loss", "power-loss-agent", "power-loss-flush-probe", "NativeNoteTypist"] {
 			try Data().write(to: products.appending(path: product))
 		}

@@ -1,7 +1,7 @@
 import Foundation
 
 enum GuestKit {
-	static let requiredItems = ["power-loss-agent", "power-loss-flush-probe", "NativeNoteTypist", "SQLCipher.framework", "setup.sh", "allow-agent.sh", "install-agent.sh", "start-agent.sh", "dev.hloth.devtools.native-note-power-loss-test.plist"]
+	static let requiredItems = ["power-loss-agent", "power-loss-flush-probe", "NativeNoteTypist", "setup.sh", "allow-agent.sh", "install-agent.sh", "start-agent.sh", "dev.hloth.devtools.native-note-power-loss-test.plist"]
 
 	static var built: URL {
 		let executable = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])

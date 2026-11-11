@@ -37,6 +37,8 @@ releases/
 *.pkg
 *.tar.gz
 *.zip
+clients/macos/native-note-kit/Sources/SQLCipher/sqlite3.c
+clients/macos/native-note-kit/Sources/SQLCipher/include/sqlite3.h
 
 # Coverage
 lcov.info

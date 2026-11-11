@@ -14,11 +14,7 @@ struct LocalKitTests {
 
 	private func kit(typist: String) throws -> URL {
 		let kit = directory.appending(path: "kit-\(typist)")
-		let versions = kit.appending(path: "SQLCipher.framework/Versions/A")
-		try FileManager.default.createDirectory(at: versions, withIntermediateDirectories: true)
-		try Data("library".utf8).write(to: versions.appending(path: "SQLCipher"))
-		try FileManager.default.createSymbolicLink(atPath: kit.appending(path: "SQLCipher.framework/Versions/Current").path, withDestinationPath: "A")
-		try FileManager.default.createSymbolicLink(atPath: kit.appending(path: "SQLCipher.framework/SQLCipher").path, withDestinationPath: "Versions/Current/SQLCipher")
+		try FileManager.default.createDirectory(at: kit, withIntermediateDirectories: true)
 		let executable = kit.appending(path: "NativeNoteTypist")
 		try Data(typist.utf8).write(to: executable)
 		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
@@ -43,7 +39,7 @@ struct LocalKitTests {
 		try LocalKit.unpack(from: guest, byteCount: byteCount ?? archive.count, into: folder)
 	}
 
-	@Test func theTypistItsFrameworkAndTheProbeArriveWholeOnTheGuestsOwnDisk() throws {
+	@Test func theTypistAndTheProbeArriveWholeOnTheGuestsOwnDisk() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
 
@@ -51,8 +47,6 @@ struct LocalKitTests {
 
 		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "first")
 		#expect(FileManager.default.isExecutableFile(atPath: local.appending(path: "NativeNoteTypist").path))
-		#expect(try FileManager.default.destinationOfSymbolicLink(atPath: local.appending(path: "SQLCipher.framework/Versions/Current").path) == "A")
-		#expect(try String(contentsOf: local.appending(path: "SQLCipher.framework/SQLCipher"), encoding: .utf8) == "library")
 		#expect(try String(contentsOf: local.appending(path: "power-loss-flush-probe"), encoding: .utf8) == "probe")
 		#expect(!FileManager.default.fileExists(atPath: local.appending(path: "power-loss-agent").path))
 		#expect(!FileManager.default.fileExists(atPath: local.path + ".new"))
@@ -81,7 +75,7 @@ struct LocalKitTests {
 		#expect(!FileManager.default.fileExists(atPath: local.path + ".new.tar"))
 	}
 
-	@Test func aKitWithoutItsFrameworkIsRefusedAndTheLastOneStays() throws {
+	@Test func aKitWithoutTheProbeIsRefusedAndTheLastOneStays() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
 		try install(try LocalKit.archive(from: try kit(typist: "good")), into: local)
@@ -111,7 +105,7 @@ struct LocalKitTests {
 	@Test func packingAKitThatLacksAnItemFails() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let broken = try kit(typist: "broken")
-		try FileManager.default.removeItem(at: broken.appending(path: "SQLCipher.framework"))
+		try FileManager.default.removeItem(at: broken.appending(path: "power-loss-flush-probe"))
 
 		#expect(throws: LocalKit.Failure.self) { try LocalKit.archive(from: broken) }
 	}

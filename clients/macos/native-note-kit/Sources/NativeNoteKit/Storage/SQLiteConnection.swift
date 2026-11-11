@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import SQLCipher
-import SQLCipherCodec
 
 nonisolated enum SQLiteError: Error, Equatable {
 	case cannotOpen(code: Int32, message: String)

@@ -6,7 +6,7 @@ Dependencies:
 - LocalAuthentication
 - LocalAuthenticationEmbeddedUI
 - Security
-- [SQLCipher.swift](https://github.com/sqlcipher/SQLCipher.swift) — revision `205df55` (`4.17.0`), a prebuilt XCFramework published by Zetetic
+- [SQLCipher](https://github.com/sqlcipher/sqlcipher) — tag `v4.17.0`, built from source with FTS5 its only optional feature, from the amalgamation that [sqlcipher-amalgamation.sh](native-note-kit/Scripts/sqlcipher-amalgamation.sh) generates from the tag's commit, a submodule, and checks by SHA-256
 - [phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) — revision `f57e61e`, built from source
 
 ## Implementation details

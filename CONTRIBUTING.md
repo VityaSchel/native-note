@@ -99,7 +99,7 @@ cargo audit --deny warnings
 
 ### macOS client
 
-Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer on macOS 26.0. `xcodebuild` needs Xcode selected, not the Command Line Tools (`sudo xcode-select -s /Applications/Xcode.app`). The first build fetches SQLCipher and Argon2.
+Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer on macOS 26.0. `xcodebuild` needs Xcode selected, not the Command Line Tools (`sudo xcode-select -s /Applications/Xcode.app`). Before the first build, run `native-note-kit/Scripts/sqlcipher-amalgamation.sh`, which checks out the SQLCipher submodule and generates its amalgamation. The first build fetches Argon2.
 
 Touch ID unlock needs a team-signed build. Put your team in `clients/macos/Local.xcconfig`, which git ignores, and pass `-allowProvisioningUpdates` to `xcodebuild`:
 

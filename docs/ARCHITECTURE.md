@@ -84,7 +84,7 @@ Known limitations, out of scope:
 Documented risks and vulnerabilities:
 
 - **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes, except those that also crossed TLS
-- **Argon2 and SQLCipher** are third-party C in the client, pinned to commit revisions. SQLCipher is a prebuilt binary.
+- **Argon2 and SQLCipher** are third-party C in the client, built from source: Argon2 pinned to a commit revision, SQLCipher a submodule pinned to its release tag's commit, its generated amalgamation checked by SHA-256.
 - **Hand-rolled HTTP parser.** Constrained grammar, fuzzed, reverse proxy recommended for public deployments.
 - **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule.
 - **Payload length leaks note size in 4 KiB steps.** [Content](./PROTOCOL.md#content) is zero-filled to a multiple of 4096 B, so the server and its backups see how many blocks each version takes, but not which writes delete or how long a short note is.

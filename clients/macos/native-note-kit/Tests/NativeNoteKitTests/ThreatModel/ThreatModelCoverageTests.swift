@@ -52,7 +52,7 @@ struct ThreatModelCoverageTests {
 		],
 		"Coercion": [rightPasswordOpens, .swift("EndToEnd/RestoreEndToEndTests", "aWipedMacRestoresEveryNoteFromThePhraseAndEditsFlowBothWays")],
 		"No forward secrecy for metadata": [.swift("ThreatModel/ServerViewTests", "aLeakedAPIKeyOpensCapturedEnvelopesToMetadataButNotToNotes")],
-		"Argon2 and SQLCipher": [.swift("ThreatModel/BoundaryTests", "sqlCipherUsesCommonCryptoAndBothCLibrariesArePinnedToCommits")],
+		"Argon2 and SQLCipher": [.swift("ThreatModel/BoundaryTests", "sqlCipherUsesCommonCryptoAndBothCLibrariesArePinned")],
 		"Hand-rolled HTTP parser": [
 			.rust("server/native-note-core/src/http/tests.rs", "bad_framing_is_a_bad_request"),
 			.rust("server/native-note-core/src/http/tests.rs", "at_most_one_hundred_headers_are_accepted"),

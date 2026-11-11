@@ -11,6 +11,7 @@ if [[ -n "$(git -C "$root" status --porcelain)" ]]; then
 	echo "commit or stash every change first: a release is built from a commit only" >&2
 	exit 1
 fi
+"$root/clients/macos/native-note-kit/Scripts/sqlcipher-amalgamation.sh"
 out="$root/releases"
 release="$out/Native-Note-$version.zip"
 if [[ -e "$release" ]]; then

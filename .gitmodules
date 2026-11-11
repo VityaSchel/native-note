@@ -1,0 +1,4 @@
+[submodule "sqlcipher"]
+	path = clients/macos/native-note-kit/sqlcipher
+	url = https://github.com/sqlcipher/sqlcipher.git
+	shallow = true

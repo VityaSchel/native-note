@@ -76,14 +76,9 @@ struct AgentServiceTests {
 		return String(decoding: received, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 	}
 
-	private func kit(typist: String, withFramework: Bool = true) throws -> URL {
+	private func kit(typist: String) throws -> URL {
 		let kit = directory.appending(path: "kit-\(typist)")
 		try FileManager.default.createDirectory(at: kit, withIntermediateDirectories: true)
-		if withFramework {
-			let versions = kit.appending(path: "SQLCipher.framework/Versions/A")
-			try FileManager.default.createDirectory(at: versions, withIntermediateDirectories: true)
-			try Data("library".utf8).write(to: versions.appending(path: "SQLCipher"))
-		}
 		try Data(typist.utf8).write(to: kit.appending(path: "NativeNoteTypist"))
 		try Data("probe".utf8).write(to: kit.appending(path: "power-loss-flush-probe"))
 		return kit
@@ -105,11 +100,11 @@ struct AgentServiceTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
 		let service = AgentService(typist: local.appending(path: "NativeNoteTypist"), kit: local, libraryDirectory: { throw Failure() }, shutDown: {})
-		let archive = try LocalKit.archive(["NativeNoteTypist"], from: try kit(typist: "alone", withFramework: false))
+		let archive = try LocalKit.archive(["NativeNoteTypist"], from: try kit(typist: "alone"))
 
 		let replies = try exchange(Data("install \(archive.count)\n".utf8) + archive, with: service)
 
-		#expect(replies == ["error the kit arrived without SQLCipher.framework", ""])
+		#expect(replies == ["error the kit arrived without power-loss-flush-probe", ""])
 		#expect(!FileManager.default.fileExists(atPath: local.path))
 	}
 

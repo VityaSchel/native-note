@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 public enum LocalKit {
-	public static let items = ["NativeNoteTypist", "SQLCipher.framework", "power-loss-flush-probe"]
+	public static let items = ["NativeNoteTypist", "power-loss-flush-probe"]
 	public static let folder = URL(filePath: "/Users/Shared/NativeNotePowerLoss", directoryHint: .isDirectory)
 
 	public static var typist: URL {
