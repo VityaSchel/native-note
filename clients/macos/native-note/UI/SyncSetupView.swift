@@ -40,6 +40,7 @@ struct SyncSetupView: View {
 	let finished: () -> Void
 	let done: () -> Void
 	let clipboard: RecoveryClipboard
+	let announce: (String) -> Void
 
 	@State private var form: SyncSetupForm
 	@State private var revealed = false
@@ -55,11 +56,13 @@ struct SyncSetupView: View {
 		form: SyncSetupForm,
 		controls: SyncControls,
 		clipboard: RecoveryClipboard = .shared,
+		announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() },
 		finished: @escaping () -> Void = {},
 		done: @escaping () -> Void
 	) {
 		self.controls = controls
 		self.clipboard = clipboard
+		self.announce = announce
 		self.finished = finished
 		self.done = done
 		_form = State(initialValue: form)
@@ -94,6 +97,10 @@ struct SyncSetupView: View {
 		} buttons: {
 			buttons
 		}
+	}
+
+	private func unknownAnswer(_ phrase: AppModel.RecoveryPhrase) -> Int? {
+		zip(phrase.checked, form.answers).first { !PhraseEntry.couldBeListWord($0.1) }.map { $0.0 + 1 }
 	}
 
 	@ViewBuilder
@@ -169,10 +176,13 @@ struct SyncSetupView: View {
 					}
 				}
 			}
+			.onChange(of: unknownAnswer(phrase)) { _, number in
+				if let number { announce(PhraseFields.unknownWordMessage(number)) }
+			}
 		case .join:
-			PhraseFields(entry: $form.phrase, submit: send)
+			PhraseFields(entry: $form.phrase, submit: send, announce: announce)
 		case .currentPhrase:
-			PhraseFields(entry: $form.currentEntry, submit: send)
+			PhraseFields(entry: $form.currentEntry, submit: send, announce: announce)
 		}
 	}
 
@@ -230,7 +240,7 @@ struct SyncSetupView: View {
 	}
 }
 
-/// The words flow down each column, then across, as a list written on paper; each column selects and copies as plain numbered lines.
+/// The words flow down each column, then across, as a list written on paper.
 struct RecoveryWords: View {
 	static let columns = 3
 	static let rows = 8
@@ -243,22 +253,19 @@ struct RecoveryWords: View {
 
 	var body: some View {
 		ZStack {
-			HStack(alignment: .top, spacing: 24) {
-				ForEach(0 ..< Self.columns, id: \.self) { column in
-					let lines = Self.lines(revealed ? words : words.map { _ in Self.hiddenWord }, column: column)
-					if revealed {
-						Text(lines).textSelection(.enabled)
-					} else {
-						Text(lines)
+			if revealed {
+				RecoveryColumns(words: words)
+			} else {
+				HStack(alignment: .top, spacing: RecoveryColumnsView.gap) {
+					ForEach(0 ..< Self.columns, id: \.self) { column in
+						Text(RecoveryColumnsView.lines(words.map { _ in Self.hiddenWord }, column: column).joined(separator: "\n"))
 					}
 				}
-			}
-			.monospacedDigit()
-			.lineSpacing(6)
-			.fixedSize()
-			.blur(radius: revealed ? 0 : 7)
-			.accessibilityHidden(!revealed)
-			if !revealed {
+				.monospacedDigit()
+				.lineSpacing(6)
+				.fixedSize()
+				.blur(radius: 7)
+				.accessibilityHidden(true)
 				VStack(spacing: 10) {
 					Text(Self.warning)
 						.font(.callout)
@@ -269,20 +276,6 @@ struct RecoveryWords: View {
 		.padding(12)
 		.frame(maxWidth: .infinity)
 		.background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
-	}
-
-	/// A column's lines; a number shorter than the column's longest gets figure spaces so the words line up.
-	static func lines(_ words: [String], column: Int) -> AttributedString {
-		let numbers = (column * rows ..< min((column + 1) * rows, words.count)).map { $0 + 1 }
-		let width = String(numbers.last ?? 0).count
-		var text = AttributedString()
-		for number in numbers {
-			if number != numbers.first { text += AttributedString("\n") }
-			var label = AttributedString(String(repeating: "\u{2007}", count: width - String(number).count) + "\(number). ")
-			label.foregroundColor = .secondary
-			text += label + AttributedString(words[number - 1])
-		}
-		return text
 	}
 }
 

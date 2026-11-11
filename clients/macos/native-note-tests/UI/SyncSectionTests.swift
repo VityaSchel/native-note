@@ -19,8 +19,54 @@ private struct SyncForm: View {
 	}
 }
 
+@MainActor @Observable
+private final class StatusBox {
+	var status: AppModel.SyncStatus
+
+	init(_ status: AppModel.SyncStatus) {
+		self.status = status
+	}
+}
+
+private struct ChangingSyncForm: View {
+	let box: StatusBox
+
+	var body: some View {
+		Form { SyncSection(controls: SyncControls(status: box.status)) { _ in } }.formStyle(.grouped)
+	}
+}
+
 @MainActor
 struct SyncSectionTests {
+	/// A retry after a failure keeps the reason's room, so Settings and an open sheet stay put while it runs.
+	@Test func aRetryAfterAFailureKeepsTheSectionsHeightUntilItEnds() {
+		let server = "http://127.0.0.1:8080"
+		let reason = "Could not connect to the server. Check that it is running and that its address is right."
+		let box = StatusBox(AppModel.SyncStatus(phase: .idle, server: server, lastSynced: .now))
+		let host = NSHostingView(rootView: ChangingSyncForm(box: box).frame(width: 440))
+		func height(_ phase: AppModel.SyncStatus.Phase) -> CGFloat {
+			box.status.phase = phase
+			for _ in 0 ..< 5 {
+				host.layoutSubtreeIfNeeded()
+				RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+			}
+			return host.fittingSize.height
+		}
+
+		let idle = height(.idle)
+		let syncingFresh = height(.syncing)
+		let failed = height(.failed(reason))
+		let retrying = height(.syncing)
+		let failedAgain = height(.failed(reason))
+		let synced = height(.idle)
+
+		#expect(syncingFresh == idle)
+		#expect(failed > idle)
+		#expect(retrying == failed)
+		#expect(failedAgain == failed)
+		#expect(synced == idle)
+	}
+
 	private func offscreen(_ status: AppModel.SyncStatus, _ requests: Requests) -> OffscreenWindow<SyncForm> {
 		let controls = SyncControls(status: status, syncNow: { requests.synced += 1 })
 		return OffscreenWindow(SyncForm(section: SyncSection(controls: controls) { requests.presented.append($0) }), width: 440, height: 360)

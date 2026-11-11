@@ -8,6 +8,8 @@ struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 	var error: String?
 	var working = false
 	var width: CGFloat = 400
+	/// Off while a step can show no error, such as waiting for a touch, so its content sits midway.
+	var reservesError = true
 	@ViewBuilder var fields: Fields
 	@ViewBuilder var leadingButtons: Leading
 	@ViewBuilder var buttons: Buttons
@@ -26,17 +28,19 @@ struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 					.fixedSize(horizontal: false, vertical: true)
 			}
 			fields
-			ZStack(alignment: .topLeading) {
-				Text(verbatim: "\n")
-					.hidden()
-					.accessibilityHidden(true)
-				if let error {
-					Text(error)
-						.foregroundStyle(.red)
-						.fixedSize(horizontal: false, vertical: true)
+			if reservesError || error != nil {
+				ZStack(alignment: .topLeading) {
+					Text(verbatim: "\n")
+						.hidden()
+						.accessibilityHidden(true)
+					if let error {
+						Text(error)
+							.foregroundStyle(.red)
+							.fixedSize(horizontal: false, vertical: true)
+					}
 				}
+				.font(.callout)
 			}
-			.font(.callout)
 			HStack {
 				leadingButtons
 				if working {
@@ -62,10 +66,14 @@ extension SheetScaffold where Leading == EmptyView {
 		error: String? = nil,
 		working: Bool = false,
 		width: CGFloat = 400,
+		reservesError: Bool = true,
 		@ViewBuilder fields: () -> Fields,
 		@ViewBuilder buttons: () -> Buttons,
 		announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 	) {
-		self.init(title: title, explanation: explanation, error: error, working: working, width: width, fields: fields, leadingButtons: { EmptyView() }, buttons: buttons, announce: announce)
+		self.init(
+			title: title, explanation: explanation, error: error, working: working, width: width, reservesError: reservesError,
+			fields: fields, leadingButtons: { EmptyView() }, buttons: buttons, announce: announce
+		)
 	}
 }

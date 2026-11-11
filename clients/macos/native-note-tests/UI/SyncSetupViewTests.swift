@@ -14,6 +14,7 @@ private final class Calls {
 	var adopted: [String] = []
 	var cancelled = 0
 	var done = 0
+	var announced: [String] = []
 }
 
 private let realWords = Mnemonic.words(for: .init(data: Data((0 ..< 32).map { UInt8($0 * 5 + 1) }))) ?? []
@@ -61,7 +62,7 @@ struct SyncSetupViewTests {
 			cancel: { calls.cancelled += 1 }
 		)
 		return OffscreenWindow(
-			SyncSetupView(form: SyncSetupForm(mode: mode, server: server), controls: controls, clipboard: clipboard, done: { calls.done += 1 }),
+			SyncSetupView(form: SyncSetupForm(mode: mode, server: server), controls: controls, clipboard: clipboard, announce: { calls.announced.append($0) }, done: { calls.done += 1 }),
 			width: 440,
 			height: 560
 		)
@@ -256,6 +257,7 @@ struct SyncSetupViewTests {
 		#expect(isRed(answers[0]))
 		#expect(!isEnabled("Change Phrase", in: offscreen))
 		#expect(!texts(offscreen).contains { $0.contains("recovery word list") })
+		#expect(calls.announced == ["Word 3 is not in the recovery word list."])
 		answers[0].currentEditor()?.insertNewline(nil)
 		offscreen.pump()
 		#expect(calls.finished.isEmpty)
@@ -275,13 +277,70 @@ struct SyncSetupViewTests {
 		#expect(button("Copy Words", in: offscreen) != nil)
 
 		try press("Reveal", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains(columns[0]) }
+		await offscreen.pump { !offscreen.views(of: RecoveryColumnsView.self).isEmpty }
 
-		let shown = offscreen.accessibilityElements(.staticText).filter { columns.contains($0.value.isEmpty ? $0.label : $0.value) }
-			.sorted { $0.frame.minX < $1.frame.minX }.map { $0.value.isEmpty ? $0.label : $0.value }
-		#expect(shown.reduce(into: [String]()) { if $0.last != $1 { $0.append($1) } } == columns)
+		let view = try #require(offscreen.views(of: RecoveryColumnsView.self).first)
+		let shown = view.columns.map { column in
+			let layout = try! #require(column.layoutManager)
+			let range = layout.characterRange(forGlyphRange: layout.glyphRange(for: try! #require(column.textContainer)), actualGlyphRange: nil)
+			return (column.string as NSString).substring(with: range).trimmingCharacters(in: .newlines)
+		}
+		#expect(shown == columns)
+		#expect(view.columns[1].frame.minX > view.columns[0].frame.maxX)
+		#expect(texts(offscreen).contains(numberedList))
 		#expect(!texts(offscreen).contains(RecoveryWords.warning))
 		#expect(button("Reveal", in: offscreen) == nil)
+	}
+
+	@Test func aDragFromOneColumnIntoTheNextSelectsAcrossAndCopiesPlainNumberedLines() async throws {
+		let offscreen = offscreen(.rotate, Calls())
+		defer { offscreen.close() }
+		await offscreen.pump { onWords(offscreen) }
+		try press("Reveal", in: offscreen)
+		await offscreen.pump { !offscreen.views(of: RecoveryColumnsView.self).isEmpty }
+		let view = try #require(offscreen.views(of: RecoveryColumnsView.self).first)
+		let pasteboard = NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
+		defer { pasteboard.releaseGlobally() }
+		func lineMid(_ number: Int, edge: KeyPath<NSRect, CGFloat>) throws -> NSPoint {
+			let column = view.columns[(number - 1) / 8]
+			let layout = try #require(column.layoutManager)
+			let lines = column.string.components(separatedBy: "\n")
+			let start = lines.prefix(number - 1).reduce(0) { $0 + ($1 as NSString).length + 1 }
+			let glyphs = layout.glyphRange(forCharacterRange: NSRange(location: start, length: (lines[number - 1] as NSString).length), actualCharacterRange: nil)
+			let rect = layout.boundingRect(forGlyphRange: glyphs, in: try #require(column.textContainer))
+			return column.convert(NSPoint(x: rect[keyPath: edge], y: rect.midY), to: nil)
+		}
+		func send(_ type: NSEvent.EventType, at point: NSPoint, clicks: Int = 1) throws {
+			let event = try #require(NSEvent.mouseEvent(
+				with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+				windowNumber: offscreen.window.windowNumber, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+			))
+			switch type {
+			case .leftMouseDown: view.mouseDown(with: event)
+			case .leftMouseDragged: view.mouseDragged(with: event)
+			default: view.mouseUp(with: event)
+			}
+		}
+		func copied() -> String? {
+			pasteboard.clearContents()
+			_ = view.columns[0].writeSelection(to: pasteboard, types: [.string])
+			return pasteboard.string(forType: .string)
+		}
+
+		try send(.leftMouseDown, at: lineMid(2, edge: \.minX))
+		try send(.leftMouseDragged, at: lineMid(6, edge: \.maxX))
+		try send(.leftMouseDragged, at: lineMid(11, edge: \.maxX))
+		try send(.leftMouseUp, at: lineMid(11, edge: \.maxX))
+
+		#expect(copied() == (2 ... 11).map { "\($0). \(realWords[$0 - 1])" }.joined(separator: "\n"))
+
+		var insideWord = try lineMid(20, edge: \.maxX)
+		insideWord.x -= 4
+		try send(.leftMouseDown, at: insideWord, clicks: 2)
+		#expect(copied() == realWords[19])
+
+		view.columns[0].selectAll(nil)
+		#expect(copied() == numberedList)
 	}
 
 	@Test func cancelSitsAtTheLeadingEdgeApartFromBackAndTheNextStep() async throws {
@@ -447,6 +506,7 @@ struct SyncSetupViewTests {
 		try typeKeys("bitcoin ", into: wordFields(offscreen)[1], of: offscreen)
 		await offscreen.pump { editing(offscreen) === wordFields(offscreen)[2] }
 		#expect(isRed(wordFields(offscreen)[1]))
+		#expect(calls.announced == ["Word 2 is not in the recovery word list."])
 		#expect(!texts(offscreen).contains { $0.contains("recovery word list") })
 		#expect(!isEnabled("Turn On Sync", in: offscreen))
 	}
@@ -470,6 +530,7 @@ struct SyncSetupViewTests {
 		#expect(editing(offscreen) === wordFields(offscreen)[2])
 		#expect(isRed(wordFields(offscreen)[1]))
 		#expect(!isRed(wordFields(offscreen)[0]) && !isRed(wordFields(offscreen)[2]))
+		#expect(calls.announced == ["Word 2 is not in the recovery word list."])
 	}
 
 	@Test func aWordLeftWithASpaceShowsItsWordAndCanBeFinishedLaterWithoutTouchingTheNext() async throws {

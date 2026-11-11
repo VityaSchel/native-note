@@ -20,7 +20,8 @@ struct TurnOnTouchIDView: View {
 				: awaitsTouch ? nil : "Enter your password to unlock with Touch ID instead.",
 			error: awaitsTouch ? nil : form.inlineMessage,
 			working: form.working && !awaitsTouch,
-			width: 380
+			width: 380,
+			reservesError: !awaitsTouch
 		) {
 			if awaitsTouch {
 				TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel)
@@ -38,9 +39,11 @@ struct TurnOnTouchIDView: View {
 			Button(declineTitle, role: .cancel, action: cancel)
 				.keyboardShortcut(.cancelAction)
 				.disabled(form.working && !awaitsTouch)
-			Button("Turn On", action: send)
-				.keyboardShortcut(.defaultAction)
-				.disabled(!form.canSubmit)
+			if !awaitsTouch {
+				Button("Continue", action: send)
+					.keyboardShortcut(.defaultAction)
+					.disabled(!form.canSubmit)
+			}
 		}
 		.defaultFocus($typing, true)
 		.onDisappear(perform: touchID.cancel)

@@ -4,6 +4,7 @@ import SwiftUI
 struct PhraseFields: View {
 	@Binding var entry: PhraseEntry
 	let submit: () -> Void
+	var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
 	@FocusState private var editing: Int?
 	@State private var leaving: Int?
@@ -23,15 +24,31 @@ struct PhraseFields: View {
 				.fixedSize(horizontal: false, vertical: true)
 				.accessibilityHidden(problem == nil)
 		}
-		.onChange(of: editing) { left, _ in
+		.onChange(of: editing) { left, now in
+			let spoken = left.map { entry.isInvalid(at: $0, editing: $0) } ?? true
 			for index in Set([left, leaving].compactMap(\.self)) {
 				entry.complete(at: index)
 			}
 			leaving = nil
+			if let left, !spoken, entry.isInvalid(at: left, editing: now) { announce(Self.unknownWordMessage(left + 1)) }
 		}
 		.onAppear {
 			Task { if editing == nil { editing = 0 } }
 		}
+		.onChange(of: unknownWord) { _, index in
+			// A word left behind is spoken once it is completed, above; until then a prefix reads as unknown.
+			if let index, index == editing { announce(Self.unknownWordMessage(index + 1)) }
+		}
+	}
+
+	/// Spoken only: the red word shows it, and VoiceOver hears why.
+	static func unknownWordMessage(_ number: Int) -> String {
+		"Word \(number) is not in the recovery word list."
+	}
+
+	private var unknownWord: Int? {
+		guard case let .unknownWord(index) = entry.problem(editing: editing) else { return nil }
+		return index
 	}
 
 	private func field(_ index: Int) -> some View {

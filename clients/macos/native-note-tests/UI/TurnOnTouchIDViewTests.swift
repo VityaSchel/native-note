@@ -157,6 +157,28 @@ struct TurnOnTouchIDViewTests {
 		#expect(model.failure == nil)
 	}
 
+	@Test func whileItWaitsForTheTouchOnlyCancelShowsAndTheGlyphSitsMidway() async throws {
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library(keys)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let offscreen = OffscreenWindow(TurnOnTouchIDSheet(model: model, calls: Calls()), width: 380, height: 320)
+		defer { offscreen.close() }
+		let sensor = Sensor()
+		sensor.watch(keys, in: offscreen.window)
+		#expect(offscreen.accessibilityElements(.button).map(\.label) == ["Cancel", "Continue"])
+
+		try submit(workspacePassword, in: offscreen)
+		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
+
+		#expect(offscreen.accessibilityElements(.button).map(\.label) == ["Cancel"])
+		let title = try #require(offscreen.accessibilityElements().first { $0.label == "Turn On Touch ID Unlock" || $0.value == "Turn On Touch ID Unlock" }).frame
+		let line = try #require(offscreen.accessibilityElements(.staticText).first { $0.value == TurnOnTouchIDView.touchIDLine || $0.label == TurnOnTouchIDView.touchIDLine }).frame
+		let glyph = offscreen.onScreen(try #require(glyphs(in: offscreen).first))
+		let cancel = try #require(offscreen.accessibilityElements(.button).first).frame
+		#expect(abs((title.minY - glyph.maxY) - (line.minY - cancel.maxY)) <= 2, "\(title) \(glyph) \(line) \(cancel)")
+		sensor.touch()
+	}
+
 	@Test func aWrongPasswordStaysOpenWithTheFieldCleared() async throws {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library(keys)

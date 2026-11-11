@@ -120,6 +120,7 @@ struct SyncSection: View {
 	let present: (SecuritySettings.Sheet) -> Void
 
 	@State private var confirmingTurnOff = false
+	@State private var lastFailure: String?
 
 	var body: some View {
 		Section("Sync") {
@@ -143,8 +144,19 @@ struct SyncSection: View {
 						}
 						if case let .failed(reason) = controls.status.phase {
 							Text(reason)
+						} else if controls.status.phase == .syncing, let lastFailure {
+							Text(lastFailure)
+								.hidden()
+								.accessibilityHidden(true)
 						}
 						ForEach(controls.status.problems, id: \.self) { Text($0) }
+					}
+				}
+				.onChange(of: controls.status.phase, initial: true) { _, phase in
+					switch phase {
+					case let .failed(reason): lastFailure = reason
+					case .off, .idle: lastFailure = nil
+					case .syncing: break
 					}
 				}
 				LabeledContent {
