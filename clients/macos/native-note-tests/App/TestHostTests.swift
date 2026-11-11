@@ -111,11 +111,33 @@ struct TestHostTests {
 		#expect(settings.keyEquivalentModifierMask == .command)
 	}
 
-	@Test func lockIsControlCommandL() throws {
+	@Test func lockIsCommandL() throws {
 		let item = try #require(try fileMenu().item(withTitle: "Lock"))
 
 		#expect(item.keyEquivalent == "l")
-		#expect(item.keyEquivalentModifierMask == [.control, .command])
+		#expect(item.keyEquivalentModifierMask == .command)
+	}
+
+	@Test func closingTheLastWindowKeepsTheAppRunning() throws {
+		let delegate = try #require(NSApp.delegate)
+
+		#expect(delegate.applicationShouldTerminateAfterLastWindowClosed?(NSApp) == false)
+	}
+
+	@Test func helpOpensTheGettingStartedGuide() throws {
+		let item = try #require(menu(containing: "Native Note Help"))
+		try #require(item.action != #selector(NSApplication.showHelp(_:)), "AppKit's own Help item shows an alert")
+		let help = try #require(item.menu)
+		var opened: [URL] = []
+		let open = Guide.open
+		Guide.open = { opened.append($0) }
+		defer { Guide.open = open }
+
+		help.performActionForItem(at: help.index(of: item))
+
+		#expect(opened == [Guide.gettingStarted])
+		#expect(Guide.gettingStarted.absoluteString == "https://git.hloth.dev/hloth/native-note/src/branch/main/docs/guides/getting-started.md")
+		#expect(item.keyEquivalent == "?" && item.keyEquivalentModifierMask == .command)
 	}
 
 	@Test func libraryCommandsWaitForUnlock() throws {

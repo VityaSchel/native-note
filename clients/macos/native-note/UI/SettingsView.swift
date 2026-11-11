@@ -95,26 +95,18 @@ struct SecurityForm: View {
 
 	var body: some View {
 		Form {
-			if touchIDAvailable {
-				Section {
-					Toggle(isOn: Binding(get: { touchIDEnabled }, set: { on in if on { present(.turnOnTouchID) } else { turnOffTouchID() } })) {
-						Text("Unlock with Touch ID")
-						Text("Use your fingerprint instead of typing the password.")
-					}
-				} header: {
-					Text("Unlock")
-				} footer: {
-					Text("Changing the password turns Touch ID unlock off.")
-						.font(.caption)
-						.foregroundStyle(.secondary)
-				}
-			}
-			Section("Password") {
+			Section("Unlock") {
 				LabeledContent {
 					Button("Change Password…") { present(.changePassword) }
 				} label: {
-					Text("Unlock password")
-					Text("Opens your notes on this Mac. It cannot be recovered.")
+					Text("Password")
+					Text("The app is encrypted with this password. It cannot be recovered.")
+				}
+				if touchIDAvailable {
+					Toggle(isOn: Binding(get: { touchIDEnabled }, set: { on in if on { present(.turnOnTouchID) } else { turnOffTouchID() } })) {
+						Text("Touch ID")
+						Text("Unlock the app with your fingerprint.")
+					}
 				}
 			}
 			SyncSection(controls: sync, present: present)

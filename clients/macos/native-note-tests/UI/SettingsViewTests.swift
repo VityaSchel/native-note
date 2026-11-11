@@ -121,6 +121,27 @@ struct SettingsViewTests {
 		#expect(requests.presented.isEmpty)
 	}
 
+	@Test func theUnlockSectionHoldsThePasswordThenTouchIDInTheOnboardingWords() {
+		for touchIDAvailable in [true, false] {
+			let offscreen = OffscreenWindow(
+				SecurityForm(touchIDAvailable: touchIDAvailable, touchIDEnabled: false, turnOffTouchID: {}, present: { _ in }),
+				width: 440,
+				height: 300
+			)
+			defer { offscreen.close() }
+
+			let lines = offscreen.accessibilityElements()
+				.filter { [.staticText, NSAccessibility.Role(rawValue: "AXHeading")].contains($0.role) && !($0.label.isEmpty && $0.value.isEmpty) }
+				.sorted { $0.frame.maxY > $1.frame.maxY }
+				.map { $0.value.isEmpty ? $0.label : $0.value }
+			let touchID = touchIDAvailable ? ["Touch ID", "Unlock the app with your fingerprint."] : []
+			let expected = ["Unlock", "Password", "The app is encrypted with this password. It cannot be recovered."] + touchID + ["Sync"]
+
+			#expect(Array(lines.prefix(expected.count)) == expected, "\(touchIDAvailable)")
+			#expect(!lines.contains { $0.contains("turns Touch ID unlock off") })
+		}
+	}
+
 	@Test func withoutTouchIDThereIsNoSwitch() {
 		let offscreen = OffscreenWindow(
 			SecurityForm(touchIDAvailable: false, touchIDEnabled: false, turnOffTouchID: {}, present: { _ in }),

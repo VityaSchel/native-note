@@ -153,6 +153,19 @@ struct AppDelegateTests {
 		#expect(!isInvalidated(fresh))
 	}
 
+	@Test func clickingTheDockIconWithNoWindowOpenBringsTheLibraryWindowBack() {
+		let delegate = AppDelegate(model: .previewing([]), confirmQuitLosingEdits: QuitPrompt().ask)
+		#expect(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+		var shown = 0
+		delegate.exchange.showWindow = { shown += 1 }
+
+		#expect(delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: true))
+		#expect(shown == 0)
+		#expect(!delegate.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+		#expect(shown == 1)
+		#expect(!delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+	}
+
 	@Test func theQuitAlertOnlyQuitsOnAnExplicitClick() {
 		let alert = AppDelegate.quitLosingEditsAlert("disk I/O error")
 

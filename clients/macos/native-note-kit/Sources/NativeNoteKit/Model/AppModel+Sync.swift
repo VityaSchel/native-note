@@ -431,7 +431,7 @@ extension AppModel {
 		case 413: "The server or a proxy in front of it refused a request this large. A proxy must accept request bodies of at least 2 MiB + 28 B, such as 3 MiB."
 		case 500 ... 599: "The server, or a proxy in front of it, could not answer (HTTP \(status))."
 		case 300 ... 399: "The server address answers with a redirect (HTTP \(status)), which Native Note does not follow. Use the address the server itself answers on, or remove the redirect."
-		default: "The server answered with HTTP \(status), which Native Note does not expect."
+		default: "Invalid response from the server: HTTP \(status)."
 		}
 	}
 

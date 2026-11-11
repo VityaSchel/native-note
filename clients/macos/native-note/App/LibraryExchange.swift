@@ -11,8 +11,18 @@ import UniformTypeIdentifiers
 		var id: Self { self }
 	}
 
+	private struct ExportChoice {
+		let passphrase: String?
+	}
+
 	let model: AppModel
 	var isExporting = false
+	private var chosenExport: ExportChoice?
+	static let window = "library"
+	/// Brings the library window back after it closed; set by its view, which can open windows.
+	@ObservationIgnored var showWindow: (() -> Void)?
+	/// Swapped by tests, which must not show a panel.
+	@ObservationIgnored var presentPanel: @MainActor (NSSavePanel, @escaping (URL) -> Void) -> Void = LibraryExchange.run
 	private(set) var pendingImport: URL?
 	private(set) var isImporting = false
 	var lastImport: ImportSummary?
@@ -73,6 +83,22 @@ import UniformTypeIdentifiers
 		}
 	}
 
+	/// The library's commands bring a closed window back first, as Notes does.
+	func newNote() {
+		showWindow?()
+		Task { await model.createNote() }
+	}
+
+	func searchNotes() {
+		showWindow?()
+		Task { focusSearch() }
+	}
+
+	func startExport() {
+		showWindow?()
+		isExporting = true
+	}
+
 	/// The list's search lives in the window's toolbar, which AppKit focuses as Notes and Mail do.
 	func focusSearch(in window: NSWindow? = NSApp.mainWindow) {
 		window?.toolbar?.items.lazy.compactMap { $0 as? NSSearchToolbarItem }.first?.beginSearchInteraction()
@@ -81,18 +107,28 @@ import UniformTypeIdentifiers
 	static let encryptedExport = UTType(filenameExtension: "nnexport", conformingTo: .data) ?? .data
 
 	func chooseExport(passphrase: String?) {
+		chosenExport = ExportChoice(passphrase: passphrase)
 		isExporting = false
+	}
+
+	/// A window shows one sheet at a time, so the save panel waits for the export sheet to close.
+	func sheetClosed() {
+		guard let choice = chosenExport else { return }
+		chosenExport = nil
+		guard showsLibrary else { return }
+		let passphrase = choice.passphrase
 		let panel = NSSavePanel()
 		panel.nameFieldStringValue = passphrase == nil ? "Native Note.zip" : "Native Note.nnexport"
 		panel.allowedContentTypes = [passphrase == nil ? .zip : Self.encryptedExport]
-		Self.run(panel) { [model] url in Task { await model.exportLibrary(to: url, passphrase: passphrase) } }
+		presentPanel(panel) { [model] url in Task { await model.exportLibrary(to: url, passphrase: passphrase) } }
 	}
 
 	func chooseImport() {
+		showWindow?()
 		let panel = NSOpenPanel()
 		panel.canChooseDirectories = false
 		panel.allowedContentTypes = [.zip, Self.encryptedExport]
-		Self.run(panel) { url in Task { await self.receive(url) } }
+		presentPanel(panel) { url in Task { await self.receive(url) } }
 	}
 
 	/// Attached to the library window, as Apple apps attach their save and open panels.

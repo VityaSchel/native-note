@@ -16,8 +16,10 @@ private final class Calls {
 	var done = 0
 }
 
-private let phrase = AppModel.RecoveryPhrase(words: (1 ... 24).map { "word\($0)" }, checked: [2, 10, 19])
 private let realWords = Mnemonic.words(for: .init(data: Data((0 ..< 32).map { UInt8($0 * 5 + 1) }))) ?? []
+private let phrase = AppModel.RecoveryPhrase(words: realWords, checked: [2, 10, 19])
+private let checkedWords = [2, 10, 19].map { realWords[$0] }
+private let numberedList = realWords.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
 
 @MainActor @Suite(.takesFocus)
 struct SyncSetupViewTests {
@@ -68,7 +70,7 @@ struct SyncSetupViewTests {
 	private func wordFields(_ offscreen: OffscreenWindow<SyncSetupView>) -> [NSTextField] {
 		offscreen.views(of: NSTextField.self).filter(\.isEditable).sorted {
 			let (first, second) = (offscreen.onScreen($0), offscreen.onScreen($1))
-			return first.maxY != second.maxY ? first.maxY > second.maxY : first.minX < second.minX
+			return abs(first.minX - second.minX) > 1 ? first.minX < second.minX : first.maxY > second.maxY
 		}
 	}
 
@@ -101,6 +103,14 @@ struct SyncSetupViewTests {
 		await offscreen.pump { texts(offscreen).contains("Enter Your Recovery Phrase") && wordFields(offscreen).count == 24 }
 		await offscreen.pump { editing(offscreen) === wordFields(offscreen).first }
 		return wordFields(offscreen)
+	}
+
+	private func onWords(_ offscreen: OffscreenWindow<SyncSetupView>) -> Bool {
+		texts(offscreen).contains("Write Down Your Recovery Phrase")
+	}
+
+	private func button(_ label: String, in offscreen: OffscreenWindow<SyncSetupView>) -> AccessibilityElement? {
+		offscreen.accessibilityElements(.button).first { $0.label == label }
 	}
 
 	private func isEnabled(_ label: String, in offscreen: OffscreenWindow<SyncSetupView>) -> Bool {
@@ -145,20 +155,20 @@ struct SyncSetupViewTests {
 		try type("http://notes.example:8080", into: server, of: offscreen)
 		try type("0a0b", into: key, of: offscreen)
 		key.currentEditor()?.insertNewline(nil)
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 		#expect(calls.prepared == [["http://notes.example:8080", "0a0b"]])
-		#expect(texts(offscreen).contains("24. word24"))
+		#expect(!texts(offscreen).contains { $0.contains(realWords[23]) })
 
 		try press("Continue", in: offscreen)
 		let answers = fields(offscreen)
 		#expect(answers.count == 3)
-		for (field, word) in zip(answers, ["word3", "word11", "word20"]) {
+		for (field, word) in zip(answers, checkedWords) {
 			try type(word, into: field, of: offscreen)
 		}
 		try press("Turn On Sync", in: offscreen)
 		await offscreen.pump { calls.done > 0 }
 
-		#expect(calls.finished == [["word3", "word11", "word20"]])
+		#expect(calls.finished == [checkedWords])
 		#expect(calls.cancelled == 0)
 	}
 
@@ -166,16 +176,16 @@ struct SyncSetupViewTests {
 		let pasteboard = NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
 		defer { pasteboard.releaseGlobally() }
 		let calls = Calls()
-		let offscreen = offscreen(.rotate, calls, clipboard: RecoveryClipboard(pasteboard, sleep: { _ in try await Task.sleep(for: .seconds(600)) }))
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		let offscreen = offscreen(.rotate, calls, clipboard: RecoveryClipboard(pasteboard))
+		await offscreen.pump { onWords(offscreen) }
 
 		try press("Copy Words", in: offscreen)
-		#expect(pasteboard.string(forType: .string) == phrase.words.joined(separator: " "))
+		#expect(pasteboard.string(forType: .string) == numberedList)
 		#expect(Set(pasteboard.types ?? []).isSuperset(of: [RecoveryClipboard.concealed, RecoveryClipboard.transient]))
-		await offscreen.pump { texts(offscreen).contains("Copied. The words leave the clipboard in 90 seconds.") }
-		#expect(texts(offscreen).contains("Copied. The words leave the clipboard in 90 seconds."))
+		offscreen.pump(for: 0.1)
+		#expect(!texts(offscreen).contains { $0.hasPrefix("Copied") })
 		try press("Continue", in: offscreen)
-		for (field, word) in zip(fields(offscreen), ["word3", "word11", "word20"]) {
+		for (field, word) in zip(fields(offscreen), checkedWords) {
 			try type(word, into: field, of: offscreen)
 		}
 		try press("Change Phrase", in: offscreen)
@@ -183,7 +193,7 @@ struct SyncSetupViewTests {
 		offscreen.close()
 
 		#expect(calls.done == 1)
-		#expect(pasteboard.string(forType: .string) == phrase.words.joined(separator: " "))
+		#expect(pasteboard.string(forType: .string) == numberedList)
 	}
 
 	@Test func changingToAServerThatHoldsThisLibraryClosesWithoutWords() async throws {
@@ -211,32 +221,86 @@ struct SyncSetupViewTests {
 		let key = try #require(offscreen.views(of: NSSecureTextField.self).first)
 		try type("0a0b", into: key, of: offscreen)
 		try press("Continue", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 		try press("Continue", in: offscreen)
-		for (field, word) in zip(fields(offscreen), ["word3", "word11", "word20"]) {
+		for (field, word) in zip(fields(offscreen), checkedWords) {
 			try type(word, into: field, of: offscreen)
 		}
 
 		try press("Move Library", in: offscreen)
 		await offscreen.pump { calls.done > 0 }
 
-		#expect(calls.finished == [["word3", "word11", "word20"]])
+		#expect(calls.finished == [checkedWords])
 		#expect(calls.rotations == 0)
 		#expect(calls.done == 1)
 	}
 
-	@Test func aConfirmWordOffTheListIsFlaggedBeforeItIsChecked() async throws {
+	@Test func aConfirmWordOffTheListTurnsRedAndHoldsTheCheckWithoutALine() async throws {
 		let calls = Calls()
 		let offscreen = offscreen(.rotate, calls)
 		defer { offscreen.close() }
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 		try press("Continue", in: offscreen)
+		let answers = fields(offscreen)
+		for (field, word) in zip(answers, checkedWords) {
+			try type(word, into: field, of: offscreen)
+		}
+		#expect(isEnabled("Change Phrase", in: offscreen))
 
-		try type("zzzz", into: try #require(fields(offscreen).first), of: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Word 3 is not in the recovery word list.") }
+		try type("ab", into: answers[0], of: offscreen)
+		#expect(!isRed(answers[0]))
+		#expect(!isEnabled("Change Phrase", in: offscreen))
+		try type("zzzz", into: answers[0], of: offscreen)
+		await offscreen.pump { isRed(answers[0]) }
 
-		#expect(texts(offscreen).contains("Word 3 is not in the recovery word list."))
+		#expect(isRed(answers[0]))
+		#expect(!isEnabled("Change Phrase", in: offscreen))
+		#expect(!texts(offscreen).contains { $0.contains("recovery word list") })
+		answers[0].currentEditor()?.insertNewline(nil)
+		offscreen.pump()
 		#expect(calls.finished.isEmpty)
+	}
+
+	@Test func theWordsStayBlurredBehindAWarningUntilRevealedThenReadDownEachColumn() async throws {
+		let offscreen = offscreen(.rotate, Calls())
+		defer { offscreen.close() }
+		await offscreen.pump { onWords(offscreen) }
+		let columns = (0 ..< 3).map { column in
+			(column * 8 + 1 ... column * 8 + 8).map { number in (column == 1 && number < 10 ? "\u{2007}" : "") + "\(number). \(realWords[number - 1])" }.joined(separator: "\n")
+		}
+
+		#expect(texts(offscreen).contains(RecoveryWords.warning))
+		#expect(texts(offscreen).contains("These words are used to encrypt your notes on your sync server. Keep them safe and never share with anyone."))
+		#expect(!texts(offscreen).contains { text in columns.contains { text.contains($0.prefix(12)) } })
+		#expect(button("Copy Words", in: offscreen) != nil)
+
+		try press("Reveal", in: offscreen)
+		await offscreen.pump { texts(offscreen).contains(columns[0]) }
+
+		let shown = offscreen.accessibilityElements(.staticText).filter { columns.contains($0.value.isEmpty ? $0.label : $0.value) }
+			.sorted { $0.frame.minX < $1.frame.minX }.map { $0.value.isEmpty ? $0.label : $0.value }
+		#expect(shown.reduce(into: [String]()) { if $0.last != $1 { $0.append($1) } } == columns)
+		#expect(!texts(offscreen).contains(RecoveryWords.warning))
+		#expect(button("Reveal", in: offscreen) == nil)
+	}
+
+	@Test func cancelSitsAtTheLeadingEdgeApartFromBackAndTheNextStep() async throws {
+		let offscreen = offscreen(.rotate, Calls())
+		defer { offscreen.close() }
+		await offscreen.pump { onWords(offscreen) }
+		let words = try #require(button("Cancel", in: offscreen)).frame
+		let next = try #require(button("Continue", in: offscreen)).frame
+		#expect(next.minX - words.maxX > 200)
+
+		try press("Continue", in: offscreen)
+		await offscreen.pump { button("Back", in: offscreen) != nil }
+		let cancel = try #require(button("Cancel", in: offscreen)).frame
+		let back = try #require(button("Back", in: offscreen)).frame
+		let change = try #require(button("Change Phrase", in: offscreen)).frame
+
+		#expect(abs(cancel.minX - words.minX) < 1)
+		#expect(back.minX - cancel.maxX > 100)
+		#expect(change.minX > back.maxX && change.minX - back.maxX < 20)
 	}
 
 	@Test func cancelDuringTheServerCheckStopsItAndCloses() async throws {
@@ -274,9 +338,9 @@ struct SyncSetupViewTests {
 		try type("http://notes.example:8080", into: try #require(fields(offscreen).first { !($0 is NSSecureTextField) }), of: offscreen)
 		try type("0a0b", into: try #require(offscreen.views(of: NSSecureTextField.self).first), of: offscreen)
 		try press("Continue", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 		try press("Continue", in: offscreen)
-		for (field, word) in zip(fields(offscreen), ["word3", "word11", "word20"]) {
+		for (field, word) in zip(fields(offscreen), checkedWords) {
 			try type(word, into: field, of: offscreen)
 		}
 
@@ -290,7 +354,7 @@ struct SyncSetupViewTests {
 		let calls = Calls()
 		let offscreen = offscreen(.rotate, calls)
 		defer { offscreen.close() }
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 
 		try press("Continue", in: offscreen)
 		await offscreen.pump { texts(offscreen).contains("Enter words 3, 11 and 20 from the phrase you wrote down.") }
@@ -300,26 +364,13 @@ struct SyncSetupViewTests {
 		#expect(SyncSetupView.list([1, 2]) == "1 and 2")
 	}
 
-	@Test func copiedWordsLeaveThePasteboardAfterNinetySeconds() async throws {
-		let pasteboard = NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
-		defer { pasteboard.releaseGlobally() }
-		let waited = Waited()
-		let clipboard = RecoveryClipboard(pasteboard, sleep: { await waited.record($0) })
-
-		clipboard.copy(phrase.words)
-		await settle { pasteboard.string(forType: .string) == nil }
-
-		#expect(await waited.durations == [.seconds(90)])
-		#expect(pasteboard.string(forType: .string) == nil)
-	}
-
 	@Test func somethingCopiedOverTheWordsStaysWhenTheSheetCloses() async throws {
 		let pasteboard = NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
 		defer { pasteboard.releaseGlobally() }
 		let calls = Calls()
 		let clipboard = RecoveryClipboard(pasteboard)
 		let offscreen = offscreen(.rotate, calls, clipboard: clipboard)
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 
 		try press("Copy Words", in: offscreen)
 		pasteboard.clearContents()
@@ -336,7 +387,7 @@ struct SyncSetupViewTests {
 		defer { pasteboard.releaseGlobally() }
 		let calls = Calls()
 		let offscreen = offscreen(.rotate, calls, clipboard: RecoveryClipboard(pasteboard))
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 		try press("Copy Words", in: offscreen)
 
 		try press("Cancel", in: offscreen)
@@ -382,7 +433,7 @@ struct SyncSetupViewTests {
 		#expect(calls.finished.isEmpty)
 	}
 
-	@Test func aSpaceCompletesTheWordAndMovesOnAndAWordOffTheListIsNamedAtOnce() async throws {
+	@Test func aSpaceCompletesTheWordAndMovesOnAndAWordOffTheListTurnsRedAtOnce() async throws {
 		let calls = Calls()
 		let offscreen = offscreen(.setUp, calls, prepare: .success(.existingLibrary))
 		defer { offscreen.close() }
@@ -395,7 +446,8 @@ struct SyncSetupViewTests {
 
 		try typeKeys("bitcoin ", into: wordFields(offscreen)[1], of: offscreen)
 		await offscreen.pump { editing(offscreen) === wordFields(offscreen)[2] }
-		#expect(texts(offscreen).contains("Word 2 is not in the recovery word list."))
+		#expect(isRed(wordFields(offscreen)[1]))
+		#expect(!texts(offscreen).contains { $0.contains("recovery word list") })
 		#expect(!isEnabled("Turn On Sync", in: offscreen))
 	}
 
@@ -407,18 +459,15 @@ struct SyncSetupViewTests {
 		#expect(editing(offscreen) === words[0])
 
 		try typeKeys("zon", into: words[0], of: offscreen)
-		#expect(!texts(offscreen).contains("Word 1 is not in the recovery word list."))
 		#expect(!isRed(wordFields(offscreen)[0]))
 		try typeKeys("zo", into: words[1], of: offscreen)
 		await offscreen.pump { wordFields(offscreen)[0].stringValue == "zone" }
 
 		#expect(wordFields(offscreen)[0].stringValue == "zone")
-		#expect(!texts(offscreen).contains("Word 2 is not in the recovery word list."))
 		#expect(!isRed(wordFields(offscreen)[1]))
 		try #require(wordFields(offscreen)[1].currentEditor()).insertNewline(nil)
 		await offscreen.pump { editing(offscreen) === wordFields(offscreen)[2] }
 		#expect(editing(offscreen) === wordFields(offscreen)[2])
-		#expect(texts(offscreen).contains("Word 2 is not in the recovery word list."))
 		#expect(isRed(wordFields(offscreen)[1]))
 		#expect(!isRed(wordFields(offscreen)[0]) && !isRed(wordFields(offscreen)[2]))
 	}
@@ -438,6 +487,48 @@ struct SyncSetupViewTests {
 		#expect(wordFields(offscreen)[0].stringValue == "absent")
 		#expect(wordFields(offscreen)[1].stringValue == "zoo")
 		#expect(editing(offscreen) === wordFields(offscreen)[0])
+	}
+
+	@Test func theTwentyFourFieldsRunDownEachColumnAndTabFollowsThem() async throws {
+		let offscreen = offscreen(.setUp, Calls(), prepare: .success(.existingLibrary))
+		defer { offscreen.close() }
+		let words = try await reachJoin(offscreen)
+
+		#expect(offscreen.onScreen(words[1]).maxY < offscreen.onScreen(words[0]).minY)
+		#expect(abs(offscreen.onScreen(words[1]).minX - offscreen.onScreen(words[0]).minX) < 1)
+		#expect(offscreen.onScreen(words[8]).minX > offscreen.onScreen(words[7]).maxX)
+
+		for (key, characters, from, to): (UInt16, String, Int, Int) in [(48, "\t", 0, 1), (48, "\t", 7, 8), (48, "\u{19}", 8, 7)] {
+			try #require(offscreen.window.makeFirstResponder(wordFields(offscreen)[from]))
+			try sendKey(key, characters, shift: characters != "\t", to: offscreen)
+			await offscreen.pump { editing(offscreen) === wordFields(offscreen)[to] }
+			#expect(editing(offscreen) === wordFields(offscreen)[to], "\(from) → \(to)")
+		}
+	}
+
+	private func sendKey(_ code: UInt16, _ characters: String, shift: Bool, to offscreen: OffscreenWindow<SyncSetupView>) throws {
+		for type in [NSEvent.EventType.keyDown, .keyUp] {
+			let event = try #require(NSEvent.keyEvent(
+				with: type, location: .zero, modifierFlags: shift ? .shift : [], timestamp: ProcessInfo.processInfo.systemUptime,
+				windowNumber: offscreen.window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+			))
+			offscreen.window.sendEvent(event)
+			offscreen.pump()
+		}
+	}
+
+	@Test func aNumberedListPastedInAnyOrderPutsEachWordInItsOwnField() async throws {
+		try #require(realWords.count == 24)
+		let offscreen = offscreen(.setUp, Calls(), prepare: .success(.existingLibrary))
+		defer { offscreen.close() }
+		let words = try await reachJoin(offscreen)
+		let reversed = numberedList.split(separator: "\n").reversed().joined(separator: "\n")
+
+		try type(reversed, into: words[0], of: offscreen)
+		await offscreen.pump { wordFields(offscreen).map(\.stringValue) == realWords }
+
+		#expect(wordFields(offscreen).map(\.stringValue) == realWords)
+		#expect(isEnabled("Turn On Sync", in: offscreen))
 	}
 
 	@Test func aSpaceInTheLastWordStaysThereAndReturnTidiesIt() async throws {
@@ -488,7 +579,6 @@ struct SyncSetupViewTests {
 		#expect(wordFields(offscreen)[4].stringValue == realWords[4] + ";x")
 		#expect(wordFields(offscreen)[5].stringValue == realWords[5])
 		#expect(editing(offscreen) === wordFields(offscreen)[4])
-		#expect(texts(offscreen).contains("Word 5 is not in the recovery word list."))
 		#expect(isRed(wordFields(offscreen)[4]))
 
 		try typeKeys(" ", into: wordFields(offscreen)[4], of: offscreen)
@@ -537,11 +627,11 @@ struct SyncSetupViewTests {
 		let calls = Calls()
 		let offscreen = offscreen(.rotate, calls, finish: .rotatedElsewhere)
 		defer { offscreen.close() }
-		await offscreen.pump { texts(offscreen).contains("1. word1") }
+		await offscreen.pump { onWords(offscreen) }
 		#expect(calls.rotations == 1)
 
 		try press("Continue", in: offscreen)
-		for (field, word) in zip(fields(offscreen), ["word3", "word11", "word20"]) {
+		for (field, word) in zip(fields(offscreen), checkedWords) {
 			try type(word, into: field, of: offscreen)
 		}
 		try press("Change Phrase", in: offscreen)
@@ -551,7 +641,7 @@ struct SyncSetupViewTests {
 		try type(realWords.joined(separator: " "), into: try #require(wordFields(offscreen).first), of: offscreen)
 		await offscreen.pump { isEnabled("Continue", in: offscreen) }
 		try press("Continue", in: offscreen)
-		await offscreen.pump { calls.rotations == 2 && texts(offscreen).contains("1. word1") }
+		await offscreen.pump { calls.rotations == 2 && onWords(offscreen) }
 
 		#expect(calls.adopted == [realWords.joined(separator: " ")])
 		#expect(calls.rotations == 2)
@@ -573,7 +663,9 @@ struct SyncSetupFormTests {
 		#expect(form.step == .words(phrase) && form.canContinue)
 		form.confirm()
 		#expect(form.step == .confirm(phrase) && !form.canContinue)
-		form.answers = ["a", "b", "c"]
+		form.answers = ["ab", " ", "zzzz"]
+		#expect(!form.canContinue)
+		form.answers = checkedWords.map { " \($0.uppercased()) " }
 		#expect(form.canContinue && form.confirmTitle == "Turn On Sync")
 		form.back()
 		#expect(form.step == .words(phrase))
@@ -609,13 +701,5 @@ struct SyncSetupFormTests {
 		#expect(form.step == .currentPhrase && form.message == AppModel.SyncSetupFailure.rotatedElsewhere.message)
 		form.show(nil)
 		#expect(form.message == "Sync is not set up on this Mac.")
-	}
-}
-
-private actor Waited {
-	private(set) var durations: [Duration] = []
-
-	func record(_ duration: Duration) {
-		durations.append(duration)
 	}
 }

@@ -20,7 +20,7 @@ struct HTTPStatusTests {
 	}
 
 	@Test(arguments: [
-		(400, "did not accept this API key, or a proxy"), (413, "at least 2 MiB + 28 B"), (502, "HTTP 502"), (302, "redirect (HTTP 302)"), (418, "HTTP 418"),
+		(400, "did not accept this API key, or a proxy"), (413, "at least 2 MiB + 28 B"), (502, "HTTP 502"), (302, "redirect (HTTP 302)"), (405, "Invalid response from the server: HTTP 405."),
 	])
 	func setupSaysWhatTheStatusMeans(status: Int, words: String) async throws {
 		let model = try await model(answering: status)

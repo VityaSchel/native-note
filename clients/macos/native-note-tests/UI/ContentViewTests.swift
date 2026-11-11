@@ -31,6 +31,39 @@ struct ContentViewTests {
 		offscreen.window.firstResponder?.insertNewline(nil)
 	}
 
+	@Test func exportingOpensTheSavePanelOnlyOnceTheSheetHasClosedAndWritesTheChosenFile() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		defer { try? FileManager.default.removeItem(at: directory) }
+		try await fill(model, with: ["Shopping"])
+		let exchange = LibraryExchange(model: model)
+		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560, catchesSheets: true)
+		defer { offscreen.close() }
+		let file = directory.appending(path: "chosen.nnexport")
+		var panels: [(name: String, sheetClosed: Bool)] = []
+		exchange.presentPanel = { panel, chosen in
+			panels.append((panel.nameFieldStringValue, offscreen.sheet == nil))
+			chosen(file)
+		}
+
+		exchange.isExporting = true
+		await offscreen.pump { offscreen.sheet != nil }
+		let sheet = try #require(offscreen.sheet)
+		let fields = offscreen.sheetViews(of: NSSecureTextField.self)
+		try #require(fields.count == 2)
+		for field in fields {
+			try #require(sheet.makeFirstResponder(field))
+			try #require(field.currentEditor()).insertText("correct staple")
+			offscreen.pump()
+		}
+		try #require(offscreen.sheetAccessibilityElements(.button).first { $0.label == "Export…" }).press()
+		await offscreen.pump(turns: 4_000) { FileManager.default.fileExists(atPath: file.path) }
+
+		#expect(panels.map(\.name) == ["Native Note.nnexport"])
+		#expect(panels.map(\.sheetClosed) == [true])
+		#expect(AppModel.isEncryptedExport(at: file))
+		#expect(exchange.isIdle)
+	}
+
 	@Test func aFirstLaunchWalksWelcomePasswordTouchIDAndSyncInTheWindowThenOpensTheLibrary() async throws {
 		let directory = temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
@@ -154,7 +187,7 @@ struct ContentViewTests {
 	@Test func lockingTakesCopiedRecoveryWordsOffThePasteboard() async throws {
 		let pasteboard = NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
 		defer { pasteboard.releaseGlobally() }
-		let clipboard = RecoveryClipboard(pasteboard, sleep: { _ in try await Task.sleep(for: .seconds(600)) })
+		let clipboard = RecoveryClipboard(pasteboard)
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model), clipboard: clipboard), width: 980, height: 560)
@@ -391,6 +424,16 @@ struct ContentViewTests {
 		#expect(keys.reasons == ["unlock your notes"])
 		#expect(sensor.readsThroughAGlyphInTheWindow == [true])
 		#expect(model.notes.map(\.body) == ["kayak"])
+	}
+
+	@Test func theWindowLeavesAWayToOpenItAgainOnceClosed() {
+		let exchange = LibraryExchange(model: .previewing([]))
+		#expect(exchange.showWindow == nil)
+
+		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560)
+		defer { offscreen.close() }
+
+		#expect(exchange.showWindow != nil)
 	}
 
 	@Test func closingTheWindowSavesAtOnce() async throws {

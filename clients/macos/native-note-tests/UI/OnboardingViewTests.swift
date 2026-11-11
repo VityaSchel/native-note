@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import LocalAuthentication
 import LocalAuthenticationEmbeddedUI
 import SwiftUI
@@ -255,12 +256,62 @@ struct OnboardingViewTests {
 
 		#expect(texts(offscreen).contains("Sync Your Notes"))
 		#expect(texts(offscreen).contains { $0.contains("Native Note server") && $0.contains("sync your encrypted notes across devices") })
-		#expect(OnboardingView.serverGuide.absoluteString.hasSuffix("docs/guides/setup-sync-server.md"))
 		let primary = try #require(button("Set Up", in: offscreen)).frame
 		let secondary = try #require(button("Not Now", in: offscreen)).frame
 		#expect(primary.minY > secondary.maxY)
 
 		try press("Not Now", in: offscreen)
+
+		#expect(calls.finished == 1)
+	}
+
+	@Test func theServerLinkPointsAtTheSyncServerGuide() throws {
+		let links = OnboardingView.syncSubtitle.runs.compactMap { run in run.link.map { (String(OnboardingView.syncSubtitle[run.range].characters), $0) } }
+		#expect(links.map(\.0) == ["Native Note server"])
+		#expect(links.map(\.1) == [Guide.syncServer])
+		#expect(Guide.syncServer.absoluteString == "https://git.hloth.dev/hloth/native-note/src/branch/main/docs/guides/setup-sync-server.md")
+
+		let offscreen = onboarding(Calls(), libraryExists: true)
+		defer { offscreen.close() }
+		offscreen.pump()
+		let link = try #require(offscreen.accessibilityElements(.link).first)
+		#expect(link.label == "Native Note server" || link.value == "Native Note server")
+	}
+
+	@Test func turningSyncOnInTheSheetFinishesOnboardingThoughTheStatusItWasGivenIsStale() async throws {
+		let calls = Calls()
+		let words = try #require(Mnemonic.words(for: SymmetricKey(data: (0 ..< 32).map { UInt8($0 * 3 + 2) })))
+		let sync = SyncControls(prepareSync: { _, _ in .success(.newLibrary(.init(words: words, checked: [0, 1, 2]))) }, finishSync: { _ in nil })
+		#expect(sync.status.server == nil)
+		let offscreen = onboarding(calls, libraryExists: true, sync: sync)
+		defer { offscreen.close() }
+		try press("Set Up", in: offscreen)
+		await offscreen.pump { offscreen.sheet != nil }
+		let sheet = try #require(offscreen.sheet)
+		func editable() -> [NSTextField] {
+			offscreen.sheetViews(of: NSTextField.self).filter(\.isEditable).sorted { offscreen.window.convertToScreen($0.convert($0.bounds, to: nil)).maxY > offscreen.window.convertToScreen($1.convert($1.bounds, to: nil)).maxY }
+		}
+		func fill(_ texts: [String]) throws {
+			for (field, text) in zip(editable(), texts) {
+				try #require(sheet.makeFirstResponder(field))
+				try #require(field.currentEditor()).insertText(text)
+				offscreen.pump()
+			}
+		}
+		func pressInSheet(_ label: String) async throws {
+			await offscreen.pump { offscreen.sheetAccessibilityElements(.button).contains { $0.label == label && $0.isEnabled } }
+			try #require(offscreen.sheetAccessibilityElements(.button).first { $0.label == label }, "\(label)").press()
+			offscreen.pump()
+		}
+
+		try fill(["http://127.0.0.1:8080", "0a0b"])
+		try await pressInSheet("Continue")
+		await offscreen.pump { offscreen.sheetAccessibilityElements(.button).contains { $0.label == "Reveal" } }
+		try await pressInSheet("Continue")
+		await offscreen.pump { editable().count == 3 }
+		try fill(Array(words.prefix(3)))
+		try await pressInSheet("Turn On Sync")
+		await offscreen.pump { calls.finished > 0 }
 
 		#expect(calls.finished == 1)
 	}

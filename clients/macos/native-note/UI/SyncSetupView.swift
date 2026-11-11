@@ -36,27 +36,31 @@ extension SyncControls {
 
 struct SyncSetupView: View {
 	let controls: SyncControls
+	/// Runs once sync is on, before `done`, which also runs on Cancel.
+	let finished: () -> Void
 	let done: () -> Void
 	let clipboard: RecoveryClipboard
 
 	@State private var form: SyncSetupForm
-	@State private var copied = false
+	@State private var revealed = false
 	@FocusState private var serverFocused: Bool
 	@State private var phraseTookEffect = false
 	@State private var running: Task<Void, Never>?
 
-	init(mode: SyncSetupForm.Mode, controls: SyncControls, clipboard: RecoveryClipboard = .shared, done: @escaping () -> Void) {
-		self.init(form: SyncSetupForm(mode: mode), controls: controls, clipboard: clipboard, done: done)
+	init(mode: SyncSetupForm.Mode, controls: SyncControls, clipboard: RecoveryClipboard = .shared, finished: @escaping () -> Void = {}, done: @escaping () -> Void) {
+		self.init(form: SyncSetupForm(mode: mode), controls: controls, clipboard: clipboard, finished: finished, done: done)
 	}
 
 	init(
 		form: SyncSetupForm,
 		controls: SyncControls,
 		clipboard: RecoveryClipboard = .shared,
+		finished: @escaping () -> Void = {},
 		done: @escaping () -> Void
 	) {
 		self.controls = controls
 		self.clipboard = clipboard
+		self.finished = finished
 		self.done = done
 		_form = State(initialValue: form)
 	}
@@ -79,24 +83,21 @@ struct SyncSetupView: View {
 		SheetScaffold(title: title, explanation: explanation, error: form.message, working: form.working, width: 440) {
 			content
 				.disabled(form.working)
+		} leadingButtons: {
+			Button("Cancel", role: .cancel) {
+				running?.cancel()
+				controls.cancel()
+				done()
+			}
+			.keyboardShortcut(.cancelAction)
+			.disabled(form.storesThePhrase)
 		} buttons: {
 			buttons
 		}
 	}
 
-	private func unknownAnswer(_ phrase: AppModel.RecoveryPhrase) -> Int? {
-		zip(phrase.checked, form.answers).first { !PhraseEntry.couldBeListWord($0.1) }.map { $0.0 + 1 }
-	}
-
 	@ViewBuilder
 	private var buttons: some View {
-		Button("Cancel", role: .cancel) {
-			running?.cancel()
-			controls.cancel()
-			done()
-		}
-		.keyboardShortcut(.cancelAction)
-		.disabled(form.storesThePhrase)
 		switch form.step {
 		case .confirm, .join:
 			Button("Back") { form.back() }
@@ -115,7 +116,7 @@ struct SyncSetupView: View {
 		case .preparing: nil
 		case .server where form.mode == .changeServer: "Enter where this library's server is now, or an empty server to move the library to. A server that holds another library is refused."
 		case .server: nil
-		case .words: "With these words and the API key, your notes can be restored on another Mac. Native Note never keeps them, and anyone who has them can read your notes."
+		case .words: "These words are used to encrypt your notes on your sync server. Keep them safe and never share with anyone."
 		case let .confirm(phrase): "Enter words \(Self.list(phrase.checked.map { $0 + 1 })) from the phrase you wrote down."
 		case .join: "This server already holds a library. Enter its current 24-word recovery phrase, and this Mac syncs with it."
 		case .currentPhrase: "The recovery phrase was changed on another Mac. Enter its current 24 words to continue."
@@ -154,16 +155,8 @@ struct SyncSetupView: View {
 			}
 			.formStyle(.columns)
 		case let .words(phrase):
-			RecoveryWords(words: phrase.words)
-			Button("Copy Words") {
-				clipboard.copy(phrase.words)
-				copied = true
-			}
-			if copied {
-				Text("Copied. The words leave the clipboard in 90 seconds.")
-					.font(.callout)
-					.foregroundStyle(.secondary)
-			}
+			RecoveryWords(words: phrase.words, revealed: revealed) { revealed = true }
+			Button("Copy Words") { clipboard.copy(phrase.words) }
 		case let .confirm(phrase):
 			Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 6) {
 				ForEach(Array(phrase.checked.enumerated()), id: \.offset) { position, index in
@@ -175,11 +168,6 @@ struct SyncSetupView: View {
 							.onSubmit(send)
 					}
 				}
-			}
-			if let unknown = unknownAnswer(phrase) {
-				Text("Word \(unknown) is not in the recovery word list.")
-					.font(.callout)
-					.foregroundStyle(.red)
 			}
 		case .join:
 			PhraseFields(entry: $form.phrase, submit: send)
@@ -200,6 +188,7 @@ struct SyncSetupView: View {
 				let start = await controls.prepareSync(server, apiKey)
 				guard start != .success(.reattached) else {
 					form.finished(nil)
+					finished()
 					return done()
 				}
 				form.prepared(start)
@@ -214,6 +203,7 @@ struct SyncSetupView: View {
 				form.finished(failure)
 				guard failure == nil else { return }
 				phraseTookEffect = true
+				finished()
 				done()
 			}
 		case .join:
@@ -222,7 +212,9 @@ struct SyncSetupView: View {
 			running = Task {
 				let failure = await controls.joinSync(server, apiKey, phrase)
 				form.finished(failure)
-				if failure == nil { done() }
+				guard failure == nil else { return }
+				finished()
+				done()
 			}
 		case .currentPhrase:
 			form.begin()
@@ -238,31 +230,59 @@ struct SyncSetupView: View {
 	}
 }
 
+/// The words flow down each column, then across, as a list written on paper; each column selects and copies as plain numbered lines.
 struct RecoveryWords: View {
 	static let columns = 3
+	static let rows = 8
+	/// Shown blurred in place of every word until they are revealed, so the blur gives nothing away.
+	static let hiddenWord = "••••••••"
+	static let warning = "Make sure your screen isn't watched"
 	let words: [String]
+	var revealed = true
+	var reveal: () -> Void = {}
 
 	var body: some View {
-		Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
-			ForEach(0 ..< (words.count + Self.columns - 1) / Self.columns, id: \.self) { row in
-				GridRow {
-					ForEach(row * Self.columns ..< min((row + 1) * Self.columns, words.count), id: \.self) { index in
-						HStack(spacing: 4) {
-							WordNumber(index: index)
-							Text(verbatim: words[index])
-								.fixedSize()
-						}
-						.accessibilityElement(children: .ignore)
-						.accessibilityLabel(Text(verbatim: "\(index + 1). \(words[index])"))
-						.accessibilityAddTraits(.isStaticText)
+		ZStack {
+			HStack(alignment: .top, spacing: 24) {
+				ForEach(0 ..< Self.columns, id: \.self) { column in
+					let lines = Self.lines(revealed ? words : words.map { _ in Self.hiddenWord }, column: column)
+					if revealed {
+						Text(lines).textSelection(.enabled)
+					} else {
+						Text(lines)
 					}
 				}
 			}
+			.monospacedDigit()
+			.lineSpacing(6)
+			.fixedSize()
+			.blur(radius: revealed ? 0 : 7)
+			.accessibilityHidden(!revealed)
+			if !revealed {
+				VStack(spacing: 10) {
+					Text(Self.warning)
+						.font(.callout)
+					Button("Reveal", action: reveal)
+				}
+			}
 		}
-		.textSelection(.enabled)
 		.padding(12)
-		.frame(maxWidth: .infinity, alignment: .leading)
+		.frame(maxWidth: .infinity)
 		.background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+	}
+
+	/// A column's lines; a number shorter than the column's longest gets figure spaces so the words line up.
+	static func lines(_ words: [String], column: Int) -> AttributedString {
+		let numbers = (column * rows ..< min((column + 1) * rows, words.count)).map { $0 + 1 }
+		let width = String(numbers.last ?? 0).count
+		var text = AttributedString()
+		for number in numbers {
+			if number != numbers.first { text += AttributedString("\n") }
+			var label = AttributedString(String(repeating: "\u{2007}", count: width - String(number).count) + "\(number). ")
+			label.foregroundColor = .secondary
+			text += label + AttributedString(words[number - 1])
+		}
+		return text
 	}
 }
 

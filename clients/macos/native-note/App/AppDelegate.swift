@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 	static let testHostLibrary = FileManager.default.temporaryDirectory.appending(path: "test-host-library")
 
-	private static var hostsTests: Bool {
+	static var hostsTests: Bool {
 		#if DEBUG
 			ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 		#else
@@ -68,6 +68,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 	func applicationDidBecomeActive(_ notification: Notification) {
 		model.appBecameActive()
+	}
+
+	/// Closing the window keeps the app running, as Notes does; the Dock icon brings the window back.
+	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+		false
+	}
+
+	func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+		guard !hasVisibleWindows, let showWindow = exchange.showWindow else { return true }
+		showWindow()
+		return false
 	}
 
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

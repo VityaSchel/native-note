@@ -6,6 +6,7 @@ struct ContentView: View {
 	@Bindable var model: AppModel
 	let clipboard: RecoveryClipboard
 	@Environment(\.undoManager) private var undoManager
+	@Environment(\.openWindow) private var openWindow
 	@AppStorage(EditorZoom.key) private var zoom = 1.0
 
 	init(exchange: LibraryExchange, clipboard: RecoveryClipboard = .shared) {
@@ -37,6 +38,7 @@ struct ContentView: View {
 	var body: some View {
 		screen
 			.frame(minWidth: 720, minHeight: 460)
+			.onAppear { exchange.showWindow = { openWindow(id: LibraryExchange.window) } }
 			.onDisappear { Task { await model.flushPendingSaves() } }
 			.onChange(of: model.phase) { _, phase in
 				guard phase != .unlocked else { return }
@@ -165,7 +167,7 @@ struct ContentView: View {
 		}
 		.toolbar { libraryToolbar }
 		.failureAlert(model.failure, dismiss: model.dismissFailure)
-		.sheet(item: $exchange.presentedSheet) { sheet in
+		.sheet(item: $exchange.presentedSheet, onDismiss: exchange.sheetClosed) { sheet in
 			switch sheet {
 			case .export:
 				ExportSheet(export: exchange.chooseExport(passphrase:)) { exchange.dismiss(.export) }

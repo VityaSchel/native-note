@@ -34,6 +34,14 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		settling[index] = nil
 		let pasted = Self.words(in: text)
 		guard !pasted.isEmpty else { return nil }
+		if Self.inserted(text, over: old) > 1, let numbered = Self.numbered(in: text) {
+			settling[index] = numbered[index].map(Self.completed) ?? old
+			for (number, word) in numbered where number != index {
+				texts[number] = Self.completed(word)
+				settling[number] = nil
+			}
+			return min((numbered.keys.max() ?? index) + 1, Self.count - 1)
+		}
 		if Self.inserted(text, over: old) > 1 {
 			settling[index] = Self.completed(pasted[0])
 			for (offset, word) in pasted.enumerated().dropFirst() where index + offset < Self.count {
@@ -72,6 +80,12 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		Mnemonic.key(from: words)
 	}
 
+	/// Whether typed text is a whole list word, ignoring case and surrounding spaces as the check does.
+	public static func isListWord(_ text: String) -> Bool {
+		let word = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+		return Mnemonic.wordlist?.contains(word) == true
+	}
+
 	/// Whether typed text is a list word or the start of one, so a typo is flagged before the words are checked.
 	public static func couldBeListWord(_ text: String) -> Bool {
 		let word = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -101,6 +115,26 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		text.split { $0.isWhitespace || $0 == "," }
 			.map { $0.lowercased().trimmingCharacters(in: CharacterSet.letters.inverted) }
 			.filter { !$0.isEmpty }
+	}
+
+	/// Several words that each follow their number, as the shown list copies them ("1. action"), by field, so a list pasted in any order or one column of it lands where it belongs.
+	private static func numbered(in text: String) -> [Int: String]? {
+		var number: Int?
+		var placed: [Int: String] = [:]
+		for token in text.split(whereSeparator: { $0.isWhitespace || $0 == "," }) {
+			let digits = token.prefix(while: \.isNumber)
+			let rest = token.dropFirst(digits.count).drop { $0 == "." || $0 == ")" }
+			if !digits.isEmpty {
+				guard number == nil, let value = Int(digits), (1 ... count).contains(value) else { return nil }
+				number = value - 1
+			}
+			let word = rest.lowercased().trimmingCharacters(in: CharacterSet.letters.inverted)
+			guard !word.isEmpty else { continue }
+			guard let field = number, placed[field] == nil else { return nil }
+			placed[field] = word
+			number = nil
+		}
+		return placed.count > 1 && number == nil ? placed : nil
 	}
 
 	/// How many characters an edit put in, measured over a selection too, since a paste over a word need not grow the text.

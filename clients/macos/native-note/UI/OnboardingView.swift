@@ -43,10 +43,7 @@ struct OnboardingView: View {
 			.padding(32)
 			.failureAlert(failure, dismiss: dismissFailure)
 			.sheet(isPresented: $settingUpSync) {
-				SyncSetupView(mode: .setUp, controls: sync, clipboard: clipboard) {
-					settingUpSync = false
-					if sync.status.server != nil { finish() }
-				}
+				SyncSetupView(mode: .setUp, controls: sync, clipboard: clipboard, finished: finish) { settingUpSync = false }
 			}
 	}
 
@@ -90,7 +87,7 @@ struct OnboardingView: View {
 					.keyboardShortcut(.cancelAction)
 			}
 		case .sync:
-			OnboardingPage(title: "Sync Your Notes", subtitle: Self.syncSubtitle, symbol: "arrow.triangle.2.circlepath") {
+			OnboardingPage(title: "Sync Your Notes", subtitle: Text(Self.syncSubtitle), symbol: "arrow.triangle.2.circlepath") {
 				EmptyView()
 			} buttons: {
 				Button { settingUpSync = true } label: { OnboardingLabel(title: "Set Up") }
@@ -102,8 +99,13 @@ struct OnboardingView: View {
 		}
 	}
 
-	static let serverGuide = URL(string: "https://git.hloth.dev/hloth/native-note/src/branch/main/docs/guides/setup-sync-server.md")!
-	static let syncSubtitle = Text("Set up a self-hosted [Native Note server](\(serverGuide.absoluteString)) to sync your encrypted notes across devices.")
+	/// Markdown with an interpolated URL in a `Text` key opened a URL Launch Services refused, so the link is set as an attribute.
+	static var syncSubtitle: AttributedString {
+		var server = AttributedString("Native Note server")
+		server.link = Guide.syncServer
+		return AttributedString("Set up a self-hosted ") + server + AttributedString(" to sync your encrypted notes across devices.")
+	}
+
 	static let noSecureEnclaveWarning = "This Mac has no Secure Enclave, so only this password protects your notes."
 	static let touchIDLine = "Touch ID to finish turning on Touch ID unlock."
 	static let touchIDLabel = "Touch ID to turn on Touch ID unlock"

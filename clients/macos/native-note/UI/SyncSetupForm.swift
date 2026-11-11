@@ -46,7 +46,7 @@ struct SyncSetupForm {
 		case .preparing: false
 		case .server: !server.isEmpty && !apiKey.isEmpty
 		case .words: true
-		case .confirm: answers.allSatisfy { !$0.isEmpty }
+		case .confirm: answers.allSatisfy(PhraseEntry.isListWord)
 		case .join: phrase.opens
 		case .currentPhrase: currentEntry.opens
 		}

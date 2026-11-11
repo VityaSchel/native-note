@@ -80,6 +80,40 @@ struct PhraseEntryTests {
 		#expect(entry.words == (try phrase))
 	}
 
+	@Test func aNumberedListInAnyOrderPutsEachWordInItsNumberedField() throws {
+		var entry = PhraseEntry()
+		let numbered = try phrase.enumerated().map { "\($0.offset + 1). \($0.element)" }
+
+		#expect(entry.set(numbered.reversed().joined(separator: "\n"), at: 6) == 23)
+
+		#expect(entry.words == (try phrase))
+		entry.complete(at: 6)
+		#expect(entry.texts == (try phrase))
+	}
+
+	@Test func oneCopiedColumnLandsInItsOwnFieldsWhereverItIsPasted() throws {
+		var entry = PhraseEntry()
+		let column = try (9 ... 16).map { "\($0 < 10 ? "\u{2007}" : "")\($0). \(try phrase[$0 - 1])" }.joined(separator: "\n")
+
+		#expect(entry.set(column, at: 0) == 16)
+
+		entry.complete(at: 0)
+		#expect(Set(entry.words[..<8]) == [""])
+		#expect(try Array(entry.words[8 ..< 16]) == Array(phrase[8 ..< 16]))
+		#expect(Set(entry.words[16...]) == [""])
+	}
+
+	@Test func numbersThatDoNotFollowEveryWordPasteInOrder() throws {
+		let words = try phrase
+		for (text, count) in [("1. \(words[0]) \(words[1]) 3. \(words[2])", 3), ("1. \(words[0]) 1. \(words[1])", 2), ("30. \(words[0]) 2. \(words[1])", 2)] {
+			var entry = PhraseEntry()
+			_ = entry.set(text, at: 0)
+			entry.complete(at: 0)
+
+			#expect(Array(entry.words.prefix(count + 1)) == Array(words.prefix(count)) + [""], "\(text)")
+		}
+	}
+
 	@Test func aPasteLandingPartWayFillsTheFieldsAfterItAndDropsWhatDoesNotFit() throws {
 		var entry = PhraseEntry()
 
@@ -353,5 +387,12 @@ struct ListWordCheckTests {
 		#expect(PhraseEntry.couldBeListWord(" Aban "))
 		#expect(PhraseEntry.couldBeListWord(""))
 		#expect(!PhraseEntry.couldBeListWord("zzzz"))
+	}
+
+	@Test func onlyAWholeListWordIsOneIgnoringCaseAndSpaces() {
+		#expect(PhraseEntry.isListWord(" Abandon "))
+		#expect(!PhraseEntry.isListWord("aban"))
+		#expect(!PhraseEntry.isListWord(""))
+		#expect(!PhraseEntry.isListWord("zzzz"))
 	}
 }

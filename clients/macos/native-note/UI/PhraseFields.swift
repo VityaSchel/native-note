@@ -10,10 +10,10 @@ struct PhraseFields: View {
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
-			Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
-				ForEach(0 ..< PhraseEntry.count / RecoveryWords.columns, id: \.self) { row in
-					GridRow {
-						ForEach(row * RecoveryWords.columns ..< (row + 1) * RecoveryWords.columns, id: \.self, content: field)
+			HStack(alignment: .top, spacing: 10) {
+				ForEach(0 ..< RecoveryWords.columns, id: \.self) { column in
+					VStack(alignment: .leading, spacing: 6) {
+						ForEach(column * RecoveryWords.rows ..< (column + 1) * RecoveryWords.rows, id: \.self, content: field)
 					}
 				}
 			}
@@ -42,7 +42,19 @@ struct PhraseFields: View {
 				.foregroundStyle(entry.isInvalid(at: index, editing: editing) ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
 				.autocorrectionDisabled()
 				.onSubmit { submitted(index) }
+				.onKeyPress(keys: [.tab, Self.backTab], phases: .down) { press in moveByTab(from: index, back: press.key == Self.backTab) }
 		}
+	}
+
+	/// Shift-Tab arrives as the back-tab character.
+	private static let backTab = KeyEquivalent("\u{19}")
+
+	/// Tab follows the words down each column, as Return and Space do, not the fields' order across the rows.
+	private func moveByTab(from index: Int, back: Bool) -> KeyPress.Result {
+		let next = back ? index - 1 : index + 1
+		guard (0 ..< PhraseEntry.count).contains(next) else { return .ignored }
+		editing = next
+		return .handled
 	}
 
 	private func word(_ index: Int) -> Binding<String> {
@@ -64,12 +76,9 @@ struct PhraseFields: View {
 		}
 	}
 
+	/// A word off the list shows in red; only a checksum failure, which no single field shows, gets a line.
 	private var problem: String? {
-		switch entry.problem(editing: editing) {
-		case let .unknownWord(index): "Word \(index + 1) is not in the recovery word list."
-		case .checksum: "These words are not a recovery phrase. Check for a mistyped or swapped word."
-		case nil: nil
-		}
+		entry.problem(editing: editing) == .checksum ? "These words are not a recovery phrase. Check for a mistyped or swapped word." : nil
 	}
 }
 

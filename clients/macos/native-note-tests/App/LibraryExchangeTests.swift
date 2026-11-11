@@ -78,6 +78,34 @@ struct LibraryExchangeTests {
 		#expect(ImportSummary(added: 1, notImported: 5).message == "Imported 1 note. 5 not imported because Native Note locked.")
 	}
 
+	@Test func newNoteSearchExportAndImportBringAClosedWindowBackFirst() async throws {
+		let (model, directory) = try await library([])
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let exchange = LibraryExchange(model: model)
+		var shown = 0
+		var panels: [String] = []
+		exchange.showWindow = { shown += 1 }
+		exchange.presentPanel = { panel, _ in panels.append(String(describing: type(of: panel))) }
+
+		exchange.newNote()
+		let deadline = ContinuousClock.now + .seconds(10)
+		while model.notes.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+		#expect(shown == 1)
+		#expect(model.notes.count == 1)
+
+		exchange.searchNotes()
+		#expect(shown == 2)
+
+		exchange.startExport()
+		#expect(shown == 3)
+		#expect(exchange.sheet == .export)
+		exchange.dismiss(.export)
+
+		exchange.chooseImport()
+		#expect(shown == 4)
+		#expect(panels == ["NSOpenPanel"])
+	}
+
 	@Test func cancellingTheExportSheetClosesIt() {
 		let exchange = LibraryExchange(model: .previewing([]))
 		exchange.isExporting = true
