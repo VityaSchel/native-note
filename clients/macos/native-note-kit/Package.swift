@@ -53,7 +53,7 @@ let package = Package(
 				.product(name: "argon2", package: "phc-winner-argon2"),
 			],
 			resources: [.copy("Resources/english.txt")],
-			swiftSettings: [.defaultIsolation(MainActor.self)] + upcomingFeatures
+			swiftSettings: [.defaultIsolation(MainActor.self), .unsafeFlags(["-Osize"], .when(configuration: .release))] + upcomingFeatures
 		),
 		.executableTarget(
 			name: "NativeNoteTypist",
