@@ -24,6 +24,51 @@ struct TestHostTests {
 		try #require(NSApp.mainMenu?.items.first { $0.submenu?.item(withTitle: "Export…") != nil }?.submenu)
 	}
 
+	private func menu(containing title: String) -> NSMenuItem? {
+		func search(_ menu: NSMenu) -> NSMenuItem? {
+			for item in menu.items {
+				if item.title == title { return item }
+				if let found = item.submenu.flatMap(search) { return found }
+			}
+			return nil
+		}
+		return NSApp.mainMenu.flatMap(search)
+	}
+
+	@Test func theStandardFindSpellingAndSidebarCommandsAreThere() throws {
+		let find = try #require(menu(containing: "Find…"))
+		#expect(find.keyEquivalent == "f" && find.keyEquivalentModifierMask == .command)
+		#expect(menu(containing: "Check Spelling While Typing") != nil)
+		let sidebar = try #require(menu(containing: "Show Sidebar") ?? menu(containing: "Hide Sidebar"))
+		#expect(sidebar.keyEquivalent == "s" && sidebar.keyEquivalentModifierMask == [.control, .command])
+	}
+
+	@Test func searchNotesIsShiftCommandFBesideFindAndReplace() throws {
+		let item = try #require(menu(containing: "Search Notes"))
+		let replace = try #require(menu(containing: "Find and Replace…"))
+
+		#expect(item.keyEquivalent == "f")
+		#expect(item.keyEquivalentModifierMask == [.shift, .command])
+		#expect(replace.keyEquivalentModifierMask == [.option, .command])
+	}
+
+	@Test func zoomInOutAndActualSizeAreInTheViewMenu() throws {
+		let zoomIn = try #require(menu(containing: "Zoom In"))
+		let zoomOut = try #require(menu(containing: "Zoom Out"))
+		let actual = try #require(menu(containing: "Actual Size"))
+
+		#expect(zoomIn.keyEquivalent == "+" && zoomIn.keyEquivalentModifierMask.contains(.command))
+		#expect(zoomOut.keyEquivalent == "-" && zoomOut.keyEquivalentModifierMask == .command)
+		#expect(actual.keyEquivalent == "0" && actual.keyEquivalentModifierMask == .command)
+	}
+
+	@Test func syncNowIsCommandRInTheFileMenu() throws {
+		let item = try #require(try fileMenu().item(withTitle: "Sync Now"))
+
+		#expect(item.keyEquivalent == "r")
+		#expect(item.keyEquivalentModifierMask == .command)
+	}
+
 	@Test func newNoteIsCommandN() throws {
 		let item = try #require(try fileMenu().item(withTitle: "New Note"))
 

@@ -16,35 +16,42 @@ nonisolated enum Mnemonic {
 		return String(decoding: file, as: UTF8.self).split(separator: "\n").map(String.init)
 	}()
 
+	/// Bits are read in place rather than collected, so no array of key bits outlives the call.
 	static func words(for key: SymmetricKey) -> [String]? {
 		guard let wordlist else { return nil }
-		var bits = key.withUnsafeBytes { bytes in
-			bytes.flatMap { byte in (0 ..< 8).map { byte >> (7 - $0) & 1 } } + checksum(bytes)
-		}
-		defer { bits.withUnsafeMutableBytes { SecretBytes.wipe($0) } }
-		return stride(from: 0, to: bits.count, by: bitsPerWord).map { start in
-			wordlist[bits[start ..< start + bitsPerWord].reduce(0) { $0 << 1 | Int($1) }]
+		return key.withUnsafeBytes { entropy in
+			let checksum = checksum(entropy)
+			func bit(_ index: Int) -> Int {
+				Int((index < 256 ? entropy[index / 8] << (index % 8) : checksum << (index - 256)) >> 7)
+			}
+			return (0 ..< wordCount).map { word in
+				wordlist[(0 ..< bitsPerWord).reduce(0) { $0 << 1 | bit(word * bitsPerWord + $1) }]
+			}
 		}
 	}
 
 	static func key(from words: [String]) -> SymmetricKey? {
 		guard let wordlist, words.count == wordCount else { return nil }
-		var bits: [UInt8] = []
-		defer { bits.withUnsafeMutableBytes { SecretBytes.wipe($0) } }
-		for word in words {
-			guard let index = wordlist.firstIndex(of: word) else { return nil }
-			bits += (0 ..< bitsPerWord).map { UInt8(index >> (bitsPerWord - 1 - $0) & 1) }
+		return SecretBytes.withScratch(byteCount: wordCount * MemoryLayout<Int>.stride) { scratch in
+			let indices = scratch.bindMemory(to: Int.self)
+			for (position, word) in words.enumerated() {
+				guard let index = wordlist.firstIndex(of: word) else { return nil }
+				indices[position] = index
+			}
+			func bit(_ index: Int) -> UInt8 {
+				UInt8(indices[index / bitsPerWord] >> (bitsPerWord - 1 - index % bitsPerWord) & 1)
+			}
+			return SecretBytes.withScratch(byteCount: 32) { entropy in
+				for byte in entropy.indices {
+					entropy[byte] = (0 ..< 8).reduce(0) { $0 << 1 | bit(byte * 8 + $1) }
+				}
+				let expected = (0 ..< 8).reduce(UInt8(0)) { $0 << 1 | bit(256 + $1) }
+				return checksum(UnsafeRawBufferPointer(entropy)) == expected ? SymmetricKey(data: UnsafeRawBufferPointer(entropy)) : nil
+			}
 		}
-		var entropy = stride(from: 0, to: 256, by: 8).map { start in
-			bits[start ..< start + 8].reduce(UInt8(0)) { $0 << 1 | $1 }
-		}
-		defer { entropy.withUnsafeMutableBytes { SecretBytes.wipe($0) } }
-		guard entropy.withUnsafeBytes({ checksum($0) }) == Array(bits[256...]) else { return nil }
-		return SymmetricKey(data: entropy)
 	}
 
-	private static func checksum(_ entropy: UnsafeRawBufferPointer) -> [UInt8] {
-		let first = SHA256.hash(data: entropy).withUnsafeBytes { $0.first ?? 0 }
-		return (0 ..< 8).map { first >> (7 - $0) & 1 }
+	private static func checksum(_ entropy: UnsafeRawBufferPointer) -> UInt8 {
+		SHA256.hash(data: entropy).withUnsafeBytes { $0.first ?? 0 }
 	}
 }

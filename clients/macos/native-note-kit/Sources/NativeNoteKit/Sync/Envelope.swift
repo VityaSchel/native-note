@@ -21,15 +21,16 @@ nonisolated struct EnvelopeKey: Sendable {
 
 	/// The 64 lowercase hex characters of docs/PROTOCOL.md § API key, surrounding whitespace trimmed.
 	static func apiKey(fromHex text: String) -> SymmetricKey? {
-		let hex = Array(text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
-		guard hex.count == 64 else { return nil }
-		var bytes = [UInt8]()
-		for pair in stride(from: 0, to: hex.count, by: 2) {
-			guard let high = nibble(hex[pair]), let low = nibble(hex[pair + 1]) else { return nil }
-			bytes.append(high << 4 | low)
+		SecretBytes.withUTF8(of: text.trimmingCharacters(in: .whitespacesAndNewlines)) { hex in
+			guard hex.count == 64 else { return nil }
+			return SecretBytes.withScratch(byteCount: 32) { bytes in
+				for index in bytes.indices {
+					guard let high = nibble(hex[2 * index]), let low = nibble(hex[2 * index + 1]) else { return nil }
+					bytes[index] = high << 4 | low
+				}
+				return SymmetricKey(data: UnsafeRawBufferPointer(bytes))
+			}
 		}
-		defer { bytes.withUnsafeMutableBytes { SecretBytes.wipe($0) } }
-		return SymmetricKey(data: bytes)
 	}
 
 	private static func nibble(_ digit: UInt8) -> UInt8? {

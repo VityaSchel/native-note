@@ -58,7 +58,7 @@ struct NoteListView: View {
 		.searchable(text: $search, placement: .automatic, prompt: "Search")
 		.overlay {
 			switch emptyState {
-			case .noNotes: ContentUnavailableView("No notes", systemImage: "note.text")
+			case .noNotes: ContentUnavailableView("No Notes", systemImage: "note.text")
 			case .noResults: ContentUnavailableView.search
 			case nil: EmptyView()
 			}

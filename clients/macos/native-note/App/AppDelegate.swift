@@ -5,11 +5,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	let model: AppModel
 	let exchange: LibraryExchange
 	private let confirmQuitLosingEdits: @MainActor (String) -> Bool
+	private let workspace: NotificationCenter
+	private let screenLocked: Notification.Name
 
-	init(model: AppModel, confirmQuitLosingEdits: @escaping @MainActor (String) -> Bool = AppDelegate.askToQuitLosingEdits) {
+	init(
+		model: AppModel,
+		confirmQuitLosingEdits: @escaping @MainActor (String) -> Bool = AppDelegate.askToQuitLosingEdits,
+		workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
+		screenLocked: Notification.Name = Notification.Name("com.apple.screenIsLocked")
+	) {
 		self.model = model
 		exchange = LibraryExchange(model: model)
 		self.confirmQuitLosingEdits = confirmQuitLosingEdits
+		self.workspace = workspace
+		self.screenLocked = screenLocked
 	}
 
 	override convenience init() {
@@ -19,7 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	static let testHostLibrary = FileManager.default.temporaryDirectory.appending(path: "test-host-library")
 
 	private static var hostsTests: Bool {
-		ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+		#if DEBUG
+			ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+		#else
+			false
+		#endif
 	}
 
 	func applicationWillFinishLaunching(_ notification: Notification) {
@@ -29,12 +42,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	}
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
-		NSWorkspace.shared.notificationCenter.addObserver(
-			self,
-			selector: #selector(flushPendingSaves),
-			name: NSWorkspace.willSleepNotification,
-			object: nil
+		for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
+			workspace.addObserver(self, selector: #selector(lockWhileAway), name: name, object: nil)
+		}
+		// Delivered while another app is in front too, which is when a screen usually locks.
+		DistributedNotificationCenter.default().addObserver(
+			self, selector: #selector(lockWhileAway), name: screenLocked, object: nil, suspensionBehavior: .deliverImmediately
 		)
+	}
+
+	@objc private func lockWhileAway() {
+		model.lockWhileAway()
 	}
 
 	func applicationWillResignActive(_ notification: Notification) {
@@ -55,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 			await model.flushPendingSaves()
 			if let reason = model.unsavedReason, !confirmQuitLosingEdits(reason) { return reply(false) }
 			await model.close()
+			RecoveryClipboard.shared.clear()
 			reply(true)
 		}
 		return .terminateLater

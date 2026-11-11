@@ -29,14 +29,28 @@ extension AppModel {
 		public let checked: [Int]
 	}
 
+	/// A server with no library gets a new one under a new phrase; one that holds a library is joined with its phrase.
+	public enum SyncSetupStart: Equatable {
+		case newLibrary(RecoveryPhrase)
+		case existingLibrary
+		/// A library that keeps its key found itself on this server and syncs again, with no words to enter.
+		case reattached
+	}
+
 	public enum SyncSetupFailure: Error, Equatable {
 		case invalidServer
 		case invalidAPIKey
 		case unreachable(String)
 		case refused
+		case answered(status: Int)
 		case serverHasLibrary
+		case serverHoldsAnotherLibrary
+		case serverHasNoLibrary
+		case serverLostLibrary
+		case alreadySetUp
 		case rotatedElsewhere
 		case serverBehind
+		case outcomeUnknown
 		case wordsDoNotMatch
 		case phraseDoesNotOpen
 		case failed(String)
@@ -46,12 +60,18 @@ extension AppModel {
 			case .invalidServer: "Enter the server's address, starting with http:// or https://."
 			case .invalidAPIKey: "Enter the 64-character API key from the server's api-key file."
 			case let .unreachable(reason): "The server could not be reached. \(reason)"
-			case .refused: "The server did not accept this API key."
-			case .serverHasLibrary: "This server already holds a library. Restoring a library from a server comes in a later version of Native Note."
+			case .refused: "The server did not accept this API key, or a proxy in front of it changed the request. A proxy must forward HTTP/1.1 to the server's root path."
+			case let .answered(status): AppModel.statusMessage(status)
+			case .serverHasLibrary: "This server now holds a library. Enter its recovery phrase to sync this Mac with it."
+			case .serverHoldsAnotherLibrary: "This server holds another library. Native Note cannot merge two libraries; choose a server that holds this one, or an empty one."
+			case .serverHasNoLibrary: "This server no longer holds a library. Continue to start a new one."
+			case .serverLostLibrary: "The server no longer holds this library as this Mac last saw it. It may have been reset or restored from a backup."
+			case .alreadySetUp: "Sync is already set up on this Mac."
 			case .rotatedElsewhere: "The recovery phrase was changed on another device, so this phrase was not saved. Enter the current phrase to continue."
 			case .serverBehind: "The server holds an older recovery phrase than this Mac last saw. It may have been restored from a backup."
+			case .outcomeUnknown: "The server's answer did not arrive, so this phrase may already be in effect. Keep it, and any phrase it replaces, and try again."
 			case .wordsDoNotMatch: "Those words don't match the phrase. Check what you wrote down."
-			case .phraseDoesNotOpen: "This phrase does not open this library's key."
+			case .phraseDoesNotOpen: "This phrase does not open the library on this server."
 			case let .failed(reason): reason
 			}
 		}
@@ -61,6 +81,8 @@ extension AppModel {
 		let settings: SyncSettings
 		let recoveryKey: SymmetricKey
 		let phrase: RecoveryPhrase
+		/// This library, with its own Content key, goes to an empty server.
+		var moving = false
 	}
 
 	/// Returns once a sync that started after the call has finished; requests made meanwhile share the next one.
@@ -69,7 +91,7 @@ extension AppModel {
 		let wanted = syncRequests
 		if syncLoop == nil {
 			syncLoop = Task {
-				while syncedThrough < syncRequests {
+				while syncedThrough < syncRequests, !Task.isCancelled {
 					let covered = syncRequests
 					await syncOnce()
 					syncedThrough = covered
@@ -117,34 +139,68 @@ extension AppModel {
 		Task { await syncNow() }
 	}
 
-	func stopSync() {
+	/// Cancels a sync in flight, whose keys and pulled text go with it; await the returned loop before closing the store it uses.
+	@discardableResult
+	func stopSync() -> Task<Void, Never>? {
+		let loop = syncLoop
+		let change = keyChange
+		loop?.cancel()
+		change?.cancel()
+		keyChange = nil
 		idleSync?.cancel()
 		idleSync = nil
 		engine = nil
 		recovery = nil
 		syncStatus = SyncStatus()
+		guard loop != nil || change != nil else { return nil }
+		return Task {
+			await loop?.value
+			_ = await change?.value
+		}
 	}
 
-	public func prepareSync(server: String, apiKey: String) async -> Result<RecoveryPhrase, SyncSetupFailure> {
-		guard let url = URL(string: server.trimmingCharacters(in: .whitespacesAndNewlines)),
-			["http", "https"].contains(url.scheme?.lowercased()), url.host() != nil
-		else { return .failure(.invalidServer) }
-		guard let apiKey = EnvelopeKey.apiKey(fromHex: apiKey) else { return .failure(.invalidAPIKey) }
-		let settings = SyncSettings(server: url, apiKey: apiKey, contentKey: SymmetricKey(size: .bits256))
+	public func prepareSync(server: String, apiKey: String) async -> Result<SyncSetupStart, SyncSetupFailure> {
 		do {
-			guard try await flow(settings).storedVersion() == 0 else { return .failure(.serverHasLibrary) }
+			let endpoint = try Self.endpoint(server: server, apiKey: apiKey)
+			if let store, let kept = try await store.keptLibrary() {
+				return try await reattachOrMove(kept, to: endpoint.server, apiKey: endpoint.apiKey, in: store)
+			}
+			let settings = SyncSettings(server: endpoint.server, apiKey: endpoint.apiKey, contentKey: SymmetricKey(size: .bits256))
+			guard try await flow(settings).storedVersion() == 0 else { return .success(.existingLibrary) }
+			return newPhrase(for: settings).map { .success(.newLibrary($0)) } ?? .failure(.failed("The recovery wordlist is missing."))
 		} catch {
 			return .failure(Self.setupFailure(error))
 		}
-		return newPhrase(for: settings).map(Result.success) ?? .failure(.failed("The recovery wordlist is missing."))
+	}
+
+	/// Restore and add-device, per clients/DESIGN.md § Recovery flow: nothing is stored unless the phrase opens the server's blob.
+	public func joinSync(server: String, apiKey: String, phrase: PhraseEntry) async -> SyncSetupFailure? {
+		guard let store, engine == nil else { return .alreadySetUp }
+		guard let recoveryKey = phrase.key else { return .phraseDoesNotOpen }
+		do {
+			let endpoint = try Self.endpoint(server: server, apiKey: apiKey)
+			guard let joined = try await flow(endpoint.server, endpoint.apiKey).join(under: recoveryKey) else { return .phraseDoesNotOpen }
+			try Task.checkCancellation()
+			try await store.enableSync(SyncSettings(server: endpoint.server, apiKey: endpoint.apiKey, contentKey: joined.contentKey), pin: joined.pin)
+		} catch {
+			return Self.setupFailure(error)
+		}
+		recovery = nil
+		await startSync(store)
+		return nil
 	}
 
 	public func finishSync(answers: [String]) async -> SyncSetupFailure? {
-		guard let store, let session = recovery, engine == nil else { return .failed("Start setting up sync again.") }
+		guard let store, let session = recovery, engine == nil || session.moving else { return .failed("Start setting up sync again.") }
 		guard Self.matches(answers, session.phrase) else { return .wordsDoNotMatch }
 		do {
 			let pin = try await flow(session.settings).put(session.settings.contentKey, under: session.recoveryKey, pin: 0)
-			try await store.enableSync(session.settings, pin: pin)
+			if session.moving {
+				await stopSync()?.value
+				try await store.moveSync(to: session.settings, pin: pin)
+			} else {
+				try await store.enableSync(session.settings, pin: pin)
+			}
 		} catch RecoveryFlow.Failure.rotatedElsewhere {
 			return .serverHasLibrary
 		} catch {
@@ -153,6 +209,40 @@ extension AppModel {
 		recovery = nil
 		await startSync(store)
 		return nil
+	}
+
+	/// After the server's key was replaced, as for a lost Mac. Locking cancels it, so neither key outlives the lock.
+	public func changeAPIKey(_ hex: String) async -> SyncSetupFailure? {
+		guard let store else { return .failed("Sync is not set up.") }
+		guard let apiKey = EnvelopeKey.apiKey(fromHex: hex) else { return .invalidAPIKey }
+		let change = Task { [makeTransport] in await Self.adopt(apiKey, in: store, makeTransport) }
+		keyChange = change
+		let failure = await withTaskCancellationHandler { await change.value } onCancel: { change.cancel() }
+		guard keyChange == change else { return failure }
+		keyChange = nil
+		guard failure == nil, store === self.store else { return failure }
+		await stopSync()?.value
+		await startSync(store)
+		return nil
+	}
+
+	/// Keeps the new key only once the server it reaches holds this library: a blob at or past the pin, and the write this Mac's last pull ended on or one that replaced it.
+	private static func adopt(_ apiKey: SymmetricKey, in store: NoteStore, _ makeTransport: @Sendable (URL) -> any SyncTransport) async -> SyncSetupFailure? {
+		do {
+			guard let settings = try await store.syncSettings() else { return .failed("Sync is not set up.") }
+			let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(settings.server))
+			let stored = try await RecoveryFlow(connection: connection).storedVersion()
+			guard stored > 0 else { return .serverLostLibrary }
+			guard stored >= (try await store.pin()) else { return .serverBehind }
+			if let mark = try await store.lastPulled(), try await !SyncEngine.holds(mark, through: connection, since: store.since()) {
+				return .serverLostLibrary
+			}
+			try Task.checkCancellation()
+			try await store.setAPIKey(apiKey)
+			return nil
+		} catch {
+			return setupFailure(error)
+		}
 	}
 
 	public func prepareRotation() async -> RecoveryPhrase? {
@@ -191,6 +281,39 @@ extension AppModel {
 		recovery = nil
 	}
 
+	/// Stops syncing and forgets the server and its key; the notes stay, and so does what a later Set Up Sync needs to find this library again.
+	public func turnOffSync() async -> Bool {
+		guard let store else { return false }
+		await stopSync()?.value
+		guard await write("Sync could not be turned off.", { try await $0.disconnectSync() }) else {
+			await startSync(store)
+			return false
+		}
+		return true
+	}
+
+	/// A server that holds this library takes it back at once; an empty one gets it under a new phrase; another library is refused.
+	private func reattachOrMove(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async throws -> Result<SyncSetupStart, SyncSetupFailure> {
+		let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(server))
+		let stored = try await RecoveryFlow(connection: connection).storedVersion()
+		guard stored > 0 else {
+			let settings = SyncSettings(server: server, apiKey: apiKey, contentKey: kept.contentKey)
+			guard let phrase = newPhrase(for: settings) else { return .failure(.failed("The recovery wordlist is missing.")) }
+			recovery?.moving = true
+			return .success(.newLibrary(phrase))
+		}
+		guard stored >= kept.pin else { return .failure(.serverBehind) }
+		if let mark = kept.mark, try await !SyncEngine.holds(mark, through: connection, since: kept.since) {
+			return .failure(.serverHoldsAnotherLibrary)
+		}
+		try Task.checkCancellation()
+		await stopSync()?.value
+		try await store.reattachSync(server: server, apiKey: apiKey)
+		guard store === self.store else { return .success(.reattached) }
+		await startSync(store)
+		return .success(.reattached)
+	}
+
 	private func newPhrase(for settings: SyncSettings) -> RecoveryPhrase? {
 		let recoveryKey = SymmetricKey(size: .bits256)
 		guard let words = Mnemonic.words(for: recoveryKey) else { return nil }
@@ -200,7 +323,11 @@ extension AppModel {
 	}
 
 	private func flow(_ settings: SyncSettings) -> RecoveryFlow {
-		RecoveryFlow(connection: SyncConnection(apiKey: settings.apiKey, transport: makeTransport(settings.server)))
+		flow(settings.server, settings.apiKey)
+	}
+
+	private func flow(_ server: URL, _ apiKey: SymmetricKey) -> RecoveryFlow {
+		RecoveryFlow(connection: SyncConnection(apiKey: apiKey, transport: makeTransport(server)))
 	}
 
 	/// Commits with no due save landing under it; an edit typed meanwhile on a note a pull replaced moves to its copy.
@@ -266,12 +393,25 @@ extension AppModel {
 			&& zip(answers, phrase.checked).allSatisfy { $0.trimmingCharacters(in: .whitespaces).lowercased() == phrase.words[$1] }
 	}
 
+	private static func endpoint(server: String, apiKey: String) throws(SyncSetupFailure) -> (server: URL, apiKey: SymmetricKey) {
+		guard let url = URL(string: server.trimmingCharacters(in: .whitespacesAndNewlines)),
+			["http", "https"].contains(url.scheme?.lowercased()), url.host() != nil
+		else { throw .invalidServer }
+		guard let apiKey = EnvelopeKey.apiKey(fromHex: apiKey) else { throw .invalidAPIKey }
+		return (url, apiKey)
+	}
+
 	private static func setupFailure(_ error: Error) -> SyncSetupFailure {
 		switch error {
-		case SyncError.refused, SyncError.unopenable: .refused
+		case let failure as SyncSetupFailure: failure
+		case is NoteStore.SyncAlreadySetUp: .alreadySetUp
+		case SyncError.refused(400), SyncError.unopenable: .refused
+		case let SyncError.refused(status): .answered(status: status)
+		case RecoveryFlow.Failure.noLibrary: .serverHasNoLibrary
 		case RecoveryFlow.Failure.serverHasLibrary: .serverHasLibrary
 		case RecoveryFlow.Failure.rotatedElsewhere: .rotatedElsewhere
 		case RecoveryFlow.Failure.serverBehind: .serverBehind
+		case RecoveryFlow.Failure.outcomeUnknown: .outcomeUnknown
 		case let error as URLError: .unreachable(error.localizedDescription)
 		default: .failed(describe(error))
 		}
@@ -285,9 +425,20 @@ extension AppModel {
 		}
 	}
 
+	/// Only a 400 can mean a refused key, though a proxy that changed the request gets one too; the rest come from a proxy, a redirect or a server fault.
+	nonisolated static func statusMessage(_ status: Int) -> String {
+		switch status {
+		case 413: "The server or a proxy in front of it refused a request this large. A proxy must accept request bodies of at least 2 MiB + 28 B, such as 3 MiB."
+		case 500 ... 599: "The server, or a proxy in front of it, could not answer (HTTP \(status))."
+		case 300 ... 399: "The server address answers with a redirect (HTTP \(status)), which Native Note does not follow. Use the address the server itself answers on, or remove the redirect."
+		default: "The server answered with HTTP \(status), which Native Note does not expect."
+		}
+	}
+
 	private static func describe(_ error: Error) -> String {
 		switch error {
-		case SyncError.refused, SyncError.unopenable: "The server did not accept this Mac's API key."
+		case SyncError.refused(400), SyncError.unopenable: "The server did not accept this Mac's API key, or a proxy in front of it changed the request."
+		case let SyncError.refused(status): statusMessage(status)
 		case SyncError.serverFault: "The server could not store the changes. Its disk may be full."
 		case SyncError.protocolViolation: "The server sent a reply Native Note does not understand."
 		case let error as URLError: "The server could not be reached. \(error.localizedDescription)"

@@ -7,7 +7,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.takesFocus)
 struct UnlockViewTests {
 	private func type(_ text: String, into field: NSTextField, of offscreen: OffscreenWindow<some View>) throws {
 		try #require(offscreen.window.makeFirstResponder(field))

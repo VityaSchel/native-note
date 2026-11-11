@@ -38,7 +38,7 @@ nonisolated public enum NoteGrouping {
 			switch bucket(for: date) {
 			case .today: "Today"
 			case .yesterday: "Yesterday"
-			case .previousWeek: "Previous 7 days"
+			case .previousWeek: "Previous 7 Days"
 			case .thisYear: months[calendar.component(.month, from: date) - 1]
 			case .earlier: String(calendar.component(.year, from: date))
 			}
@@ -89,6 +89,21 @@ nonisolated public enum NoteGrouping {
 				)
 			)
 		}
+	}
+
+	/// The line above a note in the editor, as Notes shows when a note was last edited, in the list's own date style.
+	public static func editorDateLine(for date: Date, calendar: Calendar = .current) -> String {
+		let day = date.formatted(
+			Date.VerbatimFormatStyle(
+				format: "\(year: .defaultDigits).\(month: .twoDigits).\(day: .twoDigits)",
+				timeZone: calendar.timeZone,
+				calendar: calendar
+			)
+		)
+		let time = date.formatted(
+			Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .autoupdatingCurrent, calendar: calendar, timeZone: calendar.timeZone)
+		)
+		return "\(day) at \(time)"
 	}
 
 	private static let monthNames: DateFormatter = {

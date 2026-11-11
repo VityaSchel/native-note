@@ -95,6 +95,7 @@ struct SaveFailureTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let poisoned = try #require(model.selection)
+		model.edit(poisoned, "draft")
 		await model.createNote()
 		let healthy = try #require(model.selection)
 		try await poison(directory)
@@ -158,7 +159,7 @@ struct SaveFailureTests {
 
 		#expect(model.notes.isEmpty)
 		#expect(model.selection == nil)
-		#expect(model.failure == .unexpected("database is locked"))
+		#expect(model.failure == .failed("database is locked", title: "The new note could not be created."))
 	}
 
 	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {

@@ -5,6 +5,12 @@ import Testing
 
 @MainActor
 struct FailureAlertTests {
+	@Test func aFailedActionIsTheAlertsTitleAndItsReasonTheMessage() {
+		let alert = AppModel.Failure.failed("disk I/O error", title: "The notes could not be exported.").alert
+		#expect(alert?.title == "The notes could not be exported.")
+		#expect(alert?.message == "disk I/O error")
+	}
+
 	@Test func unsavedEditsPutTheReasonLast() throws {
 		let alert = try #require(AppModel.Failure.unsaved("disk I/O error").alert)
 

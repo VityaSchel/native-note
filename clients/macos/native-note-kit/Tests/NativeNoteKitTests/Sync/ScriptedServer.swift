@@ -8,11 +8,16 @@ import Testing
 final class ScriptedServer: SyncTransport, @unchecked Sendable {
 	let apiKey = SymmetricKey(size: .bits256)
 	private let lock = NSLock()
-	private var replies: [(Request) -> Response] = []
+	private var replies: [(Request) throws -> Response] = []
 	private(set) var requests: [Request] = []
 
 	func answer(_ reply: @escaping (Request) -> Response) {
 		lock.withLock { replies.append(reply) }
+	}
+
+	/// Takes the request, then answers with a bare status, as a proxy that failed after forwarding it would.
+	func refuse(status: Int = 502) {
+		lock.withLock { replies.append { _ in throw SyncError.refused(status: status) } }
 	}
 
 	func post(_ body: Data) async throws -> Data {
@@ -23,7 +28,8 @@ final class ScriptedServer: SyncTransport, @unchecked Sendable {
 			requests.append(request)
 			return try #require(replies.isEmpty ? nil : replies.removeFirst(), "no reply scripted for \(request)")
 		}
-		let inner = try #require(Padding.pad(responseBytes(reply(request))))
+		let response = try reply(request)
+		let inner = try #require(Padding.pad(responseBytes(response)))
 		return try #require(try AES.GCM.seal(inner, using: key, authenticating: body.prefix(EnvelopeKey.nonceLength)).combined)
 	}
 

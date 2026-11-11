@@ -4,51 +4,60 @@ import SwiftUI
 struct ChangePasswordView: View {
 	let turnsTouchIDOff: Bool
 	let change: (String, String) async -> AppModel.Failure?
+	/// Offered right after a change that turned Touch ID unlock off, with the new password.
+	var offerTouchID: ((String) async -> AppModel.Failure?)?
+	var touchID = TouchIDControls()
 	let done: () -> Void
 
 	@State private var form = ChangePasswordForm()
+	@FocusState private var focus: Field?
+	@State private var changedTo: String?
 
+	private enum Field {
+		case current, password, confirmation
+	}
+
+	@ViewBuilder
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text("Change Password")
-				.font(.headline)
-
-			SecureField("Current password", text: $form.current)
-				.onSubmit(send)
-			SecureField("New password", text: $form.password)
-				.onSubmit(send)
-			SecureField("Confirm new password", text: $form.confirmation)
-				.onSubmit(send)
-
-			if let inlineMessage = form.inlineMessage {
-				Text(inlineMessage)
-					.font(.callout)
-					.foregroundStyle(.red)
-			}
-
-			if turnsTouchIDOff {
-				Text("Touch ID unlock turns off. Turn it on again after the change.")
-					.font(.callout)
-					.foregroundStyle(.secondary)
-			}
-
-			HStack {
-				if form.working {
-					ProgressView().controlSize(.small)
-				}
-				Spacer()
-				Button("Cancel", role: .cancel, action: done)
-					.keyboardShortcut(.cancelAction)
-					.disabled(form.working)
-				Button("Change Password", action: send)
-					.keyboardShortcut(.defaultAction)
-					.disabled(!form.canSubmit)
-			}
+		if let changedTo, let offerTouchID {
+			TurnOnTouchIDView(turnOn: offerTouchID, done: done, touchID: touchID, password: changedTo, declineTitle: "Not Now")
+		} else {
+			passwordForm
 		}
-		.textFieldStyle(.roundedBorder)
+	}
+
+	private var passwordForm: some View {
+		SheetScaffold(
+			title: "Change Password",
+			explanation: turnsTouchIDOff
+				? "Touch ID unlock turns off. Turn it on again after the change."
+				: "The new password unlocks your notes on this Mac. It cannot be recovered.",
+			error: form.inlineMessage,
+			working: form.working,
+			width: 400
+		) {
+			Form {
+				SecureField("Current Password:", text: $form.current)
+					.focused($focus, equals: .current)
+					.onSubmit { focus = .password }
+				SecureField("New Password:", text: $form.password)
+					.focused($focus, equals: .password)
+					.onSubmit { focus = .confirmation }
+				SecureField("Verify:", text: $form.confirmation)
+					.focused($focus, equals: .confirmation)
+					.onSubmit(send)
+			}
+			.formStyle(.columns)
+		} buttons: {
+			Button("Cancel", role: .cancel, action: done)
+				.keyboardShortcut(.cancelAction)
+				.disabled(form.working)
+			Button("Change Password", action: send)
+				.keyboardShortcut(.defaultAction)
+				.disabled(!form.canSubmit)
+		}
 		.disabled(form.working)
-		.padding(20)
-		.frame(width: 360)
+		.defaultFocus($focus, .current)
 	}
 
 	private func send() {
@@ -56,7 +65,12 @@ struct ChangePasswordView: View {
 		Task {
 			let failure = await change(current, new)
 			form.finish(failure)
-			if failure == nil { done() }
+			guard failure == nil else { return }
+			if turnsTouchIDOff, offerTouchID != nil {
+				changedTo = new
+			} else {
+				done()
+			}
 		}
 	}
 }

@@ -68,6 +68,8 @@ Markdown files in a zip, one per live note, metadata in front matter. Produces a
 | Reverse proxy                 | Untrusted, sees sealed envelopes only                                                      |
 | Network                       | Untrusted, sees sealed envelopes only                                                      |
 
+Every row and entry in this section names the tests that prove it, non-goals included, in [ThreatModelCoverageTests](../clients/macos/native-note-kit/Tests/NativeNoteKitTests/ThreatModel/ThreatModelCoverageTests.swift), which fails on an entry without one.
+
 Known limitations, out of scope:
 
 - Code execution as the user on an unlocked machine — the content key is in memory
@@ -81,14 +83,15 @@ Known limitations, out of scope:
 
 Documented risks and vulnerabilities:
 
-- **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes
+- **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes, except those that also crossed TLS
 - **Argon2 and SQLCipher** are third-party C in the client, pinned to commit revisions. SQLCipher is a prebuilt binary.
 - **Hand-rolled HTTP parser.** Constrained grammar, fuzzed, reverse proxy recommended for public deployments.
 - **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule.
+- **Payload length leaks note size in 4 KiB steps.** [Content](./PROTOCOL.md#content) is zero-filled to a multiple of 4096 B, so the server and its backups see how many blocks each version takes, but not which writes delete or how long a short note is.
 - **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. They cannot substitute a key they control — a planted blob fails the tag on decrypt — only render recovery unusable.
 - **Server data-directory compromise leaks the API key.** An attacker who reads `/var/lib/native-note-server/api-key` can decrypt metadata and forge writes.
-- **No per-device revocation.** Losing a device means rotating the API key on the rest.
+- **No per-device revocation.** Losing a device means [replacing the API key](guides/setup-sync-server.md#connect-a-client) and entering it on the rest.
 - **A short password or pin without hardware binding** is brute-forceable offline in hours.
 - **No in-app unlock attempt limiting.** A counter would sit in storage the attacker owns, and a real attacker attacks the database file rather than the app. A forgotten password leads to erasing the library behind a confirmation only, since anyone at an unlocked session can delete the library folder anyway.
 - **Hardware binding does not add per-guess cost.** A disk image cannot compute `machineId` at any password length, so it cannot be attacked offline at all. An attacker who runs code on the machine reads `machineId` with one call and then guesses offline at Argon2id cost.
-- **The content key never rotates.** The recovery layer exists so a leaked mnemonic does not require entire database re-encryption.
+- **The content key never rotates.** The recovery layer exists so a leaked mnemonic does not require entire database re-encryption. A leaked mnemonic still opens any copy of the recovery blob from before a phrase change, such as a server backup, and with it every note.

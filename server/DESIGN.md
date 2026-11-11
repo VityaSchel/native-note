@@ -45,7 +45,7 @@ HTTP layer is hand-rolled on `std::net::TcpListener` — ~300 lines over 2 direc
 
 ## Server storage
 
-The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`, and the loader parses it as that section says. When the file is absent, the server generates a key and writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path. A missing data directory is created at `0700`; an existing one keeps its mode.
+The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`, and the loader parses it as that section says. When the file is absent, the server generates a key and writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path, and a client that lost the key gets it again from this file, `/var/lib/native-note-server/api-key` under the [systemd unit](native-note-server.service). A missing data directory is created at `0700`; an existing one keeps its mode.
 
 Secrets are wrapped in `Secret<T>`, whose `Debug` prints `[redacted]` and which has no `PartialEq`. No zeroize and no constant-time helper: the GCM tag check inside `ring` is the only comparison of secret data.
 
@@ -99,6 +99,6 @@ The [systemd unit](native-note-server.service) runs `/usr/local/bin/native-note-
 
 ## Server release
 
-[server-release.sh](../.forgejo/scripts/server-release.sh) builds static `x86_64` and `aarch64` musl binaries with the toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), the pinned `zig` as the C compiler and `rust-lld` as the linker, remapping every local path. Two builds on the same build host produce identical binaries; builds on different hosts do not, since Cargo hashes `rustc -vV`, which names the host, into every crate.
+[server-release.sh](../.forgejo/scripts/server-release.sh) builds static `x86_64` and `aarch64` musl binaries with the toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), the pinned `zig` as the C compiler and `rust-lld` as the linker, remapping every local path, and packs each with the systemd unit into a tarball with fixed owner, modes, order and time. Two builds on the same build host produce identical tarballs; builds on different hosts do not, since Cargo hashes `rustc -vV`, which names the host, into every crate.
 
 Health checks `POST /` and expect `400`, or open a TCP connection.

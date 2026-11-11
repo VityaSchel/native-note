@@ -103,6 +103,8 @@ final class TestTransport: SyncTransport, @unchecked Sendable {
 		case dropRequest
 		case dropResponse
 		case killServer
+		/// The server takes the request, then a proxy in front of it answers with an error.
+		case replyReplaced
 	}
 
 	let server: SyncServer
@@ -135,6 +137,9 @@ final class TestTransport: SyncTransport, @unchecked Sendable {
 		case .dropResponse:
 			_ = try await http.post(body)
 			throw URLError(.networkConnectionLost)
+		case .replyReplaced:
+			_ = try await http.post(body)
+			throw SyncError.refused(status: 502)
 		case .killServer:
 			let posting = Task { try await http.post(body) }
 			try await Task.sleep(for: .milliseconds(Int.random(in: 0 ... 3)))

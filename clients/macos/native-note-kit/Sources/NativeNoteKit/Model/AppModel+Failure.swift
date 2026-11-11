@@ -6,6 +6,8 @@ extension AppModel {
 		case wrongExportPassphrase
 		case unsaved(String)
 		case unexpected(String)
+		/// An action the alert names in its title, with the reason as its message.
+		case failed(String, title: String)
 
 		init(_ error: Error) {
 			switch error {

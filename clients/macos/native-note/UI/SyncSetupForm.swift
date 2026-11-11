@@ -1,10 +1,12 @@
 import NativeNoteKit
 
-/// Setup and rotation share the words and the check; setup starts at the server, rotation at new words.
+/// Setup and rotation share the words and the check; setup starts at the server, rotation at new words, and a server that holds a library is joined.
 struct SyncSetupForm {
 	enum Mode {
 		case setUp
 		case rotate
+		/// A syncing Mac points this library at another address, or moves it to an empty server.
+		case changeServer
 	}
 
 	enum Step: Equatable {
@@ -12,6 +14,7 @@ struct SyncSetupForm {
 		case server
 		case words(AppModel.RecoveryPhrase)
 		case confirm(AppModel.RecoveryPhrase)
+		case join
 		case currentPhrase
 	}
 
@@ -20,13 +23,21 @@ struct SyncSetupForm {
 	var server = ""
 	var apiKey = ""
 	var answers = ["", "", ""]
-	var currentPhrase = ""
+	var phrase = PhraseEntry()
+	var currentEntry = PhraseEntry()
 	private(set) var working = false
 	private(set) var message: String?
 
-	init(mode: Mode) {
+	init(mode: Mode, server: String = "") {
 		self.mode = mode
-		step = mode == .setUp ? .server : .preparing
+		self.server = server
+		step = mode == .rotate ? .preparing : .server
+	}
+
+	/// Storing the recovery blob cannot be stopped halfway without leaving its outcome unknown; every other step only reads the server.
+	var storesThePhrase: Bool {
+		guard working, case .confirm = step else { return false }
+		return true
 	}
 
 	var canContinue: Bool {
@@ -36,12 +47,25 @@ struct SyncSetupForm {
 		case .server: !server.isEmpty && !apiKey.isEmpty
 		case .words: true
 		case .confirm: answers.allSatisfy { !$0.isEmpty }
-		case .currentPhrase: !currentPhrase.isEmpty
+		case .join: phrase.opens
+		case .currentPhrase: currentEntry.opens
 		}
 	}
 
 	var confirmTitle: String {
-		mode == .setUp ? "Turn On Sync" : "Change Phrase"
+		switch mode {
+		case .setUp: "Turn On Sync"
+		case .rotate: "Change Phrase"
+		case .changeServer: "Move Library"
+		}
+	}
+
+	var continueTitle: String {
+		switch step {
+		case .confirm: confirmTitle
+		case .join: "Turn On Sync"
+		default: "Continue"
+		}
 	}
 
 	mutating func begin() {
@@ -59,10 +83,17 @@ struct SyncSetupForm {
 		step = .words(phrase)
 	}
 
-	mutating func prepared(_ result: Result<AppModel.RecoveryPhrase, AppModel.SyncSetupFailure>) {
+	mutating func prepared(_ result: Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure>) {
 		switch result {
-		case let .success(phrase): show(phrase)
-		case let .failure(failure): fail(failure)
+		case let .success(.newLibrary(phrase)):
+			show(phrase)
+		case .success(.existingLibrary):
+			working = false
+			step = .join
+		case .success(.reattached):
+			working = false
+		case let .failure(failure):
+			fail(failure)
 		}
 	}
 
@@ -72,8 +103,15 @@ struct SyncSetupForm {
 	}
 
 	mutating func back() {
-		guard case let .confirm(phrase) = step else { return }
-		step = .words(phrase)
+		switch step {
+		case let .confirm(phrase):
+			step = .words(phrase)
+		case .join:
+			message = nil
+			step = .server
+		default:
+			return
+		}
 	}
 
 	/// After the phrase went in, or after the current phrase was adopted and rotation must start over.
@@ -83,7 +121,12 @@ struct SyncSetupForm {
 			return
 		}
 		fail(failure)
-		if failure == .rotatedElsewhere { step = .currentPhrase }
+		switch failure {
+		case .rotatedElsewhere: step = .currentPhrase
+		case .serverHasLibrary: step = .join
+		case .serverHasNoLibrary: step = .server
+		default: break
+		}
 	}
 
 	private mutating func fail(_ failure: AppModel.SyncSetupFailure) {

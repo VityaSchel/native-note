@@ -48,6 +48,20 @@ final class OffscreenWindow<Content: View> {
 		views(of: type, in: host)
 	}
 
+	/// A sheet's labeled fields show no placeholder, so a field is named by its placeholder or by its label's place in the form, top first.
+	func secureField(_ name: String, inSheet: Bool = false) -> NSSecureTextField? {
+		let fields = inSheet ? sheetViews(of: NSSecureTextField.self) : views(of: NSSecureTextField.self)
+		if let named = fields.first(where: { $0.placeholderString == name }) { return named }
+		guard let place = Self.formLabels.first(where: { $0.contains(name) })?.firstIndex(of: name) else { return nil }
+		let ordered = fields.sorted { $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY }
+		return ordered.indices.contains(place) ? ordered[place] : nil
+	}
+
+	/// The labeled forms the sheets show, each in its order on screen.
+	static var formLabels: [[String]] {
+		[["Current Password:", "New Password:", "Verify:"], ["Password:"], ["API Key:"], ["Passphrase:", "Verify:"]]
+	}
+
 	func sheetViews<View: NSView>(of type: View.Type) -> [View] {
 		sheet?.contentView.map { views(of: type, in: $0) } ?? []
 	}

@@ -51,12 +51,8 @@ struct SettingsViewTests {
 		return (model, directory)
 	}
 
-	private func placeholders(_ fields: [NSSecureTextField]) -> [String] {
-		fields.compactMap(\.placeholderString).sorted()
-	}
-
 	private func type<Content: View>(_ text: String, into placeholder: String, of offscreen: OffscreenWindow<Content>) throws -> NSSecureTextField {
-		let field = try #require(offscreen.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
+		let field = try #require(offscreen.secureField(placeholder))
 		try #require(offscreen.window.makeFirstResponder(field))
 		try #require(field.currentEditor()).insertText(text)
 		offscreen.pump()
@@ -65,7 +61,7 @@ struct SettingsViewTests {
 
 	private func submitPasswordInSheet(_ text: String, of offscreen: OffscreenWindow<SettingsView>) throws {
 		let sheet = try #require(offscreen.sheet)
-		let field = try #require(offscreen.sheetViews(of: NSSecureTextField.self).first { $0.placeholderString == "Password" })
+		let field = try #require(offscreen.secureField("Password:", inSheet: true))
 		try #require(sheet.makeFirstResponder(field))
 		let editor = try #require(field.currentEditor())
 		editor.insertText(text)
@@ -140,9 +136,9 @@ struct SettingsViewTests {
 		let requests = Requests()
 		let offscreen = OffscreenWindow(settings(requests).content(for: .turnOnTouchID) { requests.done += 1 }, width: 360, height: 200)
 		defer { offscreen.close() }
-		#expect(placeholders(offscreen.views(of: NSSecureTextField.self)) == ["Password"])
+		#expect(offscreen.views(of: NSSecureTextField.self).count == 1)
 
-		try #require(try type("correct horse", into: "Password", of: offscreen).currentEditor()).insertNewline(nil)
+		try #require(try type("correct horse", into: "Password:", of: offscreen).currentEditor()).insertNewline(nil)
 		await offscreen.pump { requests.done > 0 }
 
 		#expect(requests.turnOns == ["correct horse"])
@@ -154,11 +150,11 @@ struct SettingsViewTests {
 		let requests = Requests()
 		let offscreen = OffscreenWindow(settings(requests).content(for: .changePassword) { requests.done += 1 }, width: 360, height: 260)
 		defer { offscreen.close() }
-		#expect(placeholders(offscreen.views(of: NSSecureTextField.self)) == ["Confirm new password", "Current password", "New password"])
+		#expect(offscreen.views(of: NSSecureTextField.self).count == 3)
 
-		_ = try type("old password", into: "Current password", of: offscreen)
-		_ = try type("new password", into: "New password", of: offscreen)
-		try #require(try type("new password", into: "Confirm new password", of: offscreen).currentEditor()).insertNewline(nil)
+		_ = try type("old password", into: "Current Password:", of: offscreen)
+		_ = try type("new password", into: "New Password:", of: offscreen)
+		try #require(try type("new password", into: "Verify:", of: offscreen).currentEditor()).insertNewline(nil)
 		await offscreen.pump { requests.done > 0 }
 
 		#expect(requests.changes == [["old password", "new password"]])
@@ -177,7 +173,7 @@ struct SettingsViewTests {
 
 		let sheet = try #require(offscreen.sheet)
 		#expect(!sheet.isVisible)
-		#expect(placeholders(offscreen.sheetViews(of: NSSecureTextField.self)) == ["Password"])
+		#expect(offscreen.sheetViews(of: NSSecureTextField.self).count == 1)
 		#expect(!model.isBiometricUnlockEnabled)
 		#expect(keys.reasons.isEmpty)
 

@@ -63,12 +63,8 @@ nonisolated enum AppLock {
 		return database.deletingLastPathComponent().appending(path: "notes-set-aside-\(stamp)-\(number).db")
 	}
 
-	static func promoteRekey(in directory: URL) throws {
-		try Data(contentsOf: pendingRekeyFile(in: directory)).write(to: currentFile(in: directory), options: .atomic)
-		try FileManager.default.setAttributes(
-			[.posixPermissions: 0o600],
-			ofItemAtPath: currentFile(in: directory).path
-		)
+	static func promoteRekey(in directory: URL, sync: (Int32) throws -> Void = fullSync) throws {
+		try durablyReplace(currentFile(in: directory), with: Data(contentsOf: pendingRekeyFile(in: directory)), sync: sync)
 		try FileManager.default.removeItem(at: pendingRekeyFile(in: directory))
 	}
 
@@ -80,15 +76,47 @@ nonisolated enum AppLock {
 		return parameters
 	}
 
-	static func write(_ parameters: UnlockParameters, to url: URL) throws {
+	static func write(_ parameters: UnlockParameters, to url: URL, sync: (Int32) throws -> Void = fullSync) throws {
 		let encoder = PropertyListEncoder()
 		encoder.outputFormat = .binary
-		try FileManager.default.createDirectory(
-			at: url.deletingLastPathComponent(),
-			withIntermediateDirectories: true,
-			attributes: [.posixPermissions: 0o700]
-		)
-		try encoder.encode(parameters).write(to: url, options: .atomic)
-		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+		try durablyReplace(url, with: encoder.encode(parameters), sync: sync)
+	}
+
+	/// On disk before it returns, as the database's own commits are with F_FULLFSYNC, so a rekey never outlives the salt it needs.
+	static func durablyReplace(_ url: URL, with data: Data, sync: (Int32) throws -> Void = fullSync) throws {
+		let directory = url.deletingLastPathComponent()
+		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+		let temporary = directory.appending(path: ".\(url.lastPathComponent).\(UUID().uuidString)")
+		let file = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0o600)
+		guard file >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+		do {
+			defer { close(file) }
+			try data.withUnsafeBytes { bytes in
+				guard let base = bytes.baseAddress else { return }
+				var written = 0
+				while written < bytes.count {
+					let count = Foundation.write(file, base + written, bytes.count - written)
+					guard count > 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+					written += count
+				}
+			}
+			try sync(file)
+		} catch {
+			unlink(temporary.path)
+			throw error
+		}
+		guard rename(temporary.path, url.path) == 0 else {
+			let error = POSIXError(.init(rawValue: errno) ?? .EIO)
+			unlink(temporary.path)
+			throw error
+		}
+		let folder = open(directory.path, O_RDONLY | O_CLOEXEC)
+		guard folder >= 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+		defer { close(folder) }
+		try sync(folder)
+	}
+
+	static func fullSync(_ descriptor: Int32) throws {
+		guard fcntl(descriptor, F_FULLFSYNC) == 0 || fsync(descriptor) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
 	}
 }

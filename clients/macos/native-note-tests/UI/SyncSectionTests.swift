@@ -52,15 +52,21 @@ struct SyncSectionTests {
 		#expect(texts.contains("Not synced yet"))
 		#expect(texts.contains("A note is larger than 1 MB."))
 		try press("Sync Now", in: offscreen)
+		try press("Change Server…", in: offscreen)
 		try press("Change Recovery Phrase…", in: offscreen)
-		await offscreen.pump { requests.synced > 0 && !requests.presented.isEmpty }
-		#expect(requests.presented == [.changeRecoveryPhrase])
+		try press("Change API Key…", in: offscreen)
+		await offscreen.pump { requests.synced > 0 && requests.presented.count == 3 }
+		#expect(requests.presented == [.changeServer, .changeRecoveryPhrase, .changeAPIKey])
+		#expect(offscreen.accessibilityElements(.button).contains { $0.label == "Turn Off Sync…" })
 	}
 
 	@Test func theStatusLineReadsTheSyncPhase() {
 		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .syncing)) == "Syncing…")
-		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .failed("Unreachable."))) == "Unreachable.")
+		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .failed("Unreachable."))) == "Sync failed")
 		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .idle)) == "Not synced yet")
-		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .idle, lastSynced: Date())).hasPrefix("Last synced "))
+		let synced = Date(timeIntervalSince1970: 1_800_000_000)
+		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .idle, lastSynced: synced), now: synced.addingTimeInterval(30)) == "Last synced just now")
+		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .idle, lastSynced: synced), now: synced.addingTimeInterval(300)).hasPrefix("Last synced "))
+		#expect(SyncSection.statusLine(AppModel.SyncStatus(phase: .idle, lastSynced: synced), now: synced.addingTimeInterval(300)) != "Last synced just now")
 	}
 }

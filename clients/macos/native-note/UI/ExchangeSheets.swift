@@ -6,35 +6,38 @@ struct ExportSheet: View {
 	let cancel: () -> Void
 
 	@State private var form = ExportForm()
+	@FocusState private var focus: Field?
+
+	private enum Field {
+		case passphrase, confirmation
+	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text("Export notes")
-				.font(.title3.weight(.semibold))
-			Text("The export holds every note as a markdown file. Without a passphrase, anyone with the file can read them.")
-				.foregroundStyle(.secondary)
-				.fixedSize(horizontal: false, vertical: true)
+		SheetScaffold(
+			title: "Export Notes",
+			explanation: "The export holds every note as a markdown file. Without a passphrase, anyone with the file can read them.",
+			error: form.mismatched ? "The passphrases do not match." : nil
+		) {
 			Toggle("Encrypt with a passphrase", isOn: $form.encrypts)
 			if form.encrypts {
-				SecureField("Passphrase", text: $form.passphrase)
-				SecureField("Confirm passphrase", text: $form.confirmation)
-				if form.mismatched {
-					Text("The passphrases do not match.")
-						.font(.callout)
-						.foregroundStyle(.red)
+				Form {
+					SecureField("Passphrase:", text: $form.passphrase)
+						.focused($focus, equals: .passphrase)
+						.onSubmit { focus = .confirmation }
+					SecureField("Verify:", text: $form.confirmation)
+						.focused($focus, equals: .confirmation)
+						.onSubmit { if form.canExport { export(form.passphraseToUse) } }
 				}
+				.formStyle(.columns)
 			}
-			HStack {
-				Spacer()
-				Button("Cancel", role: .cancel, action: cancel)
-				Button("Export…") { export(form.passphraseToUse) }
-					.keyboardShortcut(.defaultAction)
-					.disabled(!form.canExport)
-			}
+		} buttons: {
+			Button("Cancel", role: .cancel, action: cancel)
+				.keyboardShortcut(.cancelAction)
+			Button("Export…") { export(form.passphraseToUse) }
+				.keyboardShortcut(.defaultAction)
+				.disabled(!form.canExport)
 		}
-		.textFieldStyle(.roundedBorder)
-		.padding(24)
-		.frame(width: 380)
+		.onChange(of: form.encrypts) { _, encrypts in focus = encrypts ? .passphrase : nil }
 	}
 }
 
@@ -45,35 +48,30 @@ struct ImportPassphraseSheet: View {
 	let cancel: () -> Void
 
 	@State private var passphrase = ""
+	@FocusState private var typing: Bool
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text("Encrypted export")
-				.font(.title3.weight(.semibold))
-			Text("Enter the passphrase the export was made with.")
-				.foregroundStyle(.secondary)
-			SecureField("Passphrase", text: $passphrase)
-				.textFieldStyle(.roundedBorder)
-				.onSubmit { if !passphrase.isEmpty, !working { submit(passphrase) } }
-			if refused {
-				Text("Wrong passphrase, or the export is damaged.")
-					.font(.callout)
-					.foregroundStyle(.red)
+		SheetScaffold(
+			title: "Enter Export Passphrase",
+			explanation: "Enter the passphrase the export was made with.",
+			error: refused ? "Wrong passphrase, or the export is damaged." : nil,
+			working: working
+		) {
+			Form {
+				SecureField("Passphrase:", text: $passphrase)
+					.focused($typing)
+					.onSubmit { if !passphrase.isEmpty, !working { submit(passphrase) } }
 			}
-			HStack {
-				if working {
-					ProgressView().controlSize(.small)
-				}
-				Spacer()
-				Button("Cancel", role: .cancel, action: cancel)
-					.disabled(working)
-				Button("Import") { submit(passphrase) }
-					.keyboardShortcut(.defaultAction)
-					.disabled(passphrase.isEmpty || working)
-			}
+			.formStyle(.columns)
+		} buttons: {
+			Button("Cancel", role: .cancel, action: cancel)
+				.keyboardShortcut(.cancelAction)
+				.disabled(working)
+			Button("Import") { submit(passphrase) }
+				.keyboardShortcut(.defaultAction)
+				.disabled(passphrase.isEmpty || working)
 		}
-		.padding(24)
-		.frame(width: 380)
+		.defaultFocus($typing, true)
 	}
 }
 

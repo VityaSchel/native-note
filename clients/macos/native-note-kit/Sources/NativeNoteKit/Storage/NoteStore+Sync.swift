@@ -4,8 +4,10 @@ import Foundation
 /// Sync state in `meta` and the transaction that applies a response, per clients/DESIGN.md § Conflicts.
 extension NoteStore {
 	private enum Meta: String {
-		case server, apiKey, contentKey, since, pin
+		case server, apiKey, contentKey, since, pin, lastPulled
 	}
+
+	struct SyncAlreadySetUp: Error {}
 
 	func syncSettings() throws -> SyncSettings? {
 		guard let server = try meta(.server).flatMap({ URL(string: String(decoding: $0, as: UTF8.self)) }),
@@ -15,8 +17,10 @@ extension NoteStore {
 		return SyncSettings(server: server, apiKey: apiKey, contentKey: contentKey)
 	}
 
+	/// Refuses a library that already holds a Content key, so neither setup nor a join replaces one.
 	func enableSync(_ settings: SyncSettings, pin: UInt32) throws {
 		try connection.transaction {
+			guard try key(.contentKey) == nil else { throw SyncAlreadySetUp() }
 			try setMeta(.server, Data(settings.server.absoluteString.utf8))
 			try settings.apiKey.withUnsafeBytes { try setMeta(.apiKey, $0) }
 			try settings.contentKey.withUnsafeBytes { try setMeta(.contentKey, $0) }
@@ -25,8 +29,71 @@ extension NoteStore {
 		}
 	}
 
+	func setAPIKey(_ apiKey: SymmetricKey) throws {
+		try connection.transaction {
+			guard try key(.contentKey) != nil else { throw SyncNotSetUp() }
+			try apiKey.withUnsafeBytes { try setMeta(.apiKey, $0) }
+		}
+	}
+
+	struct SyncNotSetUp: Error {}
+
+	/// What a library that synced keeps after Turn Off Sync, so it can reattach or move without a new identity.
+	struct KeptLibrary {
+		let contentKey: SymmetricKey
+		let pin: UInt32
+		let since: UInt64
+		let mark: PullMark?
+	}
+
+	func keptLibrary() throws -> KeptLibrary? {
+		guard let contentKey = try key(.contentKey) else { return nil }
+		return KeptLibrary(contentKey: contentKey, pin: try pin(), since: try since(), mark: try lastPulled())
+	}
+
+	/// Forgets the server and its key only; the Content key, the pin and every note's version stay for a later reattach.
+	func disconnectSync() throws {
+		try connection.transaction {
+			for key in [Meta.server, .apiKey] {
+				let statement = try connection.prepare("DELETE FROM meta WHERE k = ?1")
+				statement.bind(1, key.rawValue)
+				try statement.step()
+			}
+		}
+	}
+
+	/// The same library at another address or under another key.
+	func reattachSync(server: URL, apiKey: SymmetricKey) throws {
+		try connection.transaction {
+			guard try key(.contentKey) != nil else { throw SyncNotSetUp() }
+			try setMeta(.server, Data(server.absoluteString.utf8))
+			try apiKey.withUnsafeBytes { try setMeta(.apiKey, $0) }
+		}
+	}
+
+	/// An empty server takes this library under a new phrase: every note is new to it, and tombstones have nothing left to delete there.
+	func moveSync(to settings: SyncSettings, pin: UInt32) throws {
+		try connection.transaction {
+			guard try key(.contentKey) != nil else { throw SyncNotSetUp() }
+			try setMeta(.server, Data(settings.server.absoluteString.utf8))
+			try settings.apiKey.withUnsafeBytes { try setMeta(.apiKey, $0) }
+			try setMeta(.since, Self.bigEndian(UInt64(0)))
+			try setMeta(.pin, Self.bigEndian(pin))
+			let forget = try connection.prepare("DELETE FROM meta WHERE k = ?1")
+			forget.bind(1, Meta.lastPulled.rawValue)
+			try forget.step()
+			try connection.prepare("DELETE FROM note WHERE deleted = 1").step()
+			try connection.prepare("UPDATE note SET v = 0, seq = NULL, dirty = 1, pulled = 0").step()
+		}
+	}
+
 	func since() throws -> UInt64 {
 		try meta(.since).map { Self.integer($0) } ?? 0
+	}
+
+	func lastPulled() throws -> PullMark? {
+		guard let stored = try meta(.lastPulled), stored.count > 4 else { return nil }
+		return PullMark(blindedId: Data(stored.dropLast(4)), v: UInt32(truncatingIfNeeded: Self.integer(Data(stored.suffix(4)))))
 	}
 
 	func pin() throws -> UInt32 {
@@ -73,6 +140,7 @@ extension NoteStore {
 				try apply(change, unacknowledged: exchange.unacknowledged, into: &applied)
 			}
 			try setMeta(.since, Self.bigEndian(exchange.nextSeq))
+			if let last = exchange.last { try setMeta(.lastPulled, last.blindedId + Self.bigEndian(last.v)) }
 			return applied
 		}
 	}

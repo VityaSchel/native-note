@@ -36,8 +36,10 @@ struct SavePathTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let first = try #require(model.selection)
+		model.edit(first, "first draft")
 		await model.createNote()
 		let second = try #require(model.selection)
+		model.edit(second, "second draft")
 		await model.createNote()
 
 		model.edit(first, "first note")
@@ -73,8 +75,10 @@ struct SavePathTests {
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let first = try #require(model.selection)
+		model.edit(first, "a")
 		await model.createNote()
 		let second = try #require(model.selection)
+		model.edit(second, "b")
 
 		model.selection = first
 		model.edit(first, "alpha")
@@ -152,6 +156,7 @@ struct SavePathTests {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let shown = try #require(model.selection)
+		model.edit(shown, "on screen")
 		await model.createNote()
 		let selected = try #require(model.selection)
 

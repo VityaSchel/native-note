@@ -33,6 +33,6 @@ Claims in the README and these documents are verified against the code before ea
 
 ## Cryptography
 
-No custom primitives. AES-256-GCM, HKDF-SHA256, HMAC-SHA256, and Argon2id, taken from platform crypto where available.
+No custom primitives. AES-256-GCM, HKDF-SHA256, HMAC-SHA256, Argon2id, and P-256 ECDH in the Secure Enclave, taken from platform crypto where available. The local database uses SQLCipher 4's defaults, AES-256-CBC with HMAC-SHA512 per page, under a raw 256-bit key.
 
 The server depends directly on `ring` and `rusqlite` alone, per [server/DESIGN.md](server/DESIGN.md), with SQLite bundled and statically linked. The client adds Argon2 and SQLCipher to platform frameworks, both pinned to commit revisions in `Package.resolved` and SQLCipher's framework also by SHA-256; neither is vendored.

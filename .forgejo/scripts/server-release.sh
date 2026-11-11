@@ -15,7 +15,23 @@ sha256() {
 	if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
 }
 
+# Same bytes for the same inputs: fixed owner, modes, order and time, and gzip without a name or time.
+pack() {
+	local tarball="$1" dir="$2"
+	shift 2
+	if tar --version 2>/dev/null | grep -q "GNU tar"; then
+		tar --format=ustar --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -C "$dir" -cf - "$@"
+	else
+		(cd "$dir" && TZ=UTC touch -t "$(date -u -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)" "$@")
+		tar --format=ustar --uid 0 --gid 0 --uname root --gname root --no-xattrs --no-mac-metadata --no-acls --no-fflags -C "$dir" -cf - "$@"
+	fi | gzip -n -9 >"$tarball"
+}
+
 root="$(cd -P "$(dirname "$0")/../.." && pwd -P)"
+if [[ -n "$(git -C "$root" status --porcelain)" ]]; then
+	echo "commit or stash every change first: a release is built from a commit only" >&2
+	exit 1
+fi
 out="$root/releases"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -55,9 +71,14 @@ for target in "${targets[@]}"; do
 	env "CC_${target//-/_}=$cc" "AR_${target//-/_}=$work/ar" "CFLAGS_${target//-/_}=${cflags[*]}" \
 		"CARGO_TARGET_${variable}_LINKER=rust-lld" \
 		cargo build --release --locked -p native-note-server --target "$target"
-	cp "$work/target/$target/release/native-note-server" "$out/native-note-server-$target"
+	package="$work/package-$target"
+	mkdir -p "$package"
+	install -m 0755 "$work/target/$target/release/native-note-server" "$package/native-note-server"
+	install -m 0644 "$root/server/native-note-server.service" "$package/native-note-server.service"
+	pack "$out/native-note-server-$target.tar.gz" "$package" native-note-server native-note-server.service
 done
 # Cargo hashes `rustc -vV`, which names the build host, into every crate, so only builds on the same host match.
 echo "built on $(rustc -vV | sed -n 's/^host: //p')"
 cd "$out"
-sha256 "${targets[@]/#/native-note-server-}"
+tarballs=("${targets[@]/#/native-note-server-}")
+sha256 "${tarballs[@]/%/.tar.gz}"

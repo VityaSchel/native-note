@@ -153,9 +153,23 @@ actor NoteStore {
 		return try collect(statement)
 	}
 
+	/// A note no server has seen leaves no trace; one that synced leaves a tombstone, as a delete does.
+	func discardUnsynced(id: UUID, at moment: Int64) throws {
+		try connection.transaction {
+			let statement = try connection.prepare("DELETE FROM note WHERE uuid = ?1 AND v = 0 RETURNING uuid")
+			statement.bind(1, id.bytes)
+			guard try !statement.step() else { return }
+			try markDeleted(id: id, at: moment)
+		}
+	}
+
+	/// A note never saved gets a tombstone the server never hears of, so a save still pending for it cannot bring it back.
 	func markDeleted(id: UUID, at moment: Int64) throws {
 		let statement = try connection.prepare(
-			"UPDATE note SET deleted = 1, dirty = 1, body = '', updatedAt = ?2, pulled = 0 WHERE uuid = ?1"
+			"""
+			INSERT INTO note (uuid, body, createdAt, updatedAt, deleted, dirty, pulled) VALUES (?1, '', ?2, ?2, 1, 0, 0)
+			ON CONFLICT(uuid) DO UPDATE SET deleted = 1, dirty = 1, body = '', updatedAt = ?2, pulled = 0
+			"""
 		)
 		statement.bind(1, id.bytes)
 		statement.bind(2, moment)

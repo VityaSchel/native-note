@@ -5,46 +5,50 @@ struct TurnOnTouchIDView: View {
 	let turnOn: (String) async -> AppModel.Failure?
 	let done: () -> Void
 	var touchID = TouchIDControls()
+	/// After a password change, the new password goes straight to the touch, and Not Now ends it.
+	var password: String?
+	var declineTitle = "Cancel"
 
 	@State private var form = TurnOnTouchIDForm()
+	@FocusState private var typing: Bool
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			Text("Turn On Touch ID Unlock")
-				.font(.headline)
-
+		SheetScaffold(
+			title: "Turn On Touch ID Unlock",
+			explanation: password != nil
+				? "The new password turned Touch ID unlock off. Touch ID turns it on again."
+				: awaitsTouch ? nil : "Enter your password to unlock with Touch ID instead.",
+			error: awaitsTouch ? nil : form.inlineMessage,
+			working: form.working && !awaitsTouch,
+			width: 380
+		) {
 			if awaitsTouch {
 				TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel)
 					.frame(maxWidth: .infinity)
 			} else {
-				SecureField("Password", text: $form.password)
-					.onSubmit(send)
-					.disabled(form.working)
-
-				if let inlineMessage = form.inlineMessage {
-					Text(inlineMessage)
-						.font(.callout)
-						.foregroundStyle(.red)
+				Form {
+					SecureField("Password:", text: $form.password)
+						.focused($typing)
+						.onSubmit(send)
+						.disabled(form.working)
 				}
+				.formStyle(.columns)
 			}
-
-			HStack {
-				if form.working, !awaitsTouch {
-					ProgressView().controlSize(.small)
-				}
-				Spacer()
-				Button("Cancel", role: .cancel, action: cancel)
-					.keyboardShortcut(.cancelAction)
-					.disabled(form.working && !awaitsTouch)
-				Button("Turn On", action: send)
-					.keyboardShortcut(.defaultAction)
-					.disabled(!form.canSubmit)
-			}
+		} buttons: {
+			Button(declineTitle, role: .cancel, action: cancel)
+				.keyboardShortcut(.cancelAction)
+				.disabled(form.working && !awaitsTouch)
+			Button("Turn On", action: send)
+				.keyboardShortcut(.defaultAction)
+				.disabled(!form.canSubmit)
 		}
-		.textFieldStyle(.roundedBorder)
-		.padding(20)
-		.frame(width: 360)
+		.defaultFocus($typing, true)
 		.onDisappear(perform: touchID.cancel)
+		.onAppear {
+			guard let password else { return }
+			form.password = password
+			send()
+		}
 	}
 
 	var awaitsTouch: Bool {
@@ -55,7 +59,9 @@ struct TurnOnTouchIDView: View {
 	static let touchIDLabel = "Touch ID to turn on Touch ID unlock"
 
 	private func cancel() {
-		if awaitsTouch { touchID.cancel() } else { done() }
+		guard awaitsTouch else { return done() }
+		touchID.cancel()
+		if password != nil { done() }
 	}
 
 	private func send() {

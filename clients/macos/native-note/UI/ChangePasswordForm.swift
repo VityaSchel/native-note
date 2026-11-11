@@ -25,7 +25,7 @@ struct ChangePasswordForm {
 		if mismatched { return "The new passwords do not match." }
 		return switch failure {
 		case .wrongPassword: "Wrong current password."
-		case let .unexpected(reason), let .unsaved(reason): reason
+		case let .unexpected(reason), let .unsaved(reason), let .failed(reason, _): reason
 		case .wrongExportPassphrase, nil: nil
 		}
 	}

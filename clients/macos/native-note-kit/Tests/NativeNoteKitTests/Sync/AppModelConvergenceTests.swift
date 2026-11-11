@@ -39,7 +39,7 @@ struct AppModelConvergenceTests {
 	func modelsConvergeUnderLossKillsAndTypingMidRequest(seed: UInt64) async throws {
 		let server = try SyncServer()
 		let (first, firstTransport) = try await library(server, settings: nil)
-		let phrase = try await first.prepareSync(server: server.url.absoluteString, apiKey: try String(contentsOf: server.data.appending(path: "api-key"), encoding: .utf8)).get()
+		let phrase = try newLibrary(await first.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)))
 		try #require(await first.finishSync(answers: phrase.checked.map { phrase.words[$0] }) == nil)
 		let (second, secondTransport) = try await library(server, settings: try await first.store?.syncSettings())
 		let models = [(first, firstTransport), (second, secondTransport)]

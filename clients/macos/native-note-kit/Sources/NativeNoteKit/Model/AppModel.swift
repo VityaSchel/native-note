@@ -19,6 +19,8 @@ import Observation
 	}
 
 	public private(set) var phase: Phase = .loading
+	/// Once, right after the library is first set up, so a new or wiped Mac starts from its synced notes.
+	public private(set) var offersSyncSetup = false
 	var notes: [Note] = []
 	public private(set) var failure: Failure?
 	public private(set) var isImporting = false
@@ -29,9 +31,16 @@ import Observation
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
+			if createdHere.remove(previous) != nil, let left = notes.first(where: { $0.id == previous }), left.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+				notes.removeAll { $0.id == previous }
+				Task { await discard(previous) }
+				return
+			}
 			Task { await scheduler.flush(previous) }
 		}
 	}
+	/// The note New Note made, until the editor shows it with the insertion point in it.
+	public private(set) var focusesEditor: UUID?
 	public var search = "" {
 		didSet {
 			guard search.isEmpty, !oldValue.isEmpty else { return }
@@ -79,6 +88,8 @@ import Observation
 	var engine: SyncEngine?
 	var idleSync: Task<Void, Never>?
 	var syncLoop: Task<Void, Never>?
+	var keyChange: Task<SyncSetupFailure?, Never>?
+	private var awayEvents = 0
 	var syncRequests = 0
 	var syncedThrough = 0
 	var recovery: RecoverySession?
@@ -86,9 +97,12 @@ import Observation
 	private var failingSaves: [UUID: FailingSave] = [:]
 	private var searchFailing = false
 	private var matches: [UUID]?
+	private var keptForUndo: [UUID: Note] = [:]
+	/// Notes New Note made in this session; one left empty is discarded, as an untouched new note in Notes is.
+	private var createdHere: Set<UUID> = []
 	private var biometrics = BiometricAvailability.unavailable
 	private var isActive = false
-	private var isCheckingPassword = false
+	private(set) var isCheckingPassword = false
 	private var isOpeningWithTouchID = false
 	private var touchIDStop: TouchID.Stop?
 	private var evaluating: LAContext?
@@ -133,11 +147,15 @@ import Observation
 	}
 
 	func setUp(password: String) async {
-		await openLibrary {
+		await openLibrary(offeringSync: true) {
 			let unlocked = try await Unlock.setUp(password: password, in: self.directory, makeParameters: self.makeParameters)
 			try? self.keyStore.delete()
 			return unlocked
 		}
+	}
+
+	public func dismissSyncSetupOffer() {
+		offersSyncSetup = false
 	}
 
 	func unlock(password: String) async {
@@ -161,11 +179,15 @@ import Observation
 	public func lock() async {
 		let closing = store
 		cancelTurningOnTouchID()
-		stopSync()
+		let syncing = stopSync()
 		phase = .locked
 		touchIDStop = nil
 		selection = nil
 		notes = []
+		keptForUndo = [:]
+		createdHere = []
+		focusesEditor = nil
+		offersSyncSetup = false
 		store = nil
 		failure = nil
 		failingSaves = [:]
@@ -173,6 +195,7 @@ import Observation
 		unlockParameters = nil
 		refreshBiometricUnlock()
 		await scheduler.flushAll()
+		await syncing?.value
 		guard let closing else { return }
 		if unsavedReason == nil { await closing.close() } else { retiring = closing }
 	}
@@ -184,21 +207,34 @@ import Observation
 
 	public func close() async {
 		cancelTurningOnTouchID()
-		stopSync()
+		let syncing = stopSync()
 		await scheduler.flushAll()
+		await syncing?.value
 		let open = [store, retiring].compactMap(\.self)
 		store = nil
 		retiring = nil
 		for store in open { await store.close() }
 	}
 
+	/// Not dirty until its first edit, so a note left empty never syncs.
 	public func createNote() async {
 		let now = Date().epochMilliseconds
-		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: true)
-		guard await write({ try await $0.save(note) }) else { return }
+		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: false)
+		guard await write("The new note could not be created.", { try await $0.save(note) }) else { return }
+		if !search.isEmpty { search = "" }
 		notes.insert(note, at: 0)
+		createdHere.insert(note.id)
 		selection = note.id
-		syncSoon()
+		focusesEditor = note.id
+	}
+
+	public func editorTookFocus() {
+		focusesEditor = nil
+	}
+
+	private func discard(_ id: UUID) async {
+		await scheduler.discard(id)
+		_ = await write("The empty note could not be removed.") { try await $0.discardUnsynced(id: id, at: Date().epochMilliseconds) }
 	}
 
 	public func edit(_ id: UUID, _ body: String) {
@@ -219,12 +255,50 @@ import Observation
 		await delete(id)
 	}
 
+	/// Leaves the list at once, so Undo Delete can follow before the tombstone lands, and comes back if it fails.
 	public func delete(_ id: UUID) async {
-		if selection == id { selection = nil }
-		guard await write({ try await $0.markDeleted(id: id, at: Date().epochMilliseconds) }) else { return }
+		let order = groups.flatMap(\.notes).map(\.id)
+		if selection == id, let index = order.firstIndex(of: id) {
+			selection = order.indices.contains(index + 1) ? order[index + 1] : index > 0 ? order[index - 1] : nil
+		} else if selection == id {
+			selection = nil
+		}
+		let shown = notes.firstIndex { $0.id == id }.map { notes.remove(at: $0) }
+		guard await write("The note could not be deleted.", { try await $0.markDeleted(id: id, at: Date().epochMilliseconds) }) else {
+			keptForUndo[id] = nil
+			if let shown, store != nil, !notes.contains(where: { $0.id == id }) { notes.append(shown) }
+			return
+		}
 		await scheduler.discard(id)
 		notes.removeAll { $0.id == id }
 		syncSoon()
+	}
+
+	/// Keeps a note's text, unsaved typing included, for Undo Delete until the library locks.
+	public func keepForUndo(_ id: UUID) -> UUID? {
+		guard let note = notes.first(where: { $0.id == id }) else { return nil }
+		keptForUndo[id] = note
+		return id
+	}
+
+	/// Brings kept text back as a new note once its original is gone, since nothing writes to a tombstone, and saves it as an edit is saved.
+	@discardableResult
+	public func restore(_ kept: UUID) -> UUID? {
+		guard let store, !notes.contains(where: { $0.id == kept }), let deleted = keptForUndo.removeValue(forKey: kept) else { return nil }
+		let note = Note(id: UUID(), body: deleted.body, createdAt: deleted.createdAt, updatedAt: deleted.updatedAt, dirty: true)
+		notes.append(note)
+		selection = note.id
+		scheduleSave(note, to: store)
+		if let rank = matches?.firstIndex(of: kept) {
+			matches?[rank] = note.id
+		} else if matches != nil {
+			Task {
+				await scheduler.flush(note.id)
+				await runSearch()
+			}
+		}
+		syncSoon()
+		return note.id
 	}
 
 	public func runSearch() async {
@@ -243,7 +317,7 @@ import Observation
 		} catch {
 			guard text == search, store === self.store else { return }
 			matches = []
-			if !searchFailing { report(error) }
+			if !searchFailing { report(error, as: "Search could not run.") }
 			searchFailing = true
 		}
 	}
@@ -266,7 +340,7 @@ import Observation
 		do {
 			try AppLock.erase(in: directory)
 		} catch {
-			report(error)
+			report(error, as: "The library could not be erased.")
 		}
 		start()
 	}
@@ -528,7 +602,7 @@ import Observation
 			}
 			return true
 		} catch {
-			report(error)
+			report(error, as: "The notes could not be exported.")
 			return false
 		}
 	}
@@ -548,7 +622,7 @@ import Observation
 				return try LibraryArchive.notes(in: passphrase.map { try ExportEnvelope.open(file, passphrase: $0) } ?? file)
 			}
 		} catch {
-			report(error)
+			report(error, as: "The file could not be imported.")
 			return nil
 		}
 
@@ -568,7 +642,7 @@ import Observation
 				try await store.save(note)
 			} catch {
 				guard store === self.store else { return stopped(at: index) }
-				report(error)
+				report(error, as: "The file could not be imported.")
 				return nil
 			}
 			summary.added += 1
@@ -619,9 +693,18 @@ import Observation
 		return held
 	}
 
+	/// Sleep, a locked screen or another user's session leaves the Mac to whoever reaches it next, so an unlock still in flight locks again.
+	public func lockWhileAway() {
+		awayEvents += 1
+		guard phase == .unlocked else { return }
+		Task { await lock() }
+	}
+
 	@discardableResult
-	private func openLibrary(_ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
+	/// A first setup offers sync before the library shows, so the library never flashes in front of the offer.
+	private func openLibrary(offeringSync: Bool = false, _ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
 		failure = nil
+		let away = awayEvents
 		do {
 			let unlocked = try await open()
 			let opened = unlocked.store
@@ -641,6 +724,12 @@ import Observation
 			}
 			if let unsavedReason { failure = .unsaved(unsavedReason) }
 			if !search.isEmpty { await runSearch() }
+			guard away == awayEvents else {
+				await lock()
+				return nil
+			}
+			selection = groups.first?.notes.first?.id
+			offersSyncSetup = offeringSync
 			phase = .unlocked
 			refreshBiometricUnlock()
 			await startSync(opened)
@@ -652,19 +741,24 @@ import Observation
 		}
 	}
 
-	private func write(_ body: (NoteStore) async throws -> Void) async -> Bool {
+	func write(_ action: String, _ body: (NoteStore) async throws -> Void) async -> Bool {
 		guard let store else { return false }
 		do {
 			try await body(store)
 			return true
 		} catch {
-			if store === self.store { report(error) }
+			if store === self.store { report(error, as: action) }
 			return false
 		}
 	}
 
-	private func report(_ error: Error) {
-		failure = Failure(error)
+	func report(_ error: Error, as title: String) {
+		let failure = Failure(error)
+		if case let .unexpected(reason) = failure {
+			self.failure = .failed(reason, title: title)
+		} else {
+			self.failure = failure
+		}
 	}
 }
 

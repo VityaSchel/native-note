@@ -112,9 +112,53 @@ fn content_round_trips_and_rejects_every_truncation() {
 			uuid: [3; 16],
 			deleted_at: 1,
 		},
+		Content::Note {
+			uuid: [4; 16],
+			created_at: 0,
+			updated_at: 0,
+			body: "a".repeat(content::BLOCK - (1 + 1 + 16 + 8 + 8 + 4)),
+		},
 	];
 	for sample in samples {
-		decodes_exactly(sample, content::encode, content::decode);
+		let encoded = content::encode(&sample);
+		let fields = match &sample {
+			Content::Note { body, .. } => 1 + 1 + 16 + 8 + 8 + 4 + body.len(),
+			Content::Tombstone { .. } => 1 + 1 + 16 + 8,
+		};
+		assert_eq!(
+			encoded.len(),
+			fields.div_ceil(content::BLOCK) * content::BLOCK
+		);
+		assert_eq!(content::decode(&encoded), Ok(sample));
+		for cut in 0..encoded.len() {
+			let expected = if cut < fields {
+				DecodeError::Truncated
+			} else {
+				DecodeError::NotCanonical
+			};
+			assert_eq!(
+				content::decode(&encoded[..cut]),
+				Err(expected),
+				"cut at {cut}"
+			);
+		}
+		for byte in fields..encoded.len() {
+			let mut dirty = encoded.clone();
+			dirty[byte] = 1;
+			assert_eq!(
+				content::decode(&dirty),
+				Err(DecodeError::TrailingBytes),
+				"dirty fill at {byte}"
+			);
+		}
+		assert_eq!(
+			content::decode(&[encoded.clone(), vec![0]].concat()),
+			Err(DecodeError::NotCanonical)
+		);
+		assert_eq!(
+			content::decode(&[encoded, vec![0; content::BLOCK]].concat()),
+			Err(DecodeError::NotCanonical)
+		);
 	}
 	assert_eq!(
 		content::decode(&[0x02, 0x01]),

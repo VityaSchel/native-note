@@ -1,6 +1,7 @@
 import AppKit
 import NativeNoteKit
 import Observation
+import UniformTypeIdentifiers
 
 @Observable final class LibraryExchange {
 	enum Sheet: Identifiable {
@@ -40,12 +41,21 @@ import Observation
 		!isImporting && sheet == nil
 	}
 
+	/// The library's commands wait for it to show, past unlock and the first-run sync step.
 	var acceptsCommands: Bool {
-		model.phase == .unlocked && sheet == nil
+		showsLibrary && sheet == nil
 	}
 
 	var canExchange: Bool {
-		model.phase == .unlocked && isIdle
+		showsLibrary && isIdle
+	}
+
+	var canSync: Bool {
+		acceptsCommands && model.syncStatus.server != nil && model.syncStatus.phase != .syncing
+	}
+
+	private var showsLibrary: Bool {
+		model.phase == .unlocked && !model.offersSyncSetup
 	}
 
 	var passphraseRefused: Bool {
@@ -63,19 +73,38 @@ import Observation
 		}
 	}
 
+	/// The list's search lives in the window's toolbar, which AppKit focuses as Notes and Mail do.
+	func focusSearch(in window: NSWindow? = NSApp.mainWindow) {
+		window?.toolbar?.items.lazy.compactMap { $0 as? NSSearchToolbarItem }.first?.beginSearchInteraction()
+	}
+
+	static let encryptedExport = UTType(filenameExtension: "nnexport", conformingTo: .data) ?? .data
+
 	func chooseExport(passphrase: String?) {
 		isExporting = false
 		let panel = NSSavePanel()
 		panel.nameFieldStringValue = passphrase == nil ? "Native Note.zip" : "Native Note.nnexport"
-		guard panel.runModal() == .OK, let url = panel.url else { return }
-		Task { await model.exportLibrary(to: url, passphrase: passphrase) }
+		panel.allowedContentTypes = [passphrase == nil ? .zip : Self.encryptedExport]
+		Self.run(panel) { [model] url in Task { await model.exportLibrary(to: url, passphrase: passphrase) } }
 	}
 
 	func chooseImport() {
 		let panel = NSOpenPanel()
 		panel.canChooseDirectories = false
-		guard panel.runModal() == .OK, let url = panel.url else { return }
-		Task { await receive(url) }
+		panel.allowedContentTypes = [.zip, Self.encryptedExport]
+		Self.run(panel) { url in Task { await self.receive(url) } }
+	}
+
+	/// Attached to the library window, as Apple apps attach their save and open panels.
+	private static func run(_ panel: NSSavePanel, chosen: @escaping (URL) -> Void) {
+		guard let window = NSApp.mainWindow ?? NSApp.keyWindow else {
+			if panel.runModal() == .OK, let url = panel.url { chosen(url) }
+			return
+		}
+		panel.beginSheetModal(for: window) { response in
+			guard response == .OK, let url = panel.url else { return }
+			chosen(url)
+		}
 	}
 
 	func receive(_ url: URL) async {

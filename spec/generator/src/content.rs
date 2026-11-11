@@ -1,9 +1,10 @@
 use crate::codec::{DecodeError, Reader, Writer};
 
 pub const VERSION: u8 = 0x01;
+pub const BLOCK: usize = 4096;
 
-const KIND_NOTE: u8 = 0x01;
-const KIND_TOMBSTONE: u8 = 0x02;
+pub const KIND_NOTE: u8 = 0x01;
+pub const KIND_TOMBSTONE: u8 = 0x02;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Content {
@@ -39,7 +40,9 @@ pub fn encode(content: &Content) -> Vec<u8> {
 			w.u8(KIND_TOMBSTONE).raw(uuid).u64(*deleted_at as u64);
 		}
 	}
-	w.into_bytes()
+	let mut encoded = w.into_bytes();
+	encoded.resize(encoded.len().div_ceil(BLOCK) * BLOCK, 0);
+	encoded
 }
 
 pub fn decode(input: &[u8]) -> Result<Content, DecodeError> {
@@ -68,7 +71,7 @@ pub fn decode(input: &[u8]) -> Result<Content, DecodeError> {
 		}
 		_ => return Err(DecodeError::UnknownDiscriminant),
 	};
-	r.finish()?;
+	r.finish_filled(BLOCK)?;
 	Ok(content)
 }
 

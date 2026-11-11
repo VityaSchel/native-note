@@ -17,7 +17,7 @@ struct TryTouchIDAgainButton: NSViewRepresentable {
 			target: context.coordinator,
 			action: #selector(Coordinator.click)
 		)
-		button.bezelStyle = .glass
+		button.bezelStyle = .push
 		button.imagePosition = .imageLeading
 		button.imageHugsTitle = true
 		return button

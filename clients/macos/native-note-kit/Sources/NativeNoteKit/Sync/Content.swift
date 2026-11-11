@@ -1,10 +1,11 @@
 import Foundation
 
-/// The end-to-end encrypted layout of docs/PROTOCOL.md § Content, timestamps in epoch milliseconds.
+/// The end-to-end encrypted layout of docs/PROTOCOL.md § Content, timestamps in epoch milliseconds, zero-filled to whole blocks.
 nonisolated enum Content: Equatable, Sendable {
 	case note(id: UUID, createdAt: Int64, updatedAt: Int64, body: String)
 	case tombstone(id: UUID, deletedAt: Int64)
 
+	static let block = 4096
 	private static let version: UInt8 = 0x01
 	private static let noteKind: UInt8 = 0x01
 	private static let tombstoneKind: UInt8 = 0x02
@@ -30,7 +31,9 @@ nonisolated enum Content: Equatable, Sendable {
 			writer.fixed(id.bytes)
 			writer.i64(deletedAt)
 		}
-		return writer.data
+		var encoded = writer.data
+		encoded.append(Data(count: (Self.block - encoded.count % Self.block) % Self.block))
+		return encoded
 	}
 
 	static func decode(_ bytes: Data) throws(WireError) -> Content {
@@ -49,7 +52,7 @@ nonisolated enum Content: Equatable, Sendable {
 		default:
 			throw .unknownDiscriminant
 		}
-		try reader.finish()
+		try reader.finishFilled(toMultipleOf: block)
 		return content
 	}
 }

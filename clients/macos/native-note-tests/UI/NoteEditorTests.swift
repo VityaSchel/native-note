@@ -146,7 +146,7 @@ struct NoteEditorTests {
 		#expect(!textView.isRichText)
 		#expect(textView.allowsUndo)
 		#expect(textView.usesFindBar)
-		#expect(textView.textContainerInset == NSSize(width: 28, height: 28))
+		#expect(textView.textContainerInset == NSSize(width: 28, height: NoteEditor.topInset))
 		#expect(!textView.drawsBackground)
 		#expect(!editor.scrollView.drawsBackground)
 		#expect(editor.scrollView.borderType == .noBorder)
@@ -246,6 +246,28 @@ struct NoteEditorTests {
 		#expect(!editor.textView.hasMarkedText())
 		#expect(editor.writes == ["Ti日本tle\nbody"])
 		#expect((0 ..< 7).allSatisfy { editor.pointSize(at: $0) == headingSize })
+	}
+
+	@Test func theModelRedeliveringTheSameTextKeepsACompositionInProgress() {
+		let editor = Editor("Title\nbody")
+		editor.textView.setSelectedRange(NSRange(location: 5, length: 0))
+		editor.compose("にほ")
+
+		NoteEditor.show("Title\nbody", in: editor.scrollView)
+
+		#expect(editor.textView.hasMarkedText())
+		#expect(editor.textView.string == "Titleにほ\nbody")
+		editor.type("日本")
+		#expect(editor.text == "Title日本\nbody")
+	}
+
+	@Test func aDifferentTextFromOutsideStillReplacesTheEditor() {
+		let editor = Editor("Title\nbody")
+		editor.type("!")
+
+		NoteEditor.show("Pulled\nfrom another Mac", in: editor.scrollView)
+
+		#expect(editor.textView.string == "Pulled\nfrom another Mac")
 	}
 
 	@Test func aCompositionInAnEmptyNoteCommitsAsTheTitle() {

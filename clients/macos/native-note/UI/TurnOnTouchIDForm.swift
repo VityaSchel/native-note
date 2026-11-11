@@ -15,7 +15,7 @@ struct TurnOnTouchIDForm {
 	var inlineMessage: String? {
 		switch failure {
 		case .wrongPassword: "Wrong password."
-		case let .unexpected(reason), let .unsaved(reason): reason
+		case let .unexpected(reason), let .unsaved(reason), let .failed(reason, _): reason
 		case .wrongExportPassphrase, nil: nil
 		}
 	}

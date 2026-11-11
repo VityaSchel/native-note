@@ -177,21 +177,90 @@ struct AppDelegateTests {
 		#expect(try await disk.note(id: id)?.body == "typed then switched apps")
 	}
 
-	@Test func sleepingSavesAtOnce() async throws {
+	@Test func sleepingSavesAndLocks() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
-		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
+		let workspace = NotificationCenter()
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, workspace: workspace)
 		delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
 
 		model.edit(id, "typed then slept")
-		NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+		workspace.post(name: NSWorkspace.willSleepNotification, object: nil)
 		try await settle { try await disk.note(id: id)?.body == "typed then slept" }
 
 		#expect(try await disk.note(id: id)?.body == "typed then slept")
+		await settle { model.phase == .locked }
+		#expect(model.phase == .locked)
 	}
+
+	@Test func aLockedScreenOrAnotherUsersSessionLocksTheLibrary() async throws {
+		for away in ["screen", "session"] {
+			let (model, directory) = try await unlockedModel(alarm: alarm)
+			defer { try? FileManager.default.removeItem(at: directory) }
+			let workspace = NotificationCenter()
+			let notice = Self.privateScreenLockNotice()
+			let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, workspace: workspace, screenLocked: notice)
+			delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+
+			if away == "screen" {
+				#expect(await Self.post(notice))
+			} else {
+				workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+			}
+			await settle { model.phase == .locked }
+
+			#expect(model.phase == .locked, "\(away)")
+		}
+	}
+
+	@Test func goingAwayBeforeSetupLeavesTheFirstRunAlone() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(libraryAt: directory)
+		model.start()
+		let notice = Self.privateScreenLockNotice()
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, workspace: NotificationCenter(), screenLocked: notice)
+		delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
+
+		#expect(await Self.post(notice))
+
+		#expect(model.phase == .needsSetup)
+	}
+}
+
+extension AppDelegateTests {
+	/// A name only this test listens for, so posting it system-wide reaches nothing else.
+	static func privateScreenLockNotice() -> Notification.Name {
+		Notification.Name("dev.hloth.nativenote.tests.screen-locked.\(UUID().uuidString)")
+	}
+
+	/// Waits for the notice itself, which reaches the delegate first, rather than for an effect that may never come.
+	/// Delivery to the posting process ignores suspension, so this proves the subscription, not its delivery to a background app.
+	static func post(_ notice: Notification.Name) async -> Bool {
+		let center = DistributedNotificationCenter.default()
+		let arrival = Arrival()
+		let token = center.addObserver(forName: notice, object: nil, queue: nil) { _ in
+			MainActor.assumeIsolated { arrival.arrived = true }
+		}
+		defer { center.removeObserver(token) }
+		center.post(name: notice, object: nil)
+		for _ in 0 ..< 500 where !arrival.arrived {
+			turnRunLoop()
+			await Task.yield()
+		}
+		return arrival.arrived
+	}
+
+	private static func turnRunLoop() {
+		RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+	}
+}
+
+@MainActor private final class Arrival {
+	var arrived = false
 }
 
 @MainActor private final class QuitPrompt {

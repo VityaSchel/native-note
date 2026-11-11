@@ -63,12 +63,26 @@ fn case(name: &str, value: Content) -> Value {
 	})
 }
 
+fn filled(mut fields: Vec<u8>) -> Vec<u8> {
+	fields.resize(fields.len().div_ceil(content::BLOCK) * content::BLOCK, 0);
+	fields
+}
+
 fn note_with_body_bytes(body: &[u8]) -> Vec<u8> {
-	let mut encoded = content::encode(&sample_note(""));
-	encoded.truncate(encoded.len() - 4);
-	encoded.extend_from_slice(&(body.len() as u32).to_be_bytes());
-	encoded.extend_from_slice(body);
-	encoded
+	let mut fields = vec![content::VERSION, content::KIND_NOTE];
+	fields.extend_from_slice(&uuid_bytes());
+	fields.extend_from_slice(&CREATED_AT.to_be_bytes());
+	fields.extend_from_slice(&UPDATED_AT.to_be_bytes());
+	fields.extend_from_slice(&(body.len() as u32).to_be_bytes());
+	fields.extend_from_slice(body);
+	filled(fields)
+}
+
+fn tombstone_fields() -> Vec<u8> {
+	let mut fields = vec![content::VERSION, content::KIND_TOMBSTONE];
+	fields.extend_from_slice(&uuid_bytes());
+	fields.extend_from_slice(&DELETED_AT.to_be_bytes());
+	fields
 }
 
 fn reject(name: &str, bytes: Vec<u8>, expected: DecodeError) -> Value {
@@ -90,18 +104,38 @@ pub fn content() -> Value {
 	let mut wrong_kind = valid.clone();
 	wrong_kind[1] = 0x7f;
 
-	let trailing = [valid.clone(), vec![0]].concat();
-	let truncated = valid[..valid.len() - 1].to_vec();
+	let fields_before_body = 1 + 1 + 16 + 8 + 8 + 4;
+	let unpadded = tombstone_fields();
+	let mut dirty_last = valid.clone();
+	*dirty_last.last_mut().expect("content is never empty") = 0x01;
+	let mut dirty_first = valid.clone();
+	dirty_first[unpadded.len()] = 0x01;
+	let dirty_off_boundary = [unpadded.clone(), vec![0x01]].concat();
+	let dirty_past_a_block = [valid.clone(), vec![0; content::BLOCK - 1], vec![0x01]].concat();
+	let off_boundary = [valid.clone(), vec![0]].concat();
+	let aligned = content::encode(&sample_note(
+		&"a".repeat(content::BLOCK - fields_before_body),
+	));
+	let whole_block = [aligned, vec![0; content::BLOCK]].concat();
+	let truncated = unpadded[..unpadded.len() - 1].to_vec();
 
 	let body_len_at = 1 + 1 + 16 + 8 + 8;
 	let mut huge_length = content::encode(&sample_note("x"));
 	huge_length[body_len_at..body_len_at + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
 	file(
-		"Note content: version ‖ kind ‖ fields. Timestamps are signed epoch milliseconds; the body is length-prefixed UTF-8 per RFC 3629. Nothing else is validated, so any uuid and timestamp order decodes.",
+		"Note content: version ‖ kind ‖ fields ‖ zero fill up to the next multiple of 4096 bytes, none when the fields end on one. Timestamps are signed epoch milliseconds; the body is length-prefixed UTF-8 per RFC 3629. Nothing else is validated, so any uuid and timestamp order decodes.",
 		vec![
 			case("note", sample_note("Groceries\nmilk\nbread")),
 			case("tombstone", sample_tombstone()),
+			case(
+				"fieldsFillOneBlockExactly",
+				sample_note(&"a".repeat(content::BLOCK - fields_before_body)),
+			),
+			case(
+				"oneByteSpillsIntoASecondBlock",
+				sample_note(&"a".repeat(content::BLOCK - fields_before_body + 1)),
+			),
 			case("nonAscii", sample_note("Ünïcode — 日本語 🔐")),
 			case("emptyBody", sample_note("")),
 			case(
@@ -132,7 +166,37 @@ pub fn content() -> Value {
 				wrong_kind,
 				DecodeError::UnknownDiscriminant,
 			),
-			reject("rejectTrailingBytes", trailing, DecodeError::TrailingBytes),
+			reject(
+				"rejectTrailingBytes",
+				dirty_last,
+				DecodeError::TrailingBytes,
+			),
+			reject(
+				"rejectNonZeroFirstFillByte",
+				dirty_first,
+				DecodeError::TrailingBytes,
+			),
+			reject(
+				"rejectDirtyFillOffABoundary",
+				dirty_off_boundary,
+				DecodeError::TrailingBytes,
+			),
+			reject(
+				"rejectDirtyFillPastABlock",
+				dirty_past_a_block,
+				DecodeError::TrailingBytes,
+			),
+			reject("rejectUnpadded", unpadded, DecodeError::NotCanonical),
+			reject(
+				"rejectFillOffABoundary",
+				off_boundary,
+				DecodeError::NotCanonical,
+			),
+			reject(
+				"rejectAWholeBlockOfFill",
+				whole_block,
+				DecodeError::NotCanonical,
+			),
 			reject("rejectTruncated", truncated, DecodeError::Truncated),
 			reject(
 				"rejectImpossibleLength",

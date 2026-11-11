@@ -149,7 +149,7 @@ struct LibrarySearchTests {
 		await model.runSearch()
 
 		#expect(model.groups.isEmpty)
-		#expect(model.failure?.isUnexpected == true)
+		#expect(model.failure?.searchFailed == true)
 	}
 
 	@Test func aFailingSearchIsReportedOnceWhileTheUserTypes() async throws {
@@ -203,7 +203,7 @@ struct LibrarySearchTests {
 }
 
 private extension AppModel.Failure {
-	var isUnexpected: Bool {
-		if case .unexpected = self { true } else { false }
+	var searchFailed: Bool {
+		if case .failed(_, "Search could not run.") = self { true } else { false }
 	}
 }

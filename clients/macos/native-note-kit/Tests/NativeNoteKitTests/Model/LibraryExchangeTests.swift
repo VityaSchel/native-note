@@ -221,7 +221,7 @@ struct LibraryExchangeTests {
 		try handle.close()
 
 		#expect(await model.importLibrary(from: file, passphrase: nil) == nil)
-		#expect(model.failure == .unexpected("The file is too large to be a Native Note export."))
+		#expect(model.failure == .failed("The file is too large to be a Native Note export.", title: "The file could not be imported."))
 	}
 
 	@Test func theExportCarriesEditsNotYetSaved() async throws {
@@ -245,7 +245,7 @@ struct LibraryExchangeTests {
 		try Data("hello".utf8).write(to: file)
 
 		#expect(await model.importLibrary(from: file, passphrase: nil) == nil)
-		#expect(model.failure == .unexpected("This file is not a Native Note export, or it is damaged."))
+		#expect(model.failure == .failed("This file is not a Native Note export, or it is damaged.", title: "The file could not be imported."))
 	}
 }
 

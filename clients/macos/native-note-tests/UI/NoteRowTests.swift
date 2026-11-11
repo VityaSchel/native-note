@@ -21,8 +21,8 @@ struct NoteRowTests {
 	}
 
 	@Test func anUntitledNoteIsCalledNewNote() {
-		#expect(NoteRow(note: .sample(1, "", minutesAgo: 0), now: Note.sampleNow).displayTitle == "New note")
-		#expect(NoteRow(note: .sample(1, "  \nbody", minutesAgo: 0), now: Note.sampleNow).displayTitle == "New note")
+		#expect(NoteRow(note: .sample(1, "", minutesAgo: 0), now: Note.sampleNow).displayTitle == "New Note")
+		#expect(NoteRow(note: .sample(1, "  \nbody", minutesAgo: 0), now: Note.sampleNow).displayTitle == "New Note")
 	}
 
 	@Test func aNoteWithNothingAfterTheTitleSaysSo() {
@@ -80,4 +80,17 @@ func glyph(of character: String, in font: CTFont) -> CGGlyph {
 	var glyph = CGGlyph()
 	if let run { CTRunGetGlyphs(run, CFRange(location: 0, length: 1), &glyph) }
 	return glyph
+}
+
+@MainActor
+struct NoteRowSpeechTests {
+	@Test func anOlderDateIsSpokenInWordsAndARecentOneAsShown() {
+		let now = Note.sampleNow
+		let old = NoteRow(note: .sample(1, "Trip plan\nferry", minutesAgo: 40_000), now: now)
+		let recent = NoteRow(note: .sample(2, "Shopping\nbread", minutesAgo: 5), now: now)
+
+		#expect(old.dateLabel.wholeMatch(of: /\d{4}\.\d{2}\.\d{2}/) != nil)
+		#expect(old.spokenDate == old.note.updated.formatted(date: .long, time: .omitted))
+		#expect(recent.spokenDate == recent.dateLabel)
+	}
 }

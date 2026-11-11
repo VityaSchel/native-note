@@ -23,11 +23,20 @@ func unlockedModel(_ make: (URL) -> AppModel) async throws -> (AppModel, URL) {
 	return (model, directory)
 }
 
+/// Empty bodies arrive as a pulled or imported note would, since New Note discards a note left empty.
 @MainActor
 func fill(_ model: AppModel, with bodies: [String]) async throws {
 	for body in bodies {
-		await model.createNote()
-		model.edit(try #require(model.selection), body)
+		guard body.isEmpty else {
+			await model.createNote()
+			model.edit(try #require(model.selection), body)
+			continue
+		}
+		let now = Date().epochMilliseconds
+		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: true)
+		_ = try await #require(model.store).save(note)
+		model.notes.insert(note, at: 0)
+		model.selection = note.id
 	}
 	await model.flushPendingSaves()
 }

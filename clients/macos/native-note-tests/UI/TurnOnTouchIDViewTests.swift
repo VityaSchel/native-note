@@ -53,7 +53,7 @@ struct TurnOnTouchIDViewTests {
 	}
 
 	private func passwordField(in offscreen: OffscreenWindow<some View>) -> NSSecureTextField? {
-		offscreen.views(of: NSSecureTextField.self).first { $0.placeholderString == "Password" }
+		offscreen.secureField("Password:")
 	}
 
 	private func type(_ text: String, in offscreen: OffscreenWindow<some View>) throws -> NSSecureTextField {

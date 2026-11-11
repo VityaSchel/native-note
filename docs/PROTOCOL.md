@@ -67,7 +67,10 @@ version(1) = 0x01
 kind(1)
   0x01 note        uuid(16) ‖ createdAt_be64 ‖ updatedAt_be64 ‖ bodyLen_be32 ‖ body
   0x02 tombstone   uuid(16) ‖ deletedAt_be64
+fill             zero bytes up to the next multiple of 4096 B, none when the fields end on one
 ```
+
+The fill hides a note's length below 4 KiB steps and makes a tombstone the size of a short note. A decoder rejects a non-zero fill byte as trailing bytes whatever the length, and otherwise a length that is not the smallest multiple of 4096 B holding the fields as not canonical.
 
 Timestamps are epoch milliseconds. `body` is UTF-8 per RFC 3629; anything else is rejected. An unknown `version` or `kind` is rejected.
 
@@ -83,7 +86,7 @@ Rules, applied uniformly so that every message has exactly one valid encoding:
 - Variable-length fields are `len_be32 ‖ bytes`. Arrays are `count_be32 ‖ item*`.
 - Booleans are `0x00` or `0x01`. Any other value is rejected.
 - Enum discriminants are one byte. Unknown values are rejected.
-- A message must consume its buffer exactly. Trailing bytes are rejected.
+- A message must consume its buffer exactly. Trailing bytes are rejected. [Content](#content)'s zero fill is the one exception.
 
 Decoders reject only what these rules and the per-message rules name, so a non-v4 `uuid`, a negative timestamp or a payload too short to open still decodes.
 
@@ -97,7 +100,7 @@ The server stamps every accepted write with a `seq`, inside the same transaction
 
 Authentication is proved by sealing the envelope. Metadata is encrypted, not just content, so a reverse proxy sees only the sealed envelope. No device IDs so an observer can't tell which device has sent request and how many of them there are. No certificates, no domain name, no TLS required.
 
-A replayed write is rejected by `v == storedV + 1`, since the server has already advanced. A replayed pull returns a response sealed to a key the attacker does not hold.
+A replayed write is rejected by `v == storedV + 1`, since the server has already advanced. A write that never reached the server carries no expiry, so one held back and delivered later is still accepted while its `v` is next. A replayed pull returns a response sealed to a key the attacker does not hold.
 
 ```
 envelopeKey = HKDF-SHA256(apiKey, info: "native-note/envelope/v1", 32)
@@ -191,7 +194,7 @@ Every `info` label in the protocol, in one place. New labels must not collide; a
 
 ## Limits
 
-| Limit                                  | Maximum | Exceeded                                                       |
-| -------------------------------------- | ------- | -------------------------------------------------------------- |
-| Note `payload`, nonce and tag included | 1 MiB   | `too_large` in the response                                    |
-| Body, measured on [`padded`](#padding) | 2 MiB   | Request: HTTP `413`. Response: `changes` truncated, `more` set |
+| Limit                                        | Maximum | Exceeded                                                       |
+| -------------------------------------------- | ------- | -------------------------------------------------------------- |
+| Note `payload`, fill, nonce and tag included | 1 MiB   | `too_large` in the response                                    |
+| Body, measured on [`padded`](#padding)       | 2 MiB   | Request: HTTP `413`. Response: `changes` truncated, `more` set |

@@ -13,7 +13,7 @@ Dependencies:
 
 - Crypto, storage, unlock and the model live in the local package `NativeNoteKit`, so they test without the app host
 - Editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage. We chose it over SwiftUI `TextEditor` because `TextEditor` cannot do reliable per-range styling, so the heading would need its own field and unified selection would break. Also the right base for the markdown editor later
-- The editor styles the title and writes the note from the text storage, so paste, undo and redo reach the note. Each note has its own undo history. Input-method text reaches the note on commit
+- The editor styles the title and writes the note from the text storage, so paste, undo and redo reach the note. Each note has its own undo history. Input-method text reaches the note on commit, and only text the editor did not show or write itself replaces its contents, so a composition survives a redraw such as a sync status change
 - Database writes off `@MainActor`, published state on it, so it doesn't jank on large notes
 - Argon2 and Secure Enclave calls run on one serial queue, `BlockingWork`, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
@@ -44,15 +44,17 @@ Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAc
 | `com.apple.security.files.user-selected.read-write` | export and import                        |
 | `keychain-access-groups`                            | Touch ID unlock, team-signed builds only |
 
-`com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Release builds must be signed for distribution so that it is dropped.
+The encryption declaration and the App Transport Security justification for review are in [docs/EXPORT_COMPLIANCE.md](../../docs/EXPORT_COMPLIANCE.md).
+
+`com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Releases come only from [macos-release.sh](../../.forgejo/scripts/macos-release.sh), whose Developer ID export drops it and which refuses an export that keeps it.
 
 ### Storage
 
-| State             | Store                  |
-| ----------------- | ---------------------- |
-| App preferences   | `UserDefaults`         |
-| Unlock parameters | `app-lock.plist`       |
-| Notes             | the SQLCipher database |
+| State                                                     | Store                           |
+| --------------------------------------------------------- | ------------------------------- |
+| Unlock parameters                                         | `app-lock.plist`                |
+| Notes, and sync settings with the API key and Content key | the SQLCipher database (`meta`) |
+| Touch ID copy of `localDbKey`                             | the data-protection keychain    |
 
 Unlock parameters are stored in a binary plist because they're part of the database's identity, migrated along with it and not overridable by a managed value from a configuration profile.
 
@@ -63,7 +65,7 @@ Unlock parameters are stored in a binary plist because they're part of the datab
 ```
 version     1
 localSalt   16 bytes
-argon       { m: 262144, t: 3, p: 4 }    # m in KiB, so 262144 is 256 MiB
+argon       { m: ≥262144, t: 3, p: 4 }   # m in KiB, calibrated per Mac from 256 MiB up to 2 GiB
 enclaveKey  Secure Enclave key blob      # absent without a Secure Enclave
 ```
 

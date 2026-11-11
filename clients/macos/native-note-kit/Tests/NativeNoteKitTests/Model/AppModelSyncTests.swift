@@ -5,7 +5,7 @@ import Testing
 @testable import NativeNoteKit
 
 @MainActor
-private func syncingModel(_ server: SyncServer, alarm: Alarm? = nil, idle: Duration = .milliseconds(50)) async throws -> (AppModel, TestTransport) {
+func syncingModel(_ server: SyncServer, alarm: Alarm? = nil, idle: Duration = .milliseconds(50)) async throws -> (AppModel, TestTransport) {
 	let transport = TestTransport(server)
 	let (model, _) = try await unlockedModel { directory in
 		AppModel(
@@ -19,24 +19,29 @@ private func syncingModel(_ server: SyncServer, alarm: Alarm? = nil, idle: Durat
 }
 
 @MainActor
-private func apiKeyText(_ server: SyncServer) throws -> String {
+func apiKeyText(_ server: SyncServer) throws -> String {
 	try String(contentsOf: server.data.appending(path: "api-key"), encoding: .utf8)
 }
 
 @MainActor
-private func answers(_ phrase: AppModel.RecoveryPhrase) -> [String] {
+func answers(_ phrase: AppModel.RecoveryPhrase) -> [String] {
 	phrase.checked.map { phrase.words[$0] }
 }
 
+func newLibrary(_ start: Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure>) throws -> AppModel.RecoveryPhrase {
+	guard case let .newLibrary(phrase) = try start.get() else { throw AppModel.SyncSetupFailure.serverHasLibrary }
+	return phrase
+}
+
 @MainActor
-private func setUpSync(_ model: AppModel, _ server: SyncServer) async throws -> AppModel.RecoveryPhrase {
-	let phrase = try await model.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)).get()
+func setUpSync(_ model: AppModel, _ server: SyncServer) async throws -> AppModel.RecoveryPhrase {
+	let phrase = try newLibrary(await model.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)))
 	try #require(await model.finishSync(answers: answers(phrase)) == nil)
 	return phrase
 }
 
 @MainActor
-private func storedBlob(_ server: SyncServer) async throws -> (v: UInt32, blob: Data) {
+func storedBlob(_ server: SyncServer) async throws -> (v: UInt32, blob: Data) {
 	let connection = SyncConnection(apiKey: try server.apiKey, transport: HTTPTransport(url: server.url))
 	guard case let .get(v, blob) = try await connection.send(.get) else { throw SyncError.protocolViolation }
 	return (v, blob)
@@ -47,7 +52,7 @@ struct AppModelSyncTests {
 	@Test func settingUpPutsTheContentKeyUnderThePhraseAtVersionOneAndStartsSyncing() async throws {
 		let server = try SyncServer()
 		let (model, _) = try await syncingModel(server)
-		let phrase = try await model.prepareSync(server: " \(server.url.absoluteString) ", apiKey: apiKeyText(server)).get()
+		let phrase = try newLibrary(await model.prepareSync(server: " \(server.url.absoluteString) ", apiKey: apiKeyText(server)))
 		#expect(phrase.words.count == 24 && phrase.checked.count == 3 && Set(phrase.checked).count == 3)
 		#expect(try await storedBlob(server).v == 0)
 
@@ -62,7 +67,7 @@ struct AppModelSyncTests {
 		#expect(model.syncStatus.phase != .off)
 	}
 
-	@Test func setupRefusesBadInputAWrongKeyAndAServerThatAlreadyHoldsALibrary() async throws {
+	@Test func setupRefusesBadInputAndAWrongKeyAndJoinsAServerThatAlreadyHoldsALibrary() async throws {
 		let server = try SyncServer()
 		let (first, _) = try await syncingModel(server)
 		let (second, _) = try await syncingModel(server)
@@ -74,30 +79,52 @@ struct AppModelSyncTests {
 		#expect(await first.prepareSync(server: server.url.absoluteString, apiKey: wrong) == .failure(.refused))
 
 		_ = try await setUpSync(first, server)
-		#expect(await second.prepareSync(server: server.url.absoluteString, apiKey: key) == .failure(.serverHasLibrary))
+		#expect(await second.prepareSync(server: server.url.absoluteString, apiKey: key) == .success(.existingLibrary))
 	}
 
 	@Test func aSetupPutWhoseResponseIsLostIsSentAgainUnchangedAndLands() async throws {
 		let server = try SyncServer()
 		let (model, transport) = try await syncingModel(server)
-		let phrase = try await model.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)).get()
+		let phrase = try newLibrary(await model.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)))
 		transport.failNext(.dropResponse)
 
 		#expect(await model.finishSync(answers: answers(phrase)) == nil)
 		#expect(try await storedBlob(server).v == 1)
 	}
 
-	@Test func twoMacsSettingUpAtOnceSendTheLaterOneToRestore() async throws {
+	@Test func aSetupAndAPhraseChangeThatAProxyFailsAfterForwardingStillLand() async throws {
+		let server = try SyncServer()
+		let (model, transport) = try await syncingModel(server)
+		let phrase = try newLibrary(await model.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)))
+		transport.failNext(.replyReplaced)
+		#expect(await model.finishSync(answers: answers(phrase)) == nil)
+		#expect(try await model.store?.pin() == 1)
+
+		let next = try #require(await model.prepareRotation())
+		transport.failNext(.replyReplaced)
+		#expect(await model.finishRotation(answers: answers(next)) == nil)
+
+		#expect(try await model.store?.pin() == 2)
+		let stored = try await storedBlob(server)
+		let nextKey = try #require(Mnemonic.key(from: next.words))
+		#expect(stored.v == 2 && RecoveryBlob.open(stored.blob, under: nextKey) != nil)
+	}
+
+	@Test func twoMacsSettingUpAtOnceSendTheLaterOneToJoinTheFirst() async throws {
 		let server = try SyncServer()
 		let (first, _) = try await syncingModel(server)
 		let (second, _) = try await syncingModel(server)
 		let key = try apiKeyText(server)
-		let firstPhrase = try await first.prepareSync(server: server.url.absoluteString, apiKey: key).get()
-		let secondPhrase = try await second.prepareSync(server: server.url.absoluteString, apiKey: key).get()
+		let firstPhrase = try newLibrary(await first.prepareSync(server: server.url.absoluteString, apiKey: key))
+		let secondPhrase = try newLibrary(await second.prepareSync(server: server.url.absoluteString, apiKey: key))
 
 		#expect(await first.finishSync(answers: answers(firstPhrase)) == nil)
 		#expect(await second.finishSync(answers: answers(secondPhrase)) == .serverHasLibrary)
 		#expect(second.syncStatus.phase == .off)
+		#expect(try await second.store?.syncSettings() == nil)
+
+		#expect(await second.joinSync(server: server.url.absoluteString, apiKey: key, phrase: entry(firstPhrase.words)) == nil)
+		#expect(try await second.store?.syncSettings()?.contentKey == first.store?.syncSettings()?.contentKey)
 	}
 
 	@Test func rotationMovesThePinAndAStalePinAdoptsTheCurrentPhraseBeforeRotatingAgain() async throws {

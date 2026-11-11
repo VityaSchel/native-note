@@ -90,6 +90,23 @@ struct LibraryExchangeTests {
 		#expect(exchange.isIdle)
 	}
 
+	@Test func commandsWaitForTheFirstRunSyncStep() async throws {
+		let directory = temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		model.start()
+		let exchange = LibraryExchange(model: model)
+
+		await model.submit(password: workspacePassword)
+		#expect(model.offersSyncSetup)
+		#expect(!exchange.acceptsCommands)
+		#expect(!exchange.canExchange)
+
+		model.dismissSyncSetupOffer()
+		#expect(exchange.acceptsCommands)
+		#expect(exchange.canExchange)
+	}
+
 	@Test func commandsWaitForUnlockAndForTheOpenSheet() async throws {
 		let (model, directory) = try await library(["Shopping"])
 		defer { try? FileManager.default.removeItem(at: directory) }

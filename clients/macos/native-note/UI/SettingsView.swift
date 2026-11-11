@@ -40,6 +40,8 @@ struct SecuritySettings: View {
 		case changePassword
 		case setUpSync
 		case changeRecoveryPhrase
+		case changeAPIKey
+		case changeServer
 
 		var id: Self { self }
 	}
@@ -65,11 +67,21 @@ struct SecuritySettings: View {
 		case .turnOnTouchID:
 			TurnOnTouchIDView(turnOn: turnOnTouchID, done: done, touchID: touchID)
 		case .changePassword:
-			ChangePasswordView(turnsTouchIDOff: touchIDEnabled, change: changePassword, done: done)
+			ChangePasswordView(
+				turnsTouchIDOff: touchIDEnabled,
+				change: changePassword,
+				offerTouchID: touchIDAvailable ? turnOnTouchID : nil,
+				touchID: touchID,
+				done: done
+			)
 		case .setUpSync:
 			SyncSetupView(mode: .setUp, controls: sync, done: done)
+		case .changeServer:
+			SyncSetupView(form: SyncSetupForm(mode: .changeServer, server: sync.status.server ?? ""), controls: sync, done: done)
 		case .changeRecoveryPhrase:
 			SyncSetupView(mode: .rotate, controls: sync, done: done)
+		case .changeAPIKey:
+			ChangeAPIKeyView(change: sync.changeAPIKey, done: done)
 		}
 	}
 }
@@ -115,22 +127,56 @@ struct SyncSection: View {
 	let controls: SyncControls
 	let present: (SecuritySettings.Sheet) -> Void
 
+	@State private var confirmingTurnOff = false
+
 	var body: some View {
 		Section("Sync") {
 			if let server = controls.status.server {
-				LabeledContent("Server", value: server)
 				LabeledContent {
-					Button("Sync Now") { Task { await controls.syncNow() } }
-						.disabled(controls.status.phase == .syncing)
+					Button("Change Server…") { present(.changeServer) }
 				} label: {
-					Text(Self.statusLine(controls.status))
-					ForEach(controls.status.problems, id: \.self) { Text($0) }
+					Text("Server")
+					Text(server)
+				}
+				TimelineView(.everyMinute) { timeline in
+					LabeledContent {
+						Button("Sync Now") { Task { await controls.syncNow() } }
+							.disabled(controls.status.phase == .syncing)
+					} label: {
+						HStack(spacing: 6) {
+							if controls.status.phase == .syncing {
+								ProgressView().controlSize(.small)
+							}
+							Text(Self.statusLine(controls.status, now: timeline.date))
+						}
+						if case let .failed(reason) = controls.status.phase {
+							Text(reason)
+						}
+						ForEach(controls.status.problems, id: \.self) { Text($0) }
+					}
 				}
 				LabeledContent {
 					Button("Change Recovery Phrase…") { present(.changeRecoveryPhrase) }
 				} label: {
 					Text("Recovery phrase")
 					Text("Restores your notes on another Mac. Native Note never keeps it.")
+				}
+				LabeledContent {
+					Button("Change API Key…") { present(.changeAPIKey) }
+				} label: {
+					Text("API key")
+					Text("Lets this Mac in to the server. Replace it after the server's key changes.")
+				}
+				LabeledContent {
+					Button("Turn Off Sync…") { confirmingTurnOff = true }
+				} label: {
+					Text("Turn off sync")
+					Text("This Mac keeps its notes. Set Up Sync… finds this library again later.")
+				}
+				.confirmationDialog("Turn Off Sync?", isPresented: $confirmingTurnOff) {
+					Button("Turn Off Sync") { Task { _ = await controls.turnOffSync() } }
+				} message: {
+					Text("This Mac keeps its notes and stops syncing them. The server keeps its copy.")
 				}
 			} else {
 				LabeledContent {
@@ -143,11 +189,15 @@ struct SyncSection: View {
 		}
 	}
 
-	static func statusLine(_ status: AppModel.SyncStatus) -> String {
+	/// A failure's reason goes on the line under this one.
+	static func statusLine(_ status: AppModel.SyncStatus, now: Date = .now) -> String {
 		switch status.phase {
-		case .syncing: "Syncing…"
-		case let .failed(reason): reason
-		case .off, .idle: status.lastSynced.map { "Last synced \($0.formatted(.relative(presentation: .named)))" } ?? "Not synced yet"
+		case .syncing: return "Syncing…"
+		case .failed: return "Sync failed"
+		case .off, .idle:
+			guard let synced = status.lastSynced else { return "Not synced yet" }
+			guard now.timeIntervalSince(synced) >= 60 else { return "Last synced just now" }
+			return "Last synced \(synced.formatted(.relative(presentation: .named, unitsStyle: .wide)))"
 		}
 	}
 }

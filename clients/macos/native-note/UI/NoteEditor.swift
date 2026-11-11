@@ -3,6 +3,11 @@ import SwiftUI
 
 struct NoteEditor: NSViewRepresentable {
 	@Binding var text: String
+	/// New Note puts the insertion point in the note it made; picking a note in the list leaves focus there.
+	var takesFocus = false
+	var tookFocus: () -> Void = {}
+	var magnification = 1.0
+	var dateLine = ""
 
 	func makeCoordinator() -> Coordinator {
 		Coordinator(text: $text)
@@ -14,7 +19,22 @@ struct NoteEditor: NSViewRepresentable {
 
 	func updateNSView(_ scrollView: NSScrollView, context: Context) {
 		Self.show(text, in: scrollView)
+		if context.coordinator.dateLabel?.stringValue != dateLine {
+			context.coordinator.dateLabel?.stringValue = dateLine
+		}
+		if abs(scrollView.magnification - magnification) > 0.001 {
+			scrollView.magnification = magnification
+		}
+		guard takesFocus, let textView = scrollView.documentView as? NSTextView else { return }
+		DispatchQueue.main.async { [tookFocus] in
+			guard let window = textView.window else { return }
+			window.makeFirstResponder(textView)
+			tookFocus()
+		}
 	}
+
+	/// Room above the title for the date line, which scrolls with the note as in Notes.
+	static let topInset: CGFloat = 46
 
 	static func makeScrollView(delegate: Coordinator) -> NSScrollView {
 		let textView = ComposingTextView(usingTextLayoutManager: true)
@@ -28,7 +48,19 @@ struct NoteEditor: NSViewRepresentable {
 		textView.usesFindBar = true
 		textView.isIncrementalSearchingEnabled = true
 		textView.drawsBackground = false
-		textView.textContainerInset = NSSize(width: 28, height: 28)
+		textView.textContainerInset = NSSize(width: 28, height: Self.topInset)
+
+		let dateLabel = NSTextField(labelWithString: "")
+		dateLabel.font = .preferredFont(forTextStyle: .subheadline)
+		dateLabel.textColor = .secondaryLabelColor
+		dateLabel.alignment = .center
+		dateLabel.translatesAutoresizingMaskIntoConstraints = false
+		textView.addSubview(dateLabel)
+		NSLayoutConstraint.activate([
+			dateLabel.centerXAnchor.constraint(equalTo: textView.centerXAnchor),
+			dateLabel.topAnchor.constraint(equalTo: textView.topAnchor, constant: 16),
+		])
+		delegate.dateLabel = dateLabel
 		textView.autoresizingMask = [.width]
 		textView.isVerticallyResizable = true
 		textView.textContainer?.widthTracksTextView = true
@@ -36,6 +68,9 @@ struct NoteEditor: NSViewRepresentable {
 		textView.typingAttributes = Coordinator.headingAttributes
 
 		let scrollView = NSScrollView()
+		scrollView.allowsMagnification = true
+		scrollView.minMagnification = EditorZoom.range.lowerBound
+		scrollView.maxMagnification = EditorZoom.range.upperBound
 		scrollView.documentView = textView
 		scrollView.hasVerticalScroller = true
 		scrollView.drawsBackground = false
@@ -43,8 +78,12 @@ struct NoteEditor: NSViewRepresentable {
 		return scrollView
 	}
 
+	/// The model echoing what the editor last showed or pushed leaves the view alone, so a composition in progress survives it.
 	static func show(_ text: String, in scrollView: NSScrollView) {
 		guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage else { return }
+		let coordinator = textView.delegate as? Coordinator
+		guard text != coordinator?.shown else { return }
+		coordinator?.shown = text
 		guard textView.string != text else { return }
 		let delegate = storage.delegate
 		storage.delegate = nil
@@ -60,6 +99,8 @@ struct NoteEditor: NSViewRepresentable {
 		private let text: Binding<String>
 		private let history = UndoManager()
 		fileprivate weak var textView: NSTextView?
+		fileprivate weak var dateLabel: NSTextField?
+		fileprivate var shown: String?
 		private weak var editedStorage: NSTextStorage?
 		private var unpushed = false
 
@@ -91,6 +132,7 @@ struct NoteEditor: NSViewRepresentable {
 		private func pushText() {
 			guard unpushed, let textView, !textView.hasMarkedText() else { return }
 			unpushed = false
+			shown = textView.string
 			text.wrappedValue = textView.string
 		}
 

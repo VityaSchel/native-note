@@ -42,7 +42,8 @@ final class SyncEngine {
 			}
 			for sealed in batch { unacknowledged[sealed.write.writeId] = nil }
 			let (pulled, unverifiable) = await Self.open(changes, with: cipher)
-			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged)
+			let last = changes.last.map { PullMark(blindedId: $0.blindedId, v: $0.v) }
+			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, last: last)
 			var applied = try await apply(.exchange(exchange))
 			applied.problems += Array(repeating: .unverifiableChange, count: unverifiable)
 			let resolved = Set(pulled.map(\.content.id))
@@ -97,5 +98,20 @@ final class SyncEngine {
 			pulled.append(PulledChange(content: content, v: change.v, writeId: change.writeId))
 		}
 		return (pulled, changes.count - pulled.count)
+	}
+}
+
+extension SyncEngine {
+	/// Any server still holding this library as this Mac last saw it has the write a pull last ended on, or one that replaced it, at or after `since`.
+	static func holds(_ mark: PullMark, through connection: SyncConnection, since: UInt64) async throws -> Bool {
+		var after = max(since, 1) - 1
+		while true {
+			guard case let .sync(results, changes, nextSeq, more) = try await connection.send(.sync(since: after, writes: [])),
+				allows(results, for: [], more: more, changes: changes, since: after, nextSeq: nextSeq)
+			else { throw SyncError.protocolViolation }
+			if changes.contains(where: { $0.blindedId == mark.blindedId && $0.v >= mark.v }) { return true }
+			guard more else { return false }
+			after = nextSeq
+		}
 	}
 }

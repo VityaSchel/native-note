@@ -18,12 +18,14 @@ struct UnlockView: View {
 	@State private var confirmingErase = false
 	@State private var anchor = WindowAnchor()
 	@FocusState private var typingPassword: Bool
+	@FocusState private var confirming: Bool
 
 	var body: some View {
 		VStack(spacing: 18) {
 			Image(systemName: isSetup ? "key.shield.fill" : "lock.shield.fill")
 				.font(.system(size: 56))
 				.foregroundStyle(.tint)
+				.accessibilityHidden(true)
 
 			VStack(spacing: 6) {
 				Text(isSetup ? "Set an Unlock Password" : "Native Note")
@@ -63,8 +65,9 @@ struct UnlockView: View {
 
 		VStack(spacing: 10) {
 			SecureField("Password", text: $form.password)
-				.onSubmit(send)
+				.onSubmit { if form.confirmation.isEmpty { confirming = true } else { send() } }
 			SecureField("Confirm Password", text: $form.confirmation)
+				.focused($confirming)
 				.onSubmit(send)
 		}
 		.textFieldStyle(.roundedBorder)
@@ -74,11 +77,12 @@ struct UnlockView: View {
 			.font(.callout)
 			.foregroundStyle(.red)
 			.frame(minHeight: 18)
+			.accessibilityHidden(form.inlineMessage == nil)
 
 		Button(action: send) {
 			working("Create", spinning: form.working)
 		}
-		.buttonStyle(.glassProminent)
+		.buttonStyle(.borderedProminent)
 		.keyboardShortcut(.defaultAction)
 		.controlSize(.extraLarge)
 		.disabled(!form.canSubmit)

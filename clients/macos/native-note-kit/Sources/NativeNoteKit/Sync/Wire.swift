@@ -68,6 +68,12 @@ nonisolated struct WireReader {
 	func finish() throws(WireError) {
 		guard offset == buffer.endIndex else { throw .trailingBytes }
 	}
+
+	/// Content's zero fill: only zeros may follow the fields, and only as many as reach the next block boundary.
+	func finishFilled(toMultipleOf block: Int) throws(WireError) {
+		guard buffer[offset...].allSatisfy({ $0 == 0 }) else { throw .trailingBytes }
+		guard buffer.count % block == 0, buffer.endIndex - offset < block else { throw .notCanonical }
+	}
 }
 
 nonisolated struct WireWriter {

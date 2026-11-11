@@ -15,9 +15,7 @@ devtools/          development-only tools, never shipped
 
 ## Build and test
 
-Every pull request runs [.forgejo/workflows/checks.yml](.forgejo/workflows/checks.yml) on Linux:
-repository hygiene, documentation links, and the Rust commands below with `--locked` added.
-Supply-chain checks run nightly in [.forgejo/workflows/audit.yml](.forgejo/workflows/audit.yml).
+Every pull request runs [.forgejo/workflows/checks.yml](.forgejo/workflows/checks.yml) on Linux: repository hygiene, documentation links, and the Rust commands below with `--locked` added. Supply-chain checks run nightly in [.forgejo/workflows/audit.yml](.forgejo/workflows/audit.yml).
 
 ### Conformance vectors
 
@@ -85,7 +83,7 @@ curl -sS -H 'Expect:' --data-binary @get.body -o get.reply http://127.0.0.1:8080
 cargo run -q -p native-note-testkit --bin envelope -- open /tmp/native-note-data/api-key get.body <get.reply | xxd -p
 ```
 
-Release binaries, static for `x86_64` and `aarch64` Linux, land in `releases/` with their SHA-256; compare hashes only between builds on the same host:
+Release tarballs, each holding the static binary for `x86_64` or `aarch64` Linux and the systemd unit, land in `releases/` with their SHA-256; the script builds only a clean checkout, and hashes compare only between builds on the same host:
 
 ```sh
 .forgejo/scripts/server-release.sh
@@ -121,6 +119,12 @@ cd clients/macos
 xcodebuild build -project native-note.xcodeproj -scheme native-note -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -allowProvisioningUpdates
 rm -rf "/Applications/Native Note.app"
 ditto "build/Build/Products/Release/Native Note.app" "/Applications/Native Note.app"
+```
+
+A distributable release needs a Developer ID Application certificate in the keychain and notary credentials stored once with `xcrun notarytool store-credentials <profile>`. It builds only a clean checkout, archives in its own DerivedData with the commit count as the build number, exports with Developer ID, refuses a build that keeps `get-task-allow`, lacks the hardened runtime or misses any entitlement, Touch ID's keychain group included, notarizes and staples, and leaves the zip in `releases/` with its SHA-256:
+
+```sh
+DEVELOPMENT_TEAM=<team ID> NOTARY_PROFILE=<profile> .forgejo/scripts/macos-release.sh <version>
 ```
 
 Package tests run without the app host. Like `xcodebuild`, they need Xcode selected, and the sync tests build and run the server from `server/`, so they need the Rust toolchain too:

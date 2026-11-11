@@ -28,7 +28,7 @@ struct NoteGroupingTests {
 	@Test func namesEachBucketByDistanceFromNow() {
 		#expect(NoteGrouping.title(for: now, now: now, calendar: calendar) == "Today")
 		#expect(NoteGrouping.title(for: daysAgo(1), now: now, calendar: calendar) == "Yesterday")
-		#expect(NoteGrouping.title(for: daysAgo(3), now: now, calendar: calendar) == "Previous 7 days")
+		#expect(NoteGrouping.title(for: daysAgo(3), now: now, calendar: calendar) == "Previous 7 Days")
 		#expect(NoteGrouping.title(for: daysAgo(30), now: now, calendar: calendar) == "July")
 		#expect(NoteGrouping.title(for: daysAgo(400), now: now, calendar: calendar) == "2025")
 	}
@@ -104,7 +104,7 @@ struct NoteGroupingTests {
 	}
 
 	@Test func theSevenDayBucketEndsAtTheStartOfTheDayAWeekAgo() {
-		#expect(NoteGrouping.title(for: daysAgo(7), now: now, calendar: calendar) == "Previous 7 days")
+		#expect(NoteGrouping.title(for: daysAgo(7), now: now, calendar: calendar) == "Previous 7 Days")
 		#expect(NoteGrouping.title(for: daysAgo(8), now: now, calendar: calendar) == "August")
 	}
 
@@ -112,6 +112,17 @@ struct NoteGroupingTests {
 		let newYear = try #require(calendar.date(from: DateComponents(year: 2027, month: 1, day: 2, hour: 12)))
 		let lastYear = try #require(calendar.date(from: DateComponents(year: 2026, month: 12, day: 30, hour: 12)))
 
-		#expect(NoteGrouping.title(for: lastYear, now: newYear, calendar: calendar) == "Previous 7 days")
+		#expect(NoteGrouping.title(for: lastYear, now: newYear, calendar: calendar) == "Previous 7 Days")
+	}
+}
+
+struct EditorDateLineFormatTests {
+	@Test func theEditorDateLineIsTheListDateAndTheTime() {
+		var calendar = Calendar(identifier: .gregorian)
+		calendar.timeZone = TimeZone(identifier: "UTC")!
+		calendar.locale = Locale(identifier: "en_GB")
+		let date = Date(timeIntervalSince1970: 1_786_011_720)
+
+		#expect(NoteGrouping.editorDateLine(for: date, calendar: calendar) == "2026.08.06 at 10:22")
 	}
 }

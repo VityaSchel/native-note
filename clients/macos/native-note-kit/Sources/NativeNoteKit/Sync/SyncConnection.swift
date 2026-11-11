@@ -6,7 +6,7 @@ nonisolated protocol SyncTransport: Sendable {
 }
 
 nonisolated enum SyncError: Error, Equatable {
-	/// The server answered with a status, never a sealed reply: the API key is wrong, or the server is not Native Note.
+	/// A bare status instead of a sealed reply: 400 when the server cannot open or parse the request, which a proxy can cause too, anything else from a proxy, a redirect or a fault.
 	case refused(status: Int)
 	case unopenable
 	case serverFault
@@ -15,6 +15,15 @@ nonisolated enum SyncError: Error, Equatable {
 }
 
 nonisolated struct HTTPTransport: SyncTransport {
+	/// The same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
+	static let headers = [
+		"User-Agent": "native-note",
+		"Accept": "*/*",
+		"Accept-Language": "*",
+		"Accept-Encoding": "identity",
+		"Content-Type": "application/octet-stream",
+	]
+
 	private let url: URL
 	private let session: URLSession
 
@@ -32,10 +41,28 @@ nonisolated struct HTTPTransport: SyncTransport {
 		var request = URLRequest(url: url)
 		request.httpMethod = "POST"
 		request.httpBody = body
-		let (reply, response) = try await session.data(for: request)
+		for (name, value) in Self.headers {
+			request.setValue(value, forHTTPHeaderField: name)
+		}
+		let (reply, response) = try await session.data(for: request, delegate: NoRedirects.shared)
 		let status = (response as? HTTPURLResponse)?.statusCode ?? 0
 		guard status == 200 else { throw SyncError.refused(status: status) }
 		return reply
+	}
+}
+
+/// A redirect would turn the POST into a GET the server can only refuse, so its status is reported instead.
+private nonisolated final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+	static let shared = NoRedirects()
+
+	func urlSession(
+		_ session: URLSession,
+		task: URLSessionTask,
+		willPerformHTTPRedirection response: HTTPURLResponse,
+		newRequest request: URLRequest,
+		completionHandler: @escaping @Sendable (URLRequest?) -> Void
+	) {
+		completionHandler(nil)
 	}
 }
 

@@ -4,7 +4,9 @@
 
 SQLCipher, WAL, `synchronous=FULL` with `fullfsync` and `checkpoint_fullfsync` on; on macOS `synchronous=FULL` alone does not survive power loss. A database whose `user_version` is newer than the app is refused, not opened. `PRAGMA foreign_keys = ON` from v1, so every relation added later carries an explicit `ON DELETE`.
 
-A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A local save never bumps `v` and never writes to a tombstone. A failed save keeps retrying with the latest text, including across lock and unlock, and is reported once until no save is failing. Lock does not wait for a failing save and shows its failure on the lock screen. Quit with an unsaved edit asks first, and only Quit Anyway quits.
+A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A new note is not marked for sync until its first edit, and one New Note made and left empty is discarded: a note no server has seen leaves no trace, one that synced leaves a tombstone. A local save never bumps `v` and never writes to a tombstone, so Undo Delete restores the text as a new note with the deleted one's timestamps, until the library locks. A failed save keeps retrying with the latest text, including across lock and unlock, and is reported once until no save is failing. Lock does not wait for a failing save and shows its failure on the lock screen. Quit with an unsaved edit asks first, and only Quit Anyway quits.
+
+The library locks when the Mac sleeps, its screen locks or its user session is switched away, since the next person at the Mac is untrusted; locking cancels a sync or API key change in flight and waits for it before closing the database. An unlock that finishes after one of these events locks again.
 
 Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`, so once locked the database on disk is `notes.db` alone, indistinguishable from random, beside the public unlock parameters in `app-lock.plist`. The sidecars exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock; their headers read as SQLite.
 
@@ -41,7 +43,7 @@ CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 
 `content=note` is an external-content index: without the three triggers it is populated once and never updated again.
 
-Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion; notes hold them as `Int64` and convert to `Date` only to display, so a pulled timestamp anywhere in `i64` survives. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `seq` stays `NULL`, since a change carries no `seq`. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq`, and the recovery blob's pinned `v`, only when sync is configured.
+Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion; notes hold them as `Int64` and convert to `Date` only to display, so a pulled timestamp anywhere in `i64` survives. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `seq` stays `NULL`, since a change carries no `seq`. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq` with the blinded ID and `v` of the write there, and the recovery blob's pinned `v`, only when sync is configured.
 
 ### Local DB encryption
 
@@ -58,7 +60,7 @@ Argon2id is version `0x13` with no secret or associated data, and `m` is in KiB.
 
 `localDbKey` is passed as a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, not a passphrase. It opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
 
-The app keeps no copy of `localDbKey` while unlocked; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and the scratch buffers the app fills with key or password bytes are wiped after use. The password string is not wiped.
+The app keeps no copy of `localDbKey` while unlocked; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and the scratch buffers the app fills with key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
 
 #### `hardwareBinding`
 
@@ -91,7 +93,7 @@ Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alon
 4. Verify a fresh open with the new key; if it fails, reconnect the store with the old key, delete the pending file and keep the old password
 5. Replace the current key file with the pending one
 
-Unlock tries the pending file, then the current one, and keeps whichever opens the database as the only file, so a crash between any steps leaves it openable. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside a database left without parameter files rather than deleting it, moving its sidecars first so an interrupted set-aside finishes on the next setup.
+Unlock tries the pending file, then the current one, and keeps whichever opens the database as the only file, so a crash between any steps leaves it openable. Every parameter file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed, so it reaches the disk before the rekey it enables, as the database's own commits do. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside a database left without parameter files rather than deleting it, moving its sidecars first so an interrupted set-aside finishes on the next setup.
 
 #### Forgotten password
 
@@ -128,7 +130,7 @@ A new unlock screen listens again unless the OS still has biometrics locked out 
 
 Turning it on asks for the password, derives the key and confirms it opens the database, stores it, then listens in the same sheet for a touch that reads it back. Listening in the sheet also stops while another app is active. In the sheet, a wrong finger or an attempt the OS ends waits for a click to try again. A wrong password stores nothing. Anything else short of a matching touch deletes the key and leaves the option off: cancelling, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quitting, or a lock or password change before the touch. The option shows on only once the touch confirms it. Turning it off asks nothing.
 
-Changing the password deletes the stored key, and so does setting up a new library in the same place.
+Changing the password deletes the stored key, and so does setting up a new library in the same place. When a change deletes it, the same sheet then offers to turn Touch ID unlock on again with the new password, which waits only for the touch.
 
 The Settings window, where Touch ID unlock is turned on and off, offers its settings only while the library is unlocked.
 
@@ -136,19 +138,25 @@ The Settings window, where Touch ID unlock is turned on and off, offers its sett
 
 Only applicable when a sync server is configured. The recovery credential is the [Recovery key](../docs/PROTOCOL.md#recovery-key)'s 24 words; the API key and the server URL are not part of it. The word checksum is only a UI check; the real check is GCM verification.
 
-Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key), and one whose response is lost is sent again unchanged. When a `put` conflicts and the blob it then gets [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key still in memory, setup routes to restore and rotation reports that another device rotated.
+Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key), and one whose response is lost is sent again unchanged. A `put` whose answer never arrives intact, as when a proxy forwards it and then fails, is settled by a `get`: a blob that opens under the Recovery key still in memory means it landed, and when the `get` fails too the outcome is reported as unknown and the words stay in memory for a retry. A `put` counts as not sent only when every attempt failed to reach the server, and a conflict whose `get` fails is unknown too. A `put` the client gave up on can still land later, since nothing in it expires. When a `put` conflicts and the blob it then gets [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key still in memory, setup routes to the join and rotation reports that another device rotated.
 
-**Setup:**
-1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to restore before any words are shown.
+**Setup:** offered once as a full-window step right after the unlock password is set, before the library shows, so a new or wiped Mac starts from its synced notes; Not Now leaves it to Settings, locking drops the offer, and the library's commands wait for it.
+1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to the join before any words are shown.
 2. Generate the Content key and the Recovery key with a CSPRNG.
-3. Show the 24 words, selectable and copyable as text, and require three random words to be filled back in, ignoring case and surrounding spaces.
+3. Show the 24 words, selectable and copyable as text, and require three random words to be filled back in, ignoring case and surrounding spaces. Copy Words puts them on this Mac's pasteboard only, marked concealed and transient, and clears them 90 seconds later, or sooner when setup is cancelled, the library locks or the app quits, unless something else was copied over them, so they can still be pasted after the phrase is confirmed.
 4. `put` the Content key encrypted under the Recovery key and, once that `put` has landed, store the Content key, API key, URL and pin in `meta`, and enable sync.
+
+Cancel stops a server check that has stored nothing yet: setup, join, Change Server and an API key change. It is off while a recovery-blob `put` is in flight, because its outcome would be unknown.
+
+**Turn Off Sync and Change Server:** turning sync off forgets only the server's address and API key; the Content key, the pin, the last pulled `seq` and its mark, and every note's version stay. Set Up Sync on such a library, and Change Server on a syncing one, then check the server: one that holds this library, by the same checks as an API key change, takes it back at once with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge.
+
+**API key change:** after the server's key is replaced, the new key is kept only once the server answers under it with a recovery blob at or above the pin and, once this Mac has pulled, with the write its last pull ended on, by blinded ID at that `v` or later, whether or not it opens, so a write forged with the leaked key cannot block the change. A mistyped key, a reset server, one holding another library or one restored from an older backup leaves the old key and sync as they were; without the recovery phrase this is as close as the Mac can check.
 
 **Rotation:** shows new words the same way as setup, then `put`s the Content key under the new Recovery key. After it reports that another device rotated, rotation asks for the current words; once the fetched blob opens under them and holds this library's Content key, the pin takes its `v` and rotation can run again.
 
 **Restore and add-device** are a join: restore runs it after setting up a library with a new [local DB password](#local-db-encryption), add-device from an unlocked library. A library that already holds a Content key refuses a join.
-1. Take the 24 words, with paste-across, wordlist autofill and immediate checksum validation, the API key as hex, and the server URL. A lost API key is read from the server's [`api-key` file](../server/DESIGN.md#server-storage).
-2. `get` the blob and open it with the Recovery key; nothing is stored unless it opens.
+1. Take the server URL and the API key as setup does, then the 24 words, one field each. Each field keeps exactly the text it shows. A paste fills the fields from the current one onward with the words of the field's new text, split at whitespace and commas and trimmed of anything but letters at their ends, so a copy of the numbered words pastes back and a word with a stray character inside stays one word; a space typed after a word moves to the next field. Leaving a field, or Return, trims it and, when it is all letters, lowercases it and completes a prefix only one list word starts with; pasted words complete the same way. A word is flagged once no list word starts with it or its field is left unfinished, and 24 list words that fail the checksum are flagged at once. A lost API key is read from the server's [`api-key` file](../server/DESIGN.md#server-storage).
+2. `get` the blob and open it with the Recovery key; nothing is stored unless it opens. A server that holds no blob routes back to setup.
 3. Store the Content key, API key, URL and the `get`'s `v` as the pin in `meta`.
 4. Sync as usual from `seq = 0`. The library's existing notes are dirty, so they push.
 
@@ -158,7 +166,7 @@ A sync runs 30 s after the last edit, when the app becomes or stops being the ac
 
 A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text whichever path flushes it.
 
-The server URL may be plain `http`: everything after the URL is sealed, so the app allows arbitrary loads under App Transport Security.
+The server URL may be plain `http`: everything after the URL is sealed, so the app allows arbitrary loads under App Transport Security. Requests carry only fixed headers, the same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
 
 ## Pull verification
 

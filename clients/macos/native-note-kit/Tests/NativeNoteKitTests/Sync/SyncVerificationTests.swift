@@ -78,6 +78,27 @@ struct SyncVerificationTests {
 		#expect(server.requests.count == 1)
 	}
 
+	@Test func theLargestNoteThatFitsItsFilledPayloadSyncsAndOneByteMoreStaysHere() async throws {
+		let store = try await library()
+		let largest = note(String(repeating: "a", count: 255 * Content.block - 38))
+		let over = note(String(repeating: "a", count: 255 * Content.block - 37))
+		try await store.save(largest)
+		try await store.save(over)
+		let server = ScriptedServer()
+		server.answer { _ in .sync(results: [WriteResult(status: .accepted, v: 1, seq: 1)], changes: [], nextSeq: 1, more: false) }
+
+		let applied = try await server.device(store).sync()
+
+		#expect(applied.problems == [.tooLarge(over.id)])
+		guard case let .sync(_, writes) = try #require(server.requests.first) else {
+			Issue.record("the push was not a sync")
+			return
+		}
+		#expect(writes.map(\.payload.count) == [255 * Content.block + 28])
+		#expect(try await store.note(id: largest.id)?.dirty == false)
+		#expect(try await store.note(id: over.id)?.dirty == true)
+	}
+
 	@Test func aRecoveryPutConflictBelowThePinReportsTheServerBehind() async throws {
 		let server = ScriptedServer()
 		server.answer { _ in .put(status: .conflict, v: 1) }

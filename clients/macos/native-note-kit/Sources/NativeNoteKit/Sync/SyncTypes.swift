@@ -28,6 +28,14 @@ nonisolated struct Exchange: Sendable {
 	var nextSeq: UInt64 = 0
 	/// Writes whose responses were lost, by `writeId`; a pulled change carrying one is that write stored.
 	var unacknowledged: [Data: SealedWrite] = [:]
+	/// The write at `nextSeq`, opened or not, since the server stamps writes before it collects changes.
+	var last: PullMark?
+}
+
+/// Which note, at which version, a pull last ended on.
+nonisolated struct PullMark: Equatable, Sendable {
+	let blindedId: Data
+	let v: UInt32
 }
 
 /// What a sync commits in one transaction, under the caller's coordination with unsaved edits.

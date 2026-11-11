@@ -36,6 +36,9 @@ struct PreviewRenderTests {
 		let status = AppModel.SyncStatus(phase: .idle, server: "http://notes.example:8080/", lastSynced: Date(), problems: ["A note is larger than 1 MB."])
 		render(SecuritySettings(touchIDAvailable: true, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }, sync: SyncControls(status: status)), width: 440, height: 520)
 		render(SyncSetupView(mode: .setUp, controls: SyncControls(), done: {}), width: 440, height: 300)
+		var joining = SyncSetupForm(mode: .setUp)
+		joining.prepared(.success(.existingLibrary))
+		render(SyncSetupView(form: joining, controls: SyncControls(), done: {}), width: 440, height: 560)
 		render(RecoveryWords(words: (1 ... 24).map { "word\($0)" }), width: 440, height: 260)
 	}
 
@@ -73,7 +76,7 @@ struct PreviewRenderTests {
 	@Test func noteListInsideASplitViewLikeTheApp() {
 		render(
 			NavigationSplitView {
-				List { Label("All notes", systemImage: "tray.full") }
+				List { Label("All Notes", systemImage: "tray.full") }
 			} content: {
 				NoteListView(
 					groups: NoteGroup.samples,

@@ -213,6 +213,7 @@ struct AppModelTests {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
 		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
+		model.edit(try #require(model.selection), "kept")
 		model.selection = nil
 
 		await model.deleteSelected()

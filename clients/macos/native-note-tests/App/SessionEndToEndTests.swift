@@ -17,7 +17,7 @@ struct SessionEndToEndTests {
 	]
 
 	private func field(_ placeholder: String, in window: OffscreenWindow<some View>) throws -> NSSecureTextField {
-		try #require(window.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
+		try #require(window.secureField(placeholder))
 	}
 
 	private func type(_ text: String, into field: NSTextField, of window: OffscreenWindow<some View>) throws {
@@ -52,6 +52,9 @@ struct SessionEndToEndTests {
 		try submit(password, in: window, confirming: true)
 		await window.pump(turns: 20_000) { model.phase == .unlocked }
 		try #require(model.phase == .unlocked, "\(String(describing: model.failure))")
+		await window.pump { window.accessibilityElements(.button).contains { $0.label == "Not Now" } }
+		try #require(window.accessibilityElements(.button).first { $0.label == "Not Now" }).press()
+		await window.pump { !model.offersSyncSetup }
 
 		for text in typed {
 			await model.createNote()
@@ -106,9 +109,9 @@ struct SessionEndToEndTests {
 		let form = OffscreenWindow(ChangePasswordView(turnsTouchIDOff: false, change: model.changePassword(from:to:)) { closed = true })
 		defer { form.close() }
 
-		try type(password, into: try field("Current password", in: form), of: form)
-		try type("staple battery horse", into: try field("New password", in: form), of: form)
-		let confirmation = try field("Confirm new password", in: form)
+		try type(password, into: try field("Current Password:", in: form), of: form)
+		try type("staple battery horse", into: try field("New Password:", in: form), of: form)
+		let confirmation = try field("Verify:", in: form)
 		try type("staple battery horse", into: confirmation, of: form)
 		confirmation.currentEditor()?.insertNewline(nil)
 		await form.pump(turns: 20_000) { closed }
@@ -156,7 +159,7 @@ struct SessionEndToEndTests {
 		toggle.performClick(nil)
 		await settings.pump { settings.sheet != nil }
 		let sheet = try #require(settings.sheet)
-		let sheetField = try #require(settings.sheetViews(of: NSSecureTextField.self).first { $0.placeholderString == "Password" })
+		let sheetField = try #require(settings.secureField("Password:", inSheet: true))
 		try #require(sheet.makeFirstResponder(sheetField))
 		try #require(sheetField.currentEditor()).insertText("staple battery horse")
 		settings.pump()

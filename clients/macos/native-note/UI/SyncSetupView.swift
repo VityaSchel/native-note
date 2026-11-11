@@ -5,11 +5,14 @@ import SwiftUI
 struct SyncControls {
 	var status = AppModel.SyncStatus()
 	var syncNow: () async -> Void = {}
-	var prepareSync: (String, String) async -> Result<AppModel.RecoveryPhrase, AppModel.SyncSetupFailure> = { _, _ in .failure(.invalidServer) }
+	var prepareSync: (String, String) async -> Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure> = { _, _ in .failure(.invalidServer) }
 	var finishSync: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
+	var joinSync: (String, String, PhraseEntry) async -> AppModel.SyncSetupFailure? = { _, _, _ in nil }
 	var prepareRotation: () async -> AppModel.RecoveryPhrase? = { nil }
 	var finishRotation: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var adoptCurrentPhrase: (String) async -> AppModel.SyncSetupFailure? = { _ in nil }
+	var changeAPIKey: (String) async -> AppModel.SyncSetupFailure? = { _ in nil }
+	var turnOffSync: () async -> Bool = { false }
 	var cancel: () -> Void = {}
 }
 
@@ -20,9 +23,12 @@ extension SyncControls {
 			syncNow: model.syncNow,
 			prepareSync: model.prepareSync(server:apiKey:),
 			finishSync: model.finishSync(answers:),
+			joinSync: model.joinSync(server:apiKey:phrase:),
 			prepareRotation: model.prepareRotation,
 			finishRotation: model.finishRotation(answers:),
 			adoptCurrentPhrase: model.adoptCurrentPhrase,
+			changeAPIKey: model.changeAPIKey,
+			turnOffSync: model.turnOffSync,
 			cancel: model.cancelRecovery
 		)
 	}
@@ -31,46 +37,44 @@ extension SyncControls {
 struct SyncSetupView: View {
 	let controls: SyncControls
 	let done: () -> Void
+	let clipboard: RecoveryClipboard
+	let declineTitle: String
+	/// The first-run step fills the window like the password page before it; elsewhere this is a sheet.
+	let isPage: Bool
 
 	@State private var form: SyncSetupForm
+	@State private var copied = false
+	@FocusState private var serverFocused: Bool
+	@State private var phraseTookEffect = false
+	@State private var running: Task<Void, Never>?
 
-	init(mode: SyncSetupForm.Mode, controls: SyncControls, done: @escaping () -> Void) {
+	init(mode: SyncSetupForm.Mode, controls: SyncControls, clipboard: RecoveryClipboard = .shared, done: @escaping () -> Void) {
+		self.init(form: SyncSetupForm(mode: mode), controls: controls, clipboard: clipboard, done: done)
+	}
+
+	init(
+		form: SyncSetupForm,
+		controls: SyncControls,
+		clipboard: RecoveryClipboard = .shared,
+		declineTitle: String = "Cancel",
+		isPage: Bool = false,
+		done: @escaping () -> Void
+	) {
 		self.controls = controls
+		self.clipboard = clipboard
+		self.declineTitle = declineTitle
+		self.isPage = isPage
 		self.done = done
-		_form = State(initialValue: SyncSetupForm(mode: mode))
+		_form = State(initialValue: form)
 	}
 
 	var body: some View {
-		VStack(alignment: .leading, spacing: 12) {
-			content
-			if let message = form.message {
-				Text(message)
-					.font(.callout)
-					.foregroundStyle(.red)
-					.fixedSize(horizontal: false, vertical: true)
-			}
-			HStack {
-				if form.working {
-					ProgressView().controlSize(.small)
-				}
-				Spacer()
-				Button("Cancel", role: .cancel) {
-					controls.cancel()
-					done()
-				}
-				.keyboardShortcut(.cancelAction)
-				if case .confirm = form.step {
-					Button("Back") { form.back() }
-				}
-				Button(continueTitle, action: send)
-					.keyboardShortcut(.defaultAction)
-					.disabled(!form.canContinue)
-			}
+		layout
+			.textFieldStyle(.roundedBorder)
+		.defaultFocus($serverFocused, true)
+		.onDisappear {
+			if !phraseTookEffect { clipboard.clear() }
 		}
-		.textFieldStyle(.roundedBorder)
-		.disabled(form.working)
-		.padding(20)
-		.frame(width: 440)
 		.task {
 			guard form.step == .preparing else { return }
 			form.begin()
@@ -79,50 +83,187 @@ struct SyncSetupView: View {
 	}
 
 	@ViewBuilder
-	private var content: some View {
-		switch form.step {
-		case .preparing:
-			Text("Change Recovery Phrase")
-				.font(.headline)
-		case .server:
-			Text("Set Up Sync")
-				.font(.headline)
-			TextField("Server address", text: $form.server, prompt: Text(verbatim: "http://notes.example:8080"))
-				.onSubmit(send)
-			SecureField("API key", text: $form.apiKey)
-				.onSubmit(send)
-			Text("The API key is in the api-key file in the server's data directory.")
-				.font(.callout)
-				.foregroundStyle(.secondary)
-		case let .words(phrase):
-			Text("Write Down Your Recovery Phrase")
-				.font(.headline)
-			Text("With these words and the API key, your notes can be restored on another Mac. Native Note never keeps them, and anyone who has them can read your notes.")
-				.font(.callout)
-				.foregroundStyle(.secondary)
-				.fixedSize(horizontal: false, vertical: true)
-			RecoveryWords(words: phrase.words)
-			Button("Copy Words") {
-				NSPasteboard.general.clearContents()
-				NSPasteboard.general.setString(phrase.words.joined(separator: " "), forType: .string)
-			}
-		case let .confirm(phrase):
-			Text("Confirm Your Recovery Phrase")
-				.font(.headline)
-			ForEach(Array(phrase.checked.enumerated()), id: \.offset) { position, index in
-				TextField("Word \(index + 1)", text: $form.answers[position])
-					.onSubmit(send)
-			}
-		case .currentPhrase:
-			Text("Enter the Current Recovery Phrase")
-				.font(.headline)
-			TextField("24 words", text: $form.currentPhrase, axis: .vertical)
-				.lineLimit(3 ... 5)
+	private var layout: some View {
+		if isPage {
+			page
+		} else {
+			sheet
 		}
 	}
 
-	private var continueTitle: String {
-		if case .confirm = form.step { form.confirmTitle } else { "Continue" }
+	private var sheet: some View {
+		SheetScaffold(title: title, explanation: explanation, error: form.message, working: form.working, width: 440) {
+			content
+				.disabled(form.working)
+		} buttons: {
+			buttons
+		}
+	}
+
+	private var page: some View {
+		VStack(spacing: 18) {
+			Image(systemName: "arrow.triangle.2.circlepath")
+				.font(.system(size: 56))
+				.foregroundStyle(.tint)
+				.accessibilityHidden(true)
+			VStack(spacing: 6) {
+				Text(form.step == .server ? "Sync Your Notes" : title)
+					.font(.largeTitle.bold())
+					.multilineTextAlignment(.center)
+				if let explanation {
+					Text(explanation)
+						.font(.callout)
+						.foregroundStyle(.secondary)
+						.multilineTextAlignment(.center)
+						.fixedSize(horizontal: false, vertical: true)
+				}
+			}
+			VStack(alignment: .leading, spacing: 12) {
+				content
+					.disabled(form.working)
+				message
+			}
+			.controlSize(.large)
+			HStack(spacing: 12) {
+				buttons
+			}
+			.controlSize(.extraLarge)
+			ProgressView()
+				.controlSize(.small)
+				.opacity(form.working ? 1 : 0)
+		}
+		.frame(width: form.step == .server ? 300 : 440)
+		.padding(32)
+	}
+
+	private func unknownAnswer(_ phrase: AppModel.RecoveryPhrase) -> Int? {
+		zip(phrase.checked, form.answers).first { !PhraseEntry.couldBeListWord($0.1) }.map { $0.0 + 1 }
+	}
+
+	private var apiKeyHint: some View {
+		Text("The API key is the api-key file in the server's data directory, which is /var/lib/native-note-server under the server's systemd unit.")
+			.font(.callout)
+			.foregroundStyle(.secondary)
+			.fixedSize(horizontal: false, vertical: true)
+	}
+
+	@ViewBuilder
+	private var message: some View {
+		if let message = form.message {
+			Text(message)
+				.font(.callout)
+				.foregroundStyle(.red)
+				.fixedSize(horizontal: false, vertical: true)
+		}
+	}
+
+	@ViewBuilder
+	private var buttons: some View {
+		Button(form.step == .server ? declineTitle : "Cancel", role: .cancel) {
+			running?.cancel()
+			controls.cancel()
+			done()
+		}
+		.keyboardShortcut(.cancelAction)
+		.disabled(form.storesThePhrase)
+		switch form.step {
+		case .confirm, .join:
+			Button("Back") { form.back() }
+				.disabled(form.working)
+		default:
+			EmptyView()
+		}
+		Button(form.continueTitle, action: send)
+			.keyboardShortcut(.defaultAction)
+			.buttonStyle(.borderedProminent)
+			.disabled(!form.canContinue)
+	}
+
+	private var explanation: String? {
+		switch form.step {
+		case .preparing: nil
+		case .server where isPage: "Sync with a server you run, so these notes reach your other Macs and can be restored. They are encrypted on this Mac before they leave it."
+		case .server where form.mode == .changeServer: "Enter where this library's server is now, or an empty server to move the library to. A server that holds another library is refused."
+		case .server: nil
+		case .words: "With these words and the API key, your notes can be restored on another Mac. Native Note never keeps them, and anyone who has them can read your notes."
+		case let .confirm(phrase): "Enter words \(Self.list(phrase.checked.map { $0 + 1 })) from the phrase you wrote down."
+		case .join: "This server already holds a library. Enter its current 24-word recovery phrase, and this Mac syncs with it."
+		case .currentPhrase: "The recovery phrase was changed on another Mac. Enter its current 24 words to continue."
+		}
+	}
+
+	static func list(_ numbers: [Int]) -> String {
+		let names = numbers.map(String.init)
+		guard let last = names.last, names.count > 1 else { return names.first ?? "" }
+		return names.dropLast().joined(separator: ", ") + " and " + last
+	}
+
+	private var title: String {
+		switch form.step {
+		case .preparing: "Change Recovery Phrase"
+		case .server: form.mode == .changeServer ? "Change Server" : "Set Up Sync"
+		case .words: "Write Down Your Recovery Phrase"
+		case .confirm: "Confirm Your Recovery Phrase"
+		case .join: "Enter Your Recovery Phrase"
+		case .currentPhrase: "Enter the Current Recovery Phrase"
+		}
+	}
+
+	@ViewBuilder
+	private var content: some View {
+		switch form.step {
+		case .preparing:
+			EmptyView()
+		case .server where isPage:
+			TextField("Server address", text: $form.server, prompt: Text(verbatim: "http://notes.example:8080"))
+				.focused($serverFocused)
+				.onSubmit(send)
+			SecureField("API key", text: $form.apiKey)
+				.onSubmit(send)
+			apiKeyHint
+		case .server:
+			Form {
+				TextField("Server:", text: $form.server, prompt: Text(verbatim: "http://notes.example:8080"))
+					.focused($serverFocused)
+					.onSubmit(send)
+				SecureField("API Key:", text: $form.apiKey)
+					.onSubmit(send)
+			}
+			.formStyle(.columns)
+			apiKeyHint
+		case let .words(phrase):
+			RecoveryWords(words: phrase.words)
+			Button("Copy Words") {
+				clipboard.copy(phrase.words)
+				copied = true
+			}
+			if copied {
+				Text("Copied. The words leave the clipboard in 90 seconds.")
+					.font(.callout)
+					.foregroundStyle(.secondary)
+			}
+		case let .confirm(phrase):
+			Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 6) {
+				ForEach(Array(phrase.checked.enumerated()), id: \.offset) { position, index in
+					GridRow {
+						WordNumber(index: index)
+						TextField("Word \(index + 1)", text: $form.answers[position], prompt: Text(verbatim: ""))
+							.foregroundStyle(PhraseEntry.couldBeListWord(form.answers[position]) ? AnyShapeStyle(.primary) : AnyShapeStyle(.red))
+							.autocorrectionDisabled()
+							.onSubmit(send)
+					}
+				}
+			}
+			if let unknown = unknownAnswer(phrase) {
+				Text("Word \(unknown) is not in the recovery word list.")
+					.font(.callout)
+					.foregroundStyle(.red)
+			}
+		case .join:
+			PhraseFields(entry: $form.phrase, submit: send)
+		case .currentPhrase:
+			PhraseFields(entry: $form.currentEntry, submit: send)
+		}
 	}
 
 	private func send() {
@@ -133,21 +274,38 @@ struct SyncSetupView: View {
 		case .server:
 			form.begin()
 			let (server, apiKey) = (form.server, form.apiKey)
-			Task { form.prepared(await controls.prepareSync(server, apiKey)) }
+			running = Task {
+				let start = await controls.prepareSync(server, apiKey)
+				guard start != .success(.reattached) else {
+					form.finished(nil)
+					return done()
+				}
+				form.prepared(start)
+			}
 		case .words:
 			form.confirm()
 		case .confirm:
 			form.begin()
 			let answers = form.answers
-			Task {
-				let failure = await (form.mode == .setUp ? controls.finishSync(answers) : controls.finishRotation(answers))
+			running = Task {
+				let failure = await (form.mode == .rotate ? controls.finishRotation(answers) : controls.finishSync(answers))
+				form.finished(failure)
+				guard failure == nil else { return }
+				phraseTookEffect = true
+				done()
+			}
+		case .join:
+			form.begin()
+			let (server, apiKey, phrase) = (form.server, form.apiKey, form.phrase)
+			running = Task {
+				let failure = await controls.joinSync(server, apiKey, phrase)
 				form.finished(failure)
 				if failure == nil { done() }
 			}
 		case .currentPhrase:
 			form.begin()
-			let phrase = form.currentPhrase
-			Task {
+			let phrase = form.currentEntry.words.joined(separator: " ")
+			running = Task {
 				if let failure = await controls.adoptCurrentPhrase(phrase) {
 					form.finished(failure)
 				} else {
@@ -163,13 +321,18 @@ struct RecoveryWords: View {
 	let words: [String]
 
 	var body: some View {
-		Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
+		Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
 			ForEach(0 ..< (words.count + Self.columns - 1) / Self.columns, id: \.self) { row in
 				GridRow {
 					ForEach(row * Self.columns ..< min((row + 1) * Self.columns, words.count), id: \.self) { index in
-						Text(verbatim: "\(index + 1). \(words[index])")
-							.monospaced()
-							.fixedSize()
+						HStack(spacing: 4) {
+							WordNumber(index: index)
+							Text(verbatim: words[index])
+								.fixedSize()
+						}
+						.accessibilityElement(children: .ignore)
+						.accessibilityLabel(Text(verbatim: "\(index + 1). \(words[index])"))
+						.accessibilityAddTraits(.isStaticText)
 					}
 				}
 			}
@@ -184,6 +347,12 @@ struct RecoveryWords: View {
 #if DEBUG
 	#Preview("Set up sync") {
 		SyncSetupView(mode: .setUp, controls: SyncControls(), done: {})
+	}
+
+	#Preview("Join a library") {
+		var form = SyncSetupForm(mode: .setUp)
+		form.prepared(.success(.existingLibrary))
+		return SyncSetupView(form: form, controls: SyncControls(), done: {})
 	}
 
 	#Preview("Recovery words") {
