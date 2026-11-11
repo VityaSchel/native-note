@@ -116,6 +116,11 @@
 				{
 					"fill-specializations": [
 						{
+							"value": {
+								"solid": "display-p3:0.97878,0.97878,0.98339,1.00000"
+							}
+						},
+						{
 							"appearance": "dark",
 							"value": {
 								"linear-gradient": [
