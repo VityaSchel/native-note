@@ -121,7 +121,7 @@ rm -rf "/Applications/Native Note.app"
 ditto "build/Build/Products/Release/Native Note.app" "/Applications/Native Note.app"
 ```
 
-A distributable release needs a Developer ID Application certificate in the keychain and notary credentials stored once with `xcrun notarytool store-credentials <profile>`. It builds only a clean checkout, archives in its own DerivedData with the commit count as the build number, exports with Developer ID, refuses a build that keeps `get-task-allow`, lacks the hardened runtime or misses any entitlement, Touch ID's keychain group included, notarizes and staples, and leaves the zip in `releases/` with its SHA-256:
+A distributable release needs a Developer ID Application certificate in the keychain and notary credentials stored once with `xcrun notarytool store-credentials <profile>`. It builds only a clean checkout, archives in its own DerivedData with the commit count as the build number, exports with Developer ID, refuses a build that keeps `get-task-allow`, lacks the hardened runtime or misses any entitlement, Touch ID's keychain group included, notarizes and staples, and leaves one zip per architecture, `arm64` and `x86_64`, in `releases/` with its SHA-256; it refuses a binary holding any other architecture:
 
 ```sh
 DEVELOPMENT_TEAM=<team ID> NOTARY_PROFILE=<profile> .forgejo/scripts/macos-release.sh <version>
