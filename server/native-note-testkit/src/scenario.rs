@@ -56,7 +56,6 @@ fn push<E: Exchange>(
 		.collect()
 }
 
-/// Three devices push the corpus, edit into conflicts, rotate the recovery blob and page a full pull.
 pub fn three_devices<E: Exchange>(session: &mut Session<E>) {
 	let (a_notes, b_notes) = corpus().split_at(1_500);
 	let mut rng = SplitMix64::new(50);
@@ -165,7 +164,6 @@ pub fn three_devices<E: Exchange>(session: &mut Session<E>) {
 	assert_eq!(session.model.latest(), Seq(2_251));
 }
 
-/// Shuffles the captured requests deterministically, keeping at least one out of order.
 pub fn shuffled(count: usize, rng: &mut SplitMix64) -> Vec<usize> {
 	let mut order: Vec<usize> = (0..count).collect();
 	for last in (1..count).rev() {

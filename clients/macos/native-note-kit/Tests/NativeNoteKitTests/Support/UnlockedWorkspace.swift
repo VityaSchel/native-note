@@ -23,7 +23,6 @@ func unlockedModel(_ make: (URL) -> AppModel) async throws -> (AppModel, URL) {
 	return (model, directory)
 }
 
-/// Empty bodies arrive as a pulled or imported note would, since New Note discards a note left empty.
 @MainActor
 func fill(_ model: AppModel, with bodies: [String]) async throws {
 	for body in bodies {

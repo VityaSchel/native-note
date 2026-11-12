@@ -10,7 +10,6 @@ use std::path::Path;
 const FILE: &str = "api-key";
 const TEMPORARY: &str = "api-key.new";
 
-/// Reads `<data>/api-key`, or creates it when absent and logs only its path.
 pub fn load_or_create(data: &Path, fill: Fill, log: &dyn Log) -> Result<Secret<[u8; 32]>, Cause> {
 	let path = data.join(FILE);
 	match fs::read(&path) {

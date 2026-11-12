@@ -91,7 +91,6 @@ nonisolated public enum NoteGrouping {
 		}
 	}
 
-	/// The line above a note in the editor, as Notes shows when a note was last edited, in the list's own date style.
 	public static func editorDateLine(for date: Date, calendar: Calendar = .current) -> String {
 		let day = date.formatted(
 			Date.VerbatimFormatStyle(

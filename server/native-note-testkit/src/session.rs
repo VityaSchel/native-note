@@ -5,8 +5,7 @@ use native_note_core::{BlindedNoteId, Record, Request, Seq, Version};
 pub trait Exchange {
 	fn seal(&mut self, inner: &[u8]) -> Vec<u8>;
 
-	/// Posts a sealed request and returns the opened reply, panicking on anything but a sealed reply.
-	fn post(&mut self, body: &[u8]) -> Vec<u8>;
+	fn post_and_open(&mut self, body: &[u8]) -> Vec<u8>;
 }
 
 #[derive(Clone, Copy)]
@@ -94,7 +93,7 @@ impl<E: Exchange> Session<E> {
 			writes: writes.to_vec(),
 		});
 		let body = self.server.seal(&inner);
-		let inner = self.server.post(&body);
+		let inner = self.server.post_and_open(&body);
 		let Response::Sync {
 			results,
 			changes,
@@ -131,7 +130,7 @@ impl<E: Exchange> Session<E> {
 
 	pub fn get(&mut self) -> Response {
 		let body = self.server.seal(&client::encode_request(&Request::Get));
-		let response = client::decode_response(&self.server.post(&body));
+		let response = client::decode_response(&self.server.post_and_open(&body));
 		assert_eq!(response, self.model.get());
 		self.captured.push(Captured {
 			body,
@@ -146,7 +145,7 @@ impl<E: Exchange> Session<E> {
 			blob: blob.to_vec(),
 		};
 		let body = self.server.seal(&client::encode_request(&request));
-		let response = client::decode_response(&self.server.post(&body));
+		let response = client::decode_response(&self.server.post_and_open(&body));
 		assert_eq!(response, self.model.put(v, blob));
 		self.captured.push(Captured {
 			body,
@@ -155,7 +154,6 @@ impl<E: Exchange> Session<E> {
 		response
 	}
 
-	/// Checks the reply to a captured request posted again, which must change nothing.
 	pub fn check_replay(&self, index: usize, inner: &[u8], replays: &mut Replays) {
 		match (self.captured[index].sent, client::decode_response(inner)) {
 			(

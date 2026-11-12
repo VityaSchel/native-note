@@ -3,13 +3,10 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// Phase 5's exit: devices converge under packet loss, mid-request kills and clock skew, losing no write and never livelocking.
 @MainActor
 struct SyncConvergenceTests {
 	private struct Ledger {
-		/// Every text any device wrote, each unique.
 		var written: Set<String> = []
-		/// Texts a device had in front of it when it edited or deleted the note, so it superseded them knowingly.
 		var superseded: Set<String> = []
 	}
 

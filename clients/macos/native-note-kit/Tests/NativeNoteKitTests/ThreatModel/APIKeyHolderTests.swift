@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// Someone holding the API key, as after reading the server's data directory, per docs/ARCHITECTURE.md § Threat model.
 @MainActor @Suite(.timeLimit(.minutes(2)))
 struct APIKeyHolderTests {
 	private func attacker(_ server: SyncServer) throws -> SyncConnection {

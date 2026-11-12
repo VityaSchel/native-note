@@ -5,8 +5,6 @@ use std::io::{self, Write};
 use std::net::SocketAddr;
 use std::path::Path;
 
-/// Every field is an address, an operator-given path or a fixed category, so no line can carry a
-/// key, a request or a stored byte.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Event<'a> {
 	Usage,

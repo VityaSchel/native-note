@@ -7,7 +7,6 @@ nonisolated enum WireError: Error, Equatable {
 	case notCanonical
 }
 
-/// Reads the fixed big-endian layout of docs/PROTOCOL.md § Binary encoding, bounds-checking every field.
 nonisolated struct WireReader {
 	private let buffer: Data
 	private var offset: Int
@@ -69,7 +68,6 @@ nonisolated struct WireReader {
 		guard offset == buffer.endIndex else { throw .trailingBytes }
 	}
 
-	/// Content's zero fill: only zeros may follow the fields, and only as many as reach the next block boundary.
 	func finishFilled(toMultipleOf block: Int) throws(WireError) {
 		guard buffer[offset...].allSatisfy({ $0 == 0 }) else { throw .trailingBytes }
 		guard buffer.count % block == 0, buffer.endIndex - offset < block else { throw .notCanonical }

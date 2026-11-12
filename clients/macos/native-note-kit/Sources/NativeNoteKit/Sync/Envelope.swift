@@ -6,7 +6,6 @@ nonisolated enum EnvelopeError: Error, Equatable {
 	case unopenable
 }
 
-/// The transport envelope of docs/PROTOCOL.md § Transport.
 nonisolated struct EnvelopeKey: Sendable {
 	static let nonceLength = 12
 	private let key: SymmetricKey
@@ -19,7 +18,6 @@ nonisolated struct EnvelopeKey: Sendable {
 		self.key = key
 	}
 
-	/// The 64 lowercase hex characters of docs/PROTOCOL.md § API key, surrounding whitespace trimmed.
 	static func apiKey(fromHex text: String) -> SymmetricKey? {
 		SecretBytes.withUTF8(of: text.trimmingCharacters(in: .whitespacesAndNewlines)) { hex in
 			guard hex.count == 64 else { return nil }
@@ -48,7 +46,6 @@ nonisolated struct EnvelopeKey: Sendable {
 		return combined
 	}
 
-	/// Opens a response sealed to the nonce of the request it answers.
 	func open(_ response: Data, requestNonce: Data) throws(EnvelopeError) -> Data {
 		guard let box = try? AES.GCM.SealedBox(combined: response),
 			let padded = try? AES.GCM.open(box, using: key, authenticating: requestNonce),

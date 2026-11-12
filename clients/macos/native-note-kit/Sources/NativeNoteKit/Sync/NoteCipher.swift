@@ -1,9 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Per-write note encryption and ID blinding under the Content key, per docs/PROTOCOL.md § Notes.
 nonisolated struct NoteCipher: Sendable {
-	static let writeIdLength = 16
 	private let contentKey: SymmetricKey
 	private let blindingKey: SymmetricKey
 
@@ -33,7 +31,6 @@ nonisolated struct NoteCipher: Sendable {
 		return Write(blindedId: blindedId, v: v, writeId: writeId, payload: payload)
 	}
 
-	/// The content a write carries, if it opens and decodes; the caller checks that its ID re-derives `blindedId`.
 	func open(_ write: Write) -> Content? {
 		guard let box = try? AES.GCM.SealedBox(combined: write.payload),
 			let plaintext = try? AES.GCM.open(box, using: noteKey(write.writeId), authenticating: Self.binding(write.blindedId, write.v, write.writeId))
@@ -42,7 +39,7 @@ nonisolated struct NoteCipher: Sendable {
 	}
 
 	static func randomWriteId() -> Data {
-		SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
+		Data.random(.bits128)
 	}
 
 	private func noteKey(_ writeId: Data) -> SymmetricKey {

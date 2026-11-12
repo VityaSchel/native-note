@@ -1,7 +1,6 @@
 import Foundation
 import Testing
 
-/// The built app's declarations per docs/EXPORT_COMPLIANCE.md.
 struct AppInfoTests {
 	@Test func theAppDeclaresItsEncryptionAndAllowsPlainHTTPForASelfHostedServer() throws {
 		let info = try #require(Bundle.main.infoDictionary)

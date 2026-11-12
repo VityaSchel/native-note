@@ -2,10 +2,8 @@ use crate::support::client::{self, INNER_MAX, Response, Status, WriteResult};
 use crate::support::corpus::{SplitMix64, payload};
 use crate::support::harness::{Failure, Harness, Http, nonce_of};
 use crate::support::memory::{Injected, MemoryStorage};
-use crate::support::{NOTE_MAX, SEALED_MAX};
-use native_note_core::{
-	BlindedNoteId, DecodeError, EnvelopeKey, Fault, Record, Request, Secret, Seq, Version, process,
-};
+use crate::support::{NOTE_MAX, SEALED_MAX, server_key};
+use native_note_core::{BlindedNoteId, DecodeError, Fault, Record, Request, Seq, Version, process};
 
 const API_KEY: [u8; 32] = [
 	0x71, 0xe4, 0x0a, 0x9f, 0x36, 0xcb, 0x58, 0x13, 0xd2, 0x87, 0x4d, 0xb0, 0x65, 0x1e, 0xf3, 0x2a,
@@ -246,7 +244,7 @@ fn a_stored_note_or_blob_that_fits_no_response_answers_error() {
 
 #[test]
 fn results_that_fit_no_response_are_unanswerable() {
-	let key = EnvelopeKey::derive(&Secret::new(API_KEY)).expect("a 32-byte key derives");
+	let key = server_key(API_KEY);
 	let conflicting = Record {
 		id: BlindedNoteId([0x55; 16]),
 		v: Version(0),

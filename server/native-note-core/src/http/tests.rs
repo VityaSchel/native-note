@@ -1,4 +1,4 @@
-use super::{HEAD_MAX, Status, body_len, head_len, sealed_response_head};
+use super::{HEAD_MAX, Status, admitted_body_len, head_len, sealed_response_head};
 use crate::envelope::{Rejection, SEALED_MAX};
 
 fn head(headers: &[&str]) -> Vec<u8> {
@@ -26,9 +26,9 @@ fn the_head_ends_after_the_first_blank_line_and_not_before_it_arrives() {
 
 #[test]
 fn a_head_declares_its_body_with_one_content_length_and_other_headers_are_ignored() {
-	assert_eq!(body_len(&head(&["Content-Length: 300"])), Ok(300));
+	assert_eq!(admitted_body_len(&head(&["Content-Length: 300"])), Ok(300));
 	assert_eq!(
-		body_len(&head(&[
+		admitted_body_len(&head(&[
 			"Host: notes.example",
 			"content-LENGTH:\t 4124 \t",
 			"Expect: 100-continue",
@@ -37,17 +37,17 @@ fn a_head_declares_its_body_with_one_content_length_and_other_headers_are_ignore
 		])),
 		Ok(4124)
 	);
-	assert_eq!(body_len(&head(&["Content-Length: 028"])), Ok(28));
+	assert_eq!(admitted_body_len(&head(&["Content-Length: 028"])), Ok(28));
 	assert_eq!(
-		body_len(&head(&["Content-Length: 0"])),
+		admitted_body_len(&head(&["Content-Length: 0"])),
 		Err(Status::BadRequest)
 	);
 	assert_eq!(
-		body_len(&head(&["Content-Length: 27"])),
+		admitted_body_len(&head(&["Content-Length: 27"])),
 		Err(Status::BadRequest)
 	);
 	assert_eq!(
-		body_len(&head(&[&format!("Content-Length: {SEALED_MAX}")])),
+		admitted_body_len(&head(&[&format!("Content-Length: {SEALED_MAX}")])),
 		Ok(SEALED_MAX)
 	);
 	for too_large in [
@@ -57,7 +57,7 @@ fn a_head_declares_its_body_with_one_content_length_and_other_headers_are_ignore
 		"Content-Length: 99999999999999999999999999999999999999999".to_owned(),
 	] {
 		assert_eq!(
-			body_len(&head(&[&too_large])),
+			admitted_body_len(&head(&[&too_large])),
 			Err(Status::TooLarge),
 			"{too_large}"
 		);
@@ -71,9 +71,9 @@ fn at_most_one_hundred_headers_are_accepted() {
 		.collect();
 	let mut headers: Vec<&str> = others.iter().map(String::as_str).collect();
 	headers.push("Content-Length: 300");
-	assert_eq!(body_len(&head(&headers)), Ok(300));
+	assert_eq!(admitted_body_len(&head(&headers)), Ok(300));
 	headers.insert(0, "X-One-Too-Many: 1");
-	assert_eq!(body_len(&head(&headers)), Err(Status::BadRequest));
+	assert_eq!(admitted_body_len(&head(&headers)), Err(Status::BadRequest));
 }
 
 #[test]
@@ -93,7 +93,7 @@ fn any_other_request_line_is_a_bad_request() {
 	] {
 		let request = format!("{line}\r\nContent-Length: 300\r\n\r\n");
 		assert_eq!(
-			body_len(request.as_bytes()),
+			admitted_body_len(request.as_bytes()),
 			Err(Status::BadRequest),
 			"{line:?}"
 		);
@@ -128,7 +128,7 @@ fn bad_framing_is_a_bad_request() {
 		&["Content-Length: 300\r"],
 	] {
 		assert_eq!(
-			body_len(&head(headers)),
+			admitted_body_len(&head(headers)),
 			Err(Status::BadRequest),
 			"{headers:?}"
 		);
@@ -140,7 +140,11 @@ fn bad_framing_is_a_bad_request() {
 		b"POST / HTTP/1.1\r\nContent-Length: 300",
 		b"",
 	] {
-		assert_eq!(body_len(request), Err(Status::BadRequest), "{request:?}");
+		assert_eq!(
+			admitted_body_len(request),
+			Err(Status::BadRequest),
+			"{request:?}"
+		);
 	}
 }
 

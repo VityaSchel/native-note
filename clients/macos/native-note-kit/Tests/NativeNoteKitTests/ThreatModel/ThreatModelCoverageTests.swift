@@ -1,8 +1,6 @@
 import Foundation
 import Testing
 
-/// Every actor, out-of-scope item and documented risk in docs/ARCHITECTURE.md § Threat model names the tests that prove it,
-/// non-goals included, so a claim added to the threat model fails here until a test backs it.
 struct ThreatModelCoverageTests {
 	private struct Proof {
 		let file: String

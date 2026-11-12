@@ -60,7 +60,6 @@ extension OffscreenWindow {
 	}
 }
 
-/// One element as an assistive app such as VoiceOver reads it, from the window down: the accessibility methods first, as AppKit answers a remote client, then the attribute API for elements that only answer that.
 @MainActor
 struct AttributeElement {
 	let role: String
@@ -104,7 +103,6 @@ struct AttributeElement {
 }
 
 extension OffscreenWindow {
-	/// SwiftUI builds its accessibility elements only once an assistive client is present, so the window updates before it is read.
 	func attributeTree() -> [AttributeElement] {
 		let setValue = NSSelectorFromString("accessibilitySetValue:forAttribute:")
 		NSApp.perform(setValue, with: true, with: "AXEnhancedUserInterface")

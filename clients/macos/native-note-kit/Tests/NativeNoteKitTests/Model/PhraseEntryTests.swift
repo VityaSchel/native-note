@@ -11,7 +11,6 @@ func entry(_ words: [String]) -> PhraseEntry {
 }
 
 extension PhraseEntry {
-	/// One key at a time, as typing sends them.
 	mutating func type(_ keys: String, at index: Int) -> Int? {
 		var moved: Int?
 		for key in keys {
@@ -21,7 +20,6 @@ extension PhraseEntry {
 	}
 }
 
-/// The fields as SwiftUI drives them: a field shows what was typed or pasted into it, and takes a new value only when its bound value changes.
 private struct Fields {
 	var entry = PhraseEntry()
 	var shown = Array(repeating: "", count: PhraseEntry.count)
@@ -34,7 +32,6 @@ private struct Fields {
 		if let next, next != focus { move(to: next) }
 	}
 
-	/// Leaving a field also sends its text to the binding again, as the field editor ends.
 	mutating func move(to index: Int) {
 		let left = focus
 		focus = index

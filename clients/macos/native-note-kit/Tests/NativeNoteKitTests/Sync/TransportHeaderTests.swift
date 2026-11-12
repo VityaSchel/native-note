@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// A listener that records the head of the first request it takes and answers every request with `reply`.
 final class HeadCapture: @unchecked Sendable {
 	private let listener: NWListener
 	private let reply: String
@@ -96,7 +95,7 @@ struct TransportHeaderTests {
 			let (name, value) = (line.prefix { $0 != ":" }, line.drop { $0 != ":" }.dropFirst())
 			return (name.lowercased(), value.trimmingCharacters(in: .whitespaces))
 		}, uniquingKeysWith: { first, _ in first })
-		let fixed = Dictionary(uniqueKeysWithValues: HTTPTransport.headers.map { ($0.key.lowercased(), $0.value) })
+		let fixed = Dictionary(uniqueKeysWithValues: HTTPTransport.fingerprintFreeHeaders.map { ($0.key.lowercased(), $0.value) })
 		#expect(Set(fields.keys).subtracting(fixed.keys).subtracting(["host", "content-length", "connection"]).isEmpty, "\(fields)")
 		for (name, value) in fixed {
 			#expect(fields[name] == value, "\(name)")

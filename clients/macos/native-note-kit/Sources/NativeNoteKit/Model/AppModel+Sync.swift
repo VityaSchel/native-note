@@ -23,17 +23,14 @@ extension AppModel {
 		}
 	}
 
-	/// Words of a new Recovery key, and the positions the user types back to prove they kept them.
 	public struct RecoveryPhrase: Equatable {
 		public let words: [String]
-		public let checked: [Int]
+		public let positionsToConfirm: [Int]
 	}
 
-	/// A server with no library gets a new one under a new phrase; one that holds a library is joined with its phrase.
 	public enum SyncSetupStart: Equatable {
 		case newLibrary(RecoveryPhrase)
 		case existingLibrary
-		/// A library that keeps its key found itself on this server and syncs again, with no words to enter.
 		case reattached
 	}
 
@@ -53,6 +50,8 @@ extension AppModel {
 		case wordsDoNotMatch
 		case phraseDoesNotOpen
 		case failed(String)
+
+		static let wordlistMissing = Self.failed("The recovery wordlist is missing.")
 
 		public var message: String {
 			switch self {
@@ -79,11 +78,9 @@ extension AppModel {
 		let settings: SyncSettings
 		let recoveryKey: SymmetricKey
 		let phrase: RecoveryPhrase
-		/// This library, with its own Content key, goes to an empty server.
-		var moving = false
+		var movesToEmptyServer = false
 	}
 
-	/// Returns once a sync that started after the call has finished; requests made meanwhile share the next one.
 	public func syncNow() async {
 		syncRequests += 1
 		let wanted = syncRequests
@@ -137,7 +134,6 @@ extension AppModel {
 		Task { await syncNow() }
 	}
 
-	/// Cancels a sync in flight, whose keys and pulled text go with it; await the returned loop before closing the store it uses.
 	@discardableResult
 	func stopSync() -> Task<Void, Never>? {
 		let loop = syncLoop
@@ -165,13 +161,12 @@ extension AppModel {
 			}
 			let settings = SyncSettings(server: endpoint.server, apiKey: endpoint.apiKey, contentKey: SymmetricKey(size: .bits256))
 			guard try await flow(settings).storedVersion() == 0 else { return .success(.existingLibrary) }
-			return newPhrase(for: settings).map { .success(.newLibrary($0)) } ?? .failure(.failed("The recovery wordlist is missing."))
+			return newPhrase(for: settings).map { .success(.newLibrary($0)) } ?? .failure(.wordlistMissing)
 		} catch {
 			return .failure(Self.setupFailure(error))
 		}
 	}
 
-	/// Restore and add-device, per clients/DESIGN.md § Recovery flow: nothing is stored unless the phrase opens the server's blob.
 	public func joinSync(server: String, apiKey: String, phrase: PhraseEntry) async -> SyncSetupFailure? {
 		guard let store, engine == nil else { return .alreadySetUp }
 		guard let recoveryKey = phrase.key else { return .phraseDoesNotOpen }
@@ -189,11 +184,11 @@ extension AppModel {
 	}
 
 	public func finishSync(answers: [String]) async -> SyncSetupFailure? {
-		guard let store, let session = recovery, engine == nil || session.moving else { return .failed("Start setting up sync again.") }
+		guard let store, let session = recovery, engine == nil || session.movesToEmptyServer else { return .failed("Start setting up sync again.") }
 		guard Self.matches(answers, session.phrase) else { return .wordsDoNotMatch }
 		do {
 			let pin = try await flow(session.settings).put(session.settings.contentKey, under: session.recoveryKey, pin: 0)
-			if session.moving {
+			if session.movesToEmptyServer {
 				await stopSync()?.value
 				try await store.moveSync(to: session.settings, pin: pin)
 			} else {
@@ -227,7 +222,6 @@ extension AppModel {
 		return nil
 	}
 
-	/// After another device rotated: the current phrase re-pins this Mac so rotation can run again.
 	public func adoptCurrentPhrase(_ text: String) async -> SyncSetupFailure? {
 		guard let store, let settings = try? await store.syncSettings() else { return .failed("Sync is not set up.") }
 		let words = text.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
@@ -245,7 +239,6 @@ extension AppModel {
 		recovery = nil
 	}
 
-	/// Stops syncing and forgets the server and its key; the notes stay, and so does what a later Set Up Sync needs to find this library again.
 	public func turnOffSync() async -> Bool {
 		guard let store else { return false }
 		await stopSync()?.value
@@ -256,10 +249,8 @@ extension AppModel {
 		return true
 	}
 
-	/// A server that holds this library takes it back at once; an empty one gets it under a new phrase; another library is refused.
-	/// Change Server, which also takes the server's replaced API key, and Set Up Sync on a library that synced before. Locking cancels the check and waits for it, so no key outlives the lock.
 	private func changeServer(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
-		let change = Task { await self.check(server, apiKey, holds: kept, in: store) }
+		let change = Task { await self.reattachOrMove(kept, to: server, apiKey: apiKey, in: store) }
 		serverChange = change
 		let result = await withTaskCancellationHandler { await change.value } onCancel: { change.cancel() }
 		guard serverChange == change else { return result }
@@ -270,15 +261,14 @@ extension AppModel {
 		return result
 	}
 
-	/// Takes the library back only from a server that holds it: a blob at or past the pin, and the write this Mac's last pull ended on or one that replaced it, whether or not it opens, so a write forged with a leaked key cannot block it. An empty server gets the library under a new phrase.
-	private func check(_ server: URL, _ apiKey: SymmetricKey, holds kept: NoteStore.KeptLibrary, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
+	private func reattachOrMove(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
 		do {
 			let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(server))
 			let stored = try await RecoveryFlow(connection: connection).storedVersion()
 			guard stored > 0 else {
 				let settings = SyncSettings(server: server, apiKey: apiKey, contentKey: kept.contentKey)
-				guard let phrase = newPhrase(for: settings) else { return .failure(.failed("The recovery wordlist is missing.")) }
-				recovery?.moving = true
+				guard let phrase = newPhrase(for: settings) else { return .failure(.wordlistMissing) }
+				recovery?.movesToEmptyServer = true
 				return .success(.newLibrary(phrase))
 			}
 			guard stored >= kept.pin else { return .failure(.serverBehind) }
@@ -296,7 +286,7 @@ extension AppModel {
 	private func newPhrase(for settings: SyncSettings) -> RecoveryPhrase? {
 		let recoveryKey = SymmetricKey(size: .bits256)
 		guard let words = Mnemonic.words(for: recoveryKey) else { return nil }
-		let phrase = RecoveryPhrase(words: words, checked: Array(words.indices.shuffled().prefix(3)).sorted())
+		let phrase = RecoveryPhrase(words: words, positionsToConfirm: Array(words.indices.shuffled().prefix(3)).sorted())
 		recovery = RecoverySession(settings: settings, recoveryKey: recoveryKey, phrase: phrase)
 		return phrase
 	}
@@ -309,7 +299,6 @@ extension AppModel {
 		RecoveryFlow(connection: SyncConnection(apiKey: apiKey, transport: makeTransport(server)))
 	}
 
-	/// Commits with no due save landing under it; an edit typed meanwhile on a note a pull replaced moves to its copy.
 	private func commit(_ commit: Commit, to store: NoteStore) async throws -> Applied {
 		scheduler.hold()
 		defer { scheduler.release() }
@@ -335,7 +324,6 @@ extension AppModel {
 		}
 	}
 
-	/// A save whose note a pull replaced after the edit began landed as a copy: the editor and any later typing follow it.
 	func saveBecameCopy(_ note: Note, copy: UUID, in store: NoteStore) async {
 		guard store === self.store else { return }
 		if notes.contains(where: { $0.id == note.id }) {
@@ -368,8 +356,8 @@ extension AppModel {
 	}
 
 	private static func matches(_ answers: [String], _ phrase: RecoveryPhrase) -> Bool {
-		answers.count == phrase.checked.count
-			&& zip(answers, phrase.checked).allSatisfy { $0.trimmingCharacters(in: .whitespaces).lowercased() == phrase.words[$1] }
+		answers.count == phrase.positionsToConfirm.count
+			&& zip(answers, phrase.positionsToConfirm).allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == phrase.words[$1] }
 	}
 
 	private static func endpoint(server: String, apiKey: String) throws(SyncSetupFailure) -> (server: URL, apiKey: SymmetricKey) {
@@ -404,7 +392,6 @@ extension AppModel {
 		}
 	}
 
-	/// Only a 400 can mean a refused key, though a proxy that changed the request gets one too; the rest come from a proxy, a redirect or a server fault.
 	nonisolated static func statusMessage(_ status: Int) -> String {
 		switch status {
 		case 413: "The server or a proxy in front of it refused a request this large. A proxy must accept request bodies of at least 2 MiB + 28 B, such as 3 MiB."

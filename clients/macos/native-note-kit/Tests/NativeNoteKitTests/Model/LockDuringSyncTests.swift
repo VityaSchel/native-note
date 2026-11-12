@@ -6,7 +6,6 @@ import Testing
 
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct LockDuringSyncTests {
-	/// A request that never answers until it is cancelled, and then takes a moment to unwind, as URLSession does.
 	private final class Hanging: SyncTransport, @unchecked Sendable {
 		private let lock = NSLock()
 		private var inFlight: CheckedContinuation<Void, Never>?

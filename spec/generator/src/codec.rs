@@ -62,13 +62,12 @@ impl<'a> Reader<'a> {
 		self.take(len)
 	}
 
-	/// Content's zero fill: only zeros may follow the fields, and only as many as reach the next block boundary.
-	pub fn finish_filled(self, block: usize) -> Result<(), DecodeError> {
+	pub fn finish_zero_filled_to_block(self, block: usize) -> Result<(), DecodeError> {
 		let fill = &self.input[self.pos..];
 		if fill.iter().any(|&byte| byte != 0) {
 			return Err(DecodeError::TrailingBytes);
 		}
-		if self.input.len() % block != 0 || fill.len() >= block {
+		if !self.input.len().is_multiple_of(block) || fill.len() >= block {
 			return Err(DecodeError::NotCanonical);
 		}
 		Ok(())

@@ -1,6 +1,5 @@
 import Foundation
 
-/// The end-to-end encrypted layout of docs/PROTOCOL.md § Content, timestamps in epoch milliseconds, zero-filled to whole blocks.
 nonisolated enum Content: Equatable, Sendable {
 	case note(id: UUID, createdAt: Int64, updatedAt: Int64, body: String)
 	case tombstone(id: UUID, deletedAt: Int64)

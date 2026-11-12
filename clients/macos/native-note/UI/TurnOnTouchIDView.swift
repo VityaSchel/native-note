@@ -5,8 +5,7 @@ struct TurnOnTouchIDView: View {
 	let turnOn: (String) async -> AppModel.Failure?
 	let done: () -> Void
 	var touchID = TouchIDControls()
-	/// After a password change, the new password goes straight to the touch, and Not Now ends it.
-	var password: String?
+	var changedPassword: String?
 	var declineTitle = "Cancel"
 
 	@State private var form = TurnOnTouchIDForm()
@@ -15,7 +14,7 @@ struct TurnOnTouchIDView: View {
 	var body: some View {
 		SheetScaffold(
 			title: "Turn On Touch ID Unlock",
-			explanation: password != nil
+			explanation: changedPassword != nil
 				? "The new password turned Touch ID unlock off. Touch ID turns it on again."
 				: awaitsTouch ? nil : "Enter your password to unlock with Touch ID instead.",
 			error: awaitsTouch ? nil : form.inlineMessage,
@@ -48,8 +47,8 @@ struct TurnOnTouchIDView: View {
 		.defaultFocus($typing, true)
 		.onDisappear(perform: touchID.cancel)
 		.onAppear {
-			guard let password else { return }
-			form.password = password
+			guard let changedPassword else { return }
+			form.password = changedPassword
 			send()
 		}
 	}
@@ -64,7 +63,7 @@ struct TurnOnTouchIDView: View {
 	private func cancel() {
 		guard awaitsTouch else { return done() }
 		touchID.cancel()
-		if password != nil { done() }
+		if changedPassword != nil { done() }
 	}
 
 	private func send() {

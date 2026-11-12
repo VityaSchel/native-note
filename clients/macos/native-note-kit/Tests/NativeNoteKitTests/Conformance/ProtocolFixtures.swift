@@ -35,7 +35,6 @@ func wireError(named name: String?) throws -> WireError {
 	}
 }
 
-/// The server's half of the frame codec, so the tests can read the requests a vector carries.
 enum RequestDecoding {
 	static func decode(_ bytes: Data) throws -> Request {
 		var reader = WireReader(bytes)
@@ -59,7 +58,6 @@ enum RequestDecoding {
 	}
 }
 
-/// The server's response encoder, for vectors that round-trip and for scripted servers.
 func responseBytes(_ response: Response) -> Data {
 	var writer = WireWriter()
 	switch response {

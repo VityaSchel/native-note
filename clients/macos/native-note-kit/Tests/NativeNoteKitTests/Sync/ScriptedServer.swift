@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// A server that answers each request with whatever the test scripts, sealed as a real one would.
 final class ScriptedServer: SyncTransport, @unchecked Sendable {
 	let apiKey = SymmetricKey(size: .bits256)
 	private let lock = NSLock()
@@ -15,7 +14,6 @@ final class ScriptedServer: SyncTransport, @unchecked Sendable {
 		lock.withLock { replies.append(reply) }
 	}
 
-	/// Takes the request, then answers with a bare status, as a proxy that failed after forwarding it would.
 	func refuse(status: Int = 502) {
 		lock.withLock { replies.append { _ in throw SyncError.refused(status: status) } }
 	}
@@ -39,7 +37,6 @@ final class ScriptedServer: SyncTransport, @unchecked Sendable {
 	}
 }
 
-/// A write whose payload opens under `blindedId` although its content names another note.
 func misfiled(_ content: Content, under blindedId: Data, v: UInt32, contentKey: SymmetricKey = sharedContentKey) throws -> Write {
 	let writeId = NoteCipher.randomWriteId()
 	var binding = WireWriter()

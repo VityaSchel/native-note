@@ -1,6 +1,5 @@
 import Foundation
 
-/// How large the editor's text is, as View › Zoom In and Zoom Out step it, kept per user like a window size.
 enum EditorZoom {
 	static let key = "editorZoom"
 	static let range: ClosedRange<Double> = 0.5 ... 3

@@ -43,7 +43,6 @@ pub fn sealed_response_head(body_len: usize) -> Vec<u8> {
 		.into_bytes()
 }
 
-/// The length of the head through the blank line that ends it, once `received` holds that line.
 pub fn head_len(received: &[u8]) -> Option<usize> {
 	received
 		.windows(BLANK_LINE.len())
@@ -51,8 +50,7 @@ pub fn head_len(received: &[u8]) -> Option<usize> {
 		.and_then(|at| at.checked_add(BLANK_LINE.len()))
 }
 
-/// The admitted body length declared by a head that `head_len` delimited.
-pub fn body_len(head: &[u8]) -> Result<usize, Status> {
+pub fn admitted_body_len(head: &[u8]) -> Result<usize, Status> {
 	let mut lines = head
 		.strip_suffix(b"\r\n")
 		.unwrap_or_default()

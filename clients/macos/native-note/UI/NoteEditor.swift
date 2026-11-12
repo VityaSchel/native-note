@@ -3,7 +3,6 @@ import SwiftUI
 
 struct NoteEditor: NSViewRepresentable {
 	@Binding var text: String
-	/// New Note puts the insertion point in the note it made; picking a note in the list leaves focus there.
 	var takesFocus = false
 	var tookFocus: () -> Void = {}
 	var zoom = 1.0
@@ -31,8 +30,7 @@ struct NoteEditor: NSViewRepresentable {
 		}
 	}
 
-	/// Room above the title for the date line, which scrolls with the note as in Notes.
-	static let topInset: CGFloat = 46
+	static let dateLineInset: CGFloat = 46
 
 	static func makeScrollView(delegate: Coordinator) -> NSScrollView {
 		let textView = ComposingTextView(usingTextLayoutManager: true)
@@ -46,7 +44,7 @@ struct NoteEditor: NSViewRepresentable {
 		textView.usesFindBar = true
 		textView.isIncrementalSearchingEnabled = true
 		textView.drawsBackground = false
-		textView.textContainerInset = NSSize(width: 28, height: Self.topInset)
+		textView.textContainerInset = NSSize(width: 28, height: Self.dateLineInset)
 
 		let dateLabel = NSTextField(labelWithString: "")
 		dateLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -73,7 +71,6 @@ struct NoteEditor: NSViewRepresentable {
 		return scrollView
 	}
 
-	/// The model echoing what the editor last showed or pushed leaves the view alone, so a composition in progress survives it.
 	static func show(_ text: String, in scrollView: NSScrollView) {
 		guard let textView = scrollView.documentView as? NSTextView, let storage = textView.textStorage else { return }
 		let coordinator = textView.delegate as? Coordinator
@@ -113,7 +110,6 @@ struct NoteEditor: NSViewRepresentable {
 			history
 		}
 
-		/// Zoom changes the text's size, as in Notes, so it rewraps; margins and the date line keep their size.
 		fileprivate func zoom(to zoom: Double) {
 			guard abs(styles.zoom - zoom) > 0.001 else { return }
 			styles = EditorStyles(zoom: zoom)
@@ -184,7 +180,6 @@ struct NoteEditor: NSViewRepresentable {
 	}
 }
 
-/// The title and body attributes at one zoom level; sizes and spacing scale together, from the system text styles.
 struct EditorStyles {
 	let zoom: Double
 	let heading: [NSAttributedString.Key: Any]

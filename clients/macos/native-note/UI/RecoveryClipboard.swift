@@ -1,6 +1,5 @@
 import AppKit
 
-/// Copied words stay on this Mac, marked for clipboard histories to skip, until setup is cancelled, the library locks or the app quits.
 @MainActor
 final class RecoveryClipboard {
 	static let shared = RecoveryClipboard(.general)

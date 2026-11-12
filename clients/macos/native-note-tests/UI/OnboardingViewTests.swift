@@ -281,7 +281,7 @@ struct OnboardingViewTests {
 	@Test func turningSyncOnInTheSheetFinishesOnboardingThoughTheStatusItWasGivenIsStale() async throws {
 		let calls = Calls()
 		let words = try #require(Mnemonic.words(for: SymmetricKey(data: (0 ..< 32).map { UInt8($0 * 3 + 2) })))
-		let sync = SyncControls(prepareSync: { _, _ in .success(.newLibrary(.init(words: words, checked: [0, 1, 2]))) }, finishSync: { _ in nil })
+		let sync = SyncControls(prepareSync: { _, _ in .success(.newLibrary(.init(words: words, positionsToConfirm: [0, 1, 2]))) }, finishSync: { _ in nil })
 		#expect(sync.status.server == nil)
 		let offscreen = onboarding(calls, libraryExists: true, sync: sync)
 		defer { offscreen.close() }

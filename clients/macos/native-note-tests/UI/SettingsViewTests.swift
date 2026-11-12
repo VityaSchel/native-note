@@ -284,7 +284,6 @@ struct SettingsViewTests {
 		}
 	}
 
-	/// Wrapping labels size the form over several layout passes, so the size counts once it holds.
 	private func settledSize(of controller: NSHostingController<SettingsView>, in window: NSWindow) async -> NSSize {
 		var size = controller.preferredContentSize
 		var held = 0

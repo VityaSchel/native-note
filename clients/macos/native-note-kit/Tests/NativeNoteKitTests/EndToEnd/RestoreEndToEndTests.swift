@@ -3,7 +3,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// Phase 6's exit: a wiped Mac restores every note from the 24 words and the API key, kept or read again from the server.
 @MainActor @Suite(.serialized, .timeLimit(.minutes(10)))
 struct RestoreEndToEndTests {
 	private struct Snapshot: Equatable {
@@ -58,7 +57,7 @@ struct RestoreEndToEndTests {
 			Issue.record("a fresh server offered a join")
 			return
 		}
-		try #require(await original.finishSync(answers: phrase.checked.map { phrase.words[$0] }) == nil)
+		try #require(await original.finishSync(answers: phrase.positionsToConfirm.map { phrase.words[$0] }) == nil)
 		await original.syncNow()
 		let saved = snapshot(original.notes)
 		await original.close()

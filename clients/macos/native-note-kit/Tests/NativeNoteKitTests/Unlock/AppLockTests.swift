@@ -4,7 +4,6 @@ import Testing
 @testable import NativeNoteKit
 
 struct AppLockTests {
-	/// Each flush: what was flushed, what it held then, and what the current file held then.
 	private final class Flushes {
 		struct Flush {
 			let path: String
@@ -27,7 +26,6 @@ struct AppLockTests {
 			try AppLock.fullSync(descriptor)
 		}
 
-		/// The new parameters were on disk in a temporary file while the old ones were still current, then the folder after the rename.
 		func replaced(_ old: UnlockParameters?, with new: UnlockParameters, in directory: URL) -> Bool {
 			let folder = directory.resolvingSymlinksInPath().path
 			guard all.count == 2 else { return false }

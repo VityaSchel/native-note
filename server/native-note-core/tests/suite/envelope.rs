@@ -1,19 +1,13 @@
 use crate::support::client::{self, INNER_MAX, Response};
 use crate::support::corpus::{SplitMix64, corpus, payload};
-use crate::support::{SEALED_MAX, open};
-use native_note_core::{
-	DecodeError, Envelope, EnvelopeKey, Rejection, Reply, Request, Secret, Seq, Version, admit,
-};
+use crate::support::{SEALED_MAX, open, server_key};
+use native_note_core::{DecodeError, Envelope, Rejection, Reply, Request, Seq, Version, admit};
 use std::collections::BTreeSet;
 
 const API_KEY: [u8; 32] = [
 	0x9c, 0x4e, 0x21, 0xd7, 0x6a, 0x03, 0xb5, 0xf8, 0x1d, 0x92, 0x47, 0xe0, 0x3b, 0xa6, 0x58, 0xc4,
 	0x7f, 0x10, 0xe9, 0x35, 0x8b, 0x62, 0xd1, 0x0a, 0xf4, 0x2c, 0x97, 0x5e, 0xb3, 0x06, 0x7d, 0xe8,
 ];
-
-fn server_key(api_key: [u8; 32]) -> EnvelopeKey {
-	EnvelopeKey::derive(&Secret::new(api_key)).expect("a 32-byte key derives")
-}
 
 #[test]
 fn admit_takes_bodies_from_a_nonce_and_tag_up_to_the_sealed_limit() {

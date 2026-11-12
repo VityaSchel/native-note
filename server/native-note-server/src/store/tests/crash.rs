@@ -8,8 +8,11 @@ use std::path::Path;
 
 const DATABASE: &str = "native-note.sqlite";
 const WAL: &str = "native-note.sqlite-wal";
+const SHARED_MEMORY: &str = "native-note.sqlite-shm";
 const PAGE: usize = 4096;
-const FRAME: usize = 24 + PAGE;
+const FRAME_HEADER: usize = 24;
+const FRAME: usize = FRAME_HEADER + PAGE;
+const SECTOR: usize = 512;
 const WAL_HEADER: usize = 32;
 const FRAMES_TRIED: usize = 16;
 const MIXES_TRIED: usize = 8;
@@ -29,7 +32,7 @@ impl Files {
 	}
 
 	fn boot(&self, directory: &Path) -> State {
-		for file in [DATABASE, WAL, "native-note.sqlite-shm"] {
+		for file in [DATABASE, WAL, SHARED_MEMORY] {
 			fs::remove_file(directory.join(file)).ok();
 		}
 		fs::write(directory.join(DATABASE), &self.database).expect("writes the database");
@@ -41,10 +44,9 @@ impl Files {
 	}
 }
 
-/// `new` written up to `cut` over `old`, or over zeros when the file grew before its bytes landed.
-fn torn(old: &[u8], new: &[u8], cut: usize, zero_tail: bool) -> Vec<u8> {
+fn torn_write(old: &[u8], new: &[u8], cut: usize, grew_before_bytes_landed: bool) -> Vec<u8> {
 	let mut bytes = new[..cut].to_vec();
-	if zero_tail {
+	if grew_before_bytes_landed {
 		bytes.resize(new.len(), 0);
 	} else if old.len() > cut {
 		bytes.extend_from_slice(&old[cut..]);
@@ -52,8 +54,7 @@ fn torn(old: &[u8], new: &[u8], cut: usize, zero_tail: bool) -> Vec<u8> {
 	bytes
 }
 
-/// The bytes a request wrote to the log, through the end of the last frame it changed.
-fn written(old: &[u8], new: &[u8]) -> Option<(usize, usize)> {
+fn written_frames(old: &[u8], new: &[u8]) -> Option<(usize, usize)> {
 	let differs = |at: usize| old.get(at) != new.get(at);
 	let first = (0..new.len()).find(|&at| differs(at))?;
 	let last = (0..new.len()).rev().find(|&at| differs(at))?;
@@ -69,7 +70,7 @@ fn cuts(first: usize, end: usize) -> Vec<usize> {
 	for (index, frame) in frames.iter().enumerate() {
 		if index % step == 0 || index + 2 >= frames.len() {
 			let start = WAL_HEADER + frame * FRAME;
-			cuts.extend([start, start + 24, start + 24 + 512]);
+			cuts.extend([start, start + FRAME_HEADER, start + FRAME_HEADER + SECTOR]);
 		}
 	}
 	cuts.retain(|&cut| (first..=end).contains(&cut));
@@ -144,18 +145,19 @@ fn a_power_cut_at_any_write_of_a_request_boots_to_the_state_before_or_after_it()
 		assert_ne!(after.1, before.1, "request {index} changed nothing");
 
 		let (old, new) = (&before.0, &after.0);
-		let (first, end) = written(&old.wal, &new.wal).expect("the request wrote to the log");
+		let (first, end) =
+			written_frames(&old.wal, &new.wal).expect("the request wrote to the log");
 		for cut in cuts(first, end) {
-			for zero_tail in [false, true] {
+			for grew_before_bytes_landed in [false, true] {
 				let image = Files {
 					database: old.database.clone(),
-					wal: torn(&old.wal, &new.wal, cut, zero_tail),
+					wal: torn_write(&old.wal, &new.wal, cut, grew_before_bytes_landed),
 				};
 				let committed = image.wal.get(..end) == new.wal.get(..end);
 				let expected = if committed { &after.1 } else { &before.1 };
 				assert!(
 					image.boot(images.path()) == *expected,
-					"request {index}, log cut at {cut} of {first}..{end}, zero tail {zero_tail}"
+					"request {index}, log cut at {cut} of {first}..{end}, file grew before its bytes landed: {grew_before_bytes_landed}"
 				);
 				*if committed {
 					&mut torn_after

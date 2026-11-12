@@ -83,7 +83,7 @@ struct EditorDateLineTests {
 		let textView = try #require(offscreen.views(of: NSTextView.self).first { $0.isEditable })
 		let line = try #require(textView.subviews.compactMap { $0 as? NSTextField }.first)
 		#expect(line.stringValue == "2026.08.06 at 10:42")
-		#expect(line.frame.maxY <= NoteEditor.topInset)
+		#expect(line.frame.maxY <= NoteEditor.dateLineInset)
 		#expect(!line.isEditable && !line.isSelectable)
 	}
 }

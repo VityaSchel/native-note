@@ -71,7 +71,7 @@ pub fn decode(input: &[u8]) -> Result<Content, DecodeError> {
 		}
 		_ => return Err(DecodeError::UnknownDiscriminant),
 	};
-	r.finish_filled(BLOCK)?;
+	r.finish_zero_filled_to_block(BLOCK)?;
 	Ok(content)
 }
 

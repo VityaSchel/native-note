@@ -19,7 +19,6 @@ import Observation
 	}
 
 	public private(set) var phase: Phase = .loading
-	/// From the library's first setup until its last onboarding step, so a new or wiped Mac is offered Touch ID and sync before the library shows.
 	public private(set) var isOnboarding = false
 	var notes: [Note] = []
 	public private(set) var failure: Failure?
@@ -31,7 +30,7 @@ import Observation
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
-			if createdHere.remove(previous) != nil, let left = notes.first(where: { $0.id == previous }), left.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+			if createdThisSession.remove(previous) != nil, let left = notes.first(where: { $0.id == previous }), left.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
 				notes.removeAll { $0.id == previous }
 				Task { await discard(previous) }
 				return
@@ -39,7 +38,6 @@ import Observation
 			Task { await scheduler.flush(previous) }
 		}
 	}
-	/// The note New Note made, until the editor shows it with the insertion point in it.
 	public private(set) var focusesEditor: UUID?
 	public var search = "" {
 		didSet {
@@ -98,8 +96,7 @@ import Observation
 	private var searchFailing = false
 	private var matches: [UUID]?
 	private var keptForUndo: [UUID: Note] = [:]
-	/// Notes New Note made in this session; one left empty is discarded, as an untouched new note in Notes is.
-	private var createdHere: Set<UUID> = []
+	private var createdThisSession: Set<UUID> = []
 	private var biometrics = BiometricAvailability.unavailable
 	private var isActive = false
 	private(set) var isCheckingPassword = false
@@ -185,7 +182,7 @@ import Observation
 		selection = nil
 		notes = []
 		keptForUndo = [:]
-		createdHere = []
+		createdThisSession = []
 		focusesEditor = nil
 		isOnboarding = false
 		store = nil
@@ -216,14 +213,13 @@ import Observation
 		for store in open { await store.close() }
 	}
 
-	/// Not dirty until its first edit, so a note left empty never syncs.
 	public func createNote() async {
 		let now = Date().epochMilliseconds
 		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: false)
 		guard await write("The new note could not be created.", { try await $0.save(note) }) else { return }
 		if !search.isEmpty { search = "" }
 		notes.insert(note, at: 0)
-		createdHere.insert(note.id)
+		createdThisSession.insert(note.id)
 		selection = note.id
 		focusesEditor = note.id
 	}
@@ -255,7 +251,6 @@ import Observation
 		await delete(id)
 	}
 
-	/// Leaves the list at once, so Undo Delete can follow before the tombstone lands, and comes back if it fails.
 	public func delete(_ id: UUID) async {
 		let order = groups.flatMap(\.notes).map(\.id)
 		if selection == id, let index = order.firstIndex(of: id) {
@@ -274,14 +269,12 @@ import Observation
 		syncSoon()
 	}
 
-	/// Keeps a note's text, unsaved typing included, for Undo Delete until the library locks.
 	public func keepForUndo(_ id: UUID) -> UUID? {
 		guard let note = notes.first(where: { $0.id == id }) else { return nil }
 		keptForUndo[id] = note
 		return id
 	}
 
-	/// Brings kept text back as a new note once its original is gone, since nothing writes to a tombstone, and saves it as an edit is saved.
 	@discardableResult
 	public func restore(_ kept: UUID) -> UUID? {
 		guard let store, !notes.contains(where: { $0.id == kept }), let deleted = keptForUndo.removeValue(forKey: kept) else { return nil }
@@ -693,7 +686,6 @@ import Observation
 		return held
 	}
 
-	/// Sleep, a locked screen or another user's session leaves the Mac to whoever reaches it next, so an unlock still in flight locks again.
 	public func lockWhileAway() {
 		awayEvents += 1
 		guard phase == .unlocked else { return }
@@ -701,7 +693,6 @@ import Observation
 	}
 
 	@discardableResult
-	/// A first setup keeps onboarding up while the library opens, so the library never flashes in front of its last steps.
 	private func openLibrary(onboarding: Bool = false, _ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
 		failure = nil
 		let away = awayEvents

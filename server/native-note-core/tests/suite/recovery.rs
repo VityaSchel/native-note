@@ -28,7 +28,7 @@ fn the_recovery_vector_exchanges_run_in_order_against_one_server_and_a_resent_pu
 			}
 			None => harness.seal(&inner),
 		};
-		let response = harness.post(&body);
+		let response = harness.post_and_open(&body);
 		assert_eq!(response, hex(&case["response"]), "{name}");
 		if name == "putAgain" {
 			assert_eq!(

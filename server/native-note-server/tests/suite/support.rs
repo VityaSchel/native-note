@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-pub const IO: Duration = Duration::from_millis(600);
-pub const DEADLINE: Duration = Duration::from_secs(2);
+pub const SOCKET_IO_TIMEOUT: Duration = Duration::from_millis(600);
+pub const CONNECTION_DEADLINE: Duration = Duration::from_secs(2);
 
 #[derive(Default)]
 pub struct Recorder(Mutex<Vec<String>>);
@@ -36,7 +36,6 @@ impl Recorder {
 	}
 }
 
-/// The server's own timing and randomness, logging to `log`.
 pub fn runtime(log: &Arc<Recorder>) -> Runtime {
 	Runtime {
 		log: Arc::clone(log) as Arc<dyn Log>,
@@ -44,12 +43,11 @@ pub fn runtime(log: &Arc<Recorder>) -> Runtime {
 	}
 }
 
-/// Timeouts short enough for a test to wait them out.
-pub fn hasty(log: &Arc<Recorder>) -> Runtime {
+pub fn runtime_with_short_timeouts(log: &Arc<Recorder>) -> Runtime {
 	Runtime {
 		timing: Timing {
-			io: IO,
-			deadline: DEADLINE,
+			socket_io_timeout: SOCKET_IO_TIMEOUT,
+			connection_deadline: CONNECTION_DEADLINE,
 		},
 		..runtime(log)
 	}
@@ -65,7 +63,7 @@ pub fn call(client: &mut Client, request: &Request) -> Response {
 
 pub fn call_inner(client: &mut Client, inner: &[u8]) -> Response {
 	let body = client.seal(inner);
-	client::decode_response(&client.post(&body))
+	client::decode_response(&client.post_and_open(&body))
 }
 
 pub struct Running {
@@ -119,7 +117,6 @@ pub fn connect(address: SocketAddr) -> TcpStream {
 	stream
 }
 
-/// Reads until the server closes, which it does after every response.
 pub fn read_reply(mut stream: TcpStream) -> Option<Reply> {
 	let mut bytes = Vec::new();
 	stream.read_to_end(&mut bytes).ok()?;
@@ -194,7 +191,7 @@ impl Exchange for Client {
 		client::seal_request(&self.key, self.nonces.array(), inner)
 	}
 
-	fn post(&mut self, body: &[u8]) -> Vec<u8> {
+	fn post_and_open(&mut self, body: &[u8]) -> Vec<u8> {
 		let reply = post(self.address, body);
 		self.open(body, &reply)
 			.expect("the reply opens under the request nonce")

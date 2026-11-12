@@ -45,7 +45,7 @@ fn the_sync_vector_steps_run_in_order_against_one_server_and_the_replayed_step_c
 			}
 			None => harness.seal(&hex(&step["request"])),
 		};
-		let inner = harness.post(&body);
+		let inner = harness.post_and_open(&body);
 		assert_eq!(inner, hex(&step["response"]), "{name}");
 		if step["replays"].is_string() {
 			let Response::Sync { results, .. } = client::decode_response(&inner) else {

@@ -1,11 +1,9 @@
 import NativeNoteKit
 
-/// Setup and rotation share the words and the check; setup starts at the server, rotation at new words, and a server that holds a library is joined.
 struct SyncSetupForm {
 	enum Mode {
 		case setUp
 		case rotate
-		/// A syncing Mac points this library at another address, or moves it to an empty server.
 		case changeServer
 	}
 
@@ -34,7 +32,6 @@ struct SyncSetupForm {
 		step = mode == .rotate ? .preparing : .server
 	}
 
-	/// Storing the recovery blob cannot be stopped halfway without leaving its outcome unknown; every other step only reads the server.
 	var storesThePhrase: Bool {
 		guard working, case .confirm = step else { return false }
 		return true
@@ -114,7 +111,6 @@ struct SyncSetupForm {
 		}
 	}
 
-	/// After the phrase went in, or after the current phrase was adopted and rotation must start over.
 	mutating func finished(_ failure: AppModel.SyncSetupFailure?) {
 		guard let failure else {
 			working = false

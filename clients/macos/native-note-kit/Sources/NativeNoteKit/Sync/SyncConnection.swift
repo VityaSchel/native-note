@@ -6,17 +6,14 @@ nonisolated protocol SyncTransport: Sendable {
 }
 
 nonisolated enum SyncError: Error, Equatable {
-	/// A bare status instead of a sealed reply: 400 when the server cannot open or parse the request, which a proxy can cause too, anything else from a proxy, a redirect or a fault.
 	case refused(status: Int)
 	case unopenable
 	case serverFault
-	/// A response the protocol does not allow, so nothing of it was applied.
 	case protocolViolation
 }
 
 nonisolated struct HTTPTransport: SyncTransport {
-	/// The same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
-	static let headers = [
+	static let fingerprintFreeHeaders = [
 		"User-Agent": "native-note",
 		"Accept": "*/*",
 		"Accept-Language": "*",
@@ -41,7 +38,7 @@ nonisolated struct HTTPTransport: SyncTransport {
 		var request = URLRequest(url: url)
 		request.httpMethod = "POST"
 		request.httpBody = body
-		for (name, value) in Self.headers {
+		for (name, value) in Self.fingerprintFreeHeaders {
 			request.setValue(value, forHTTPHeaderField: name)
 		}
 		let (reply, response) = try await session.data(for: request, delegate: NoRedirects.shared)
@@ -51,7 +48,6 @@ nonisolated struct HTTPTransport: SyncTransport {
 	}
 }
 
-/// A redirect would turn the POST into a GET the server can only refuse, so its status is reported instead.
 private nonisolated final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
 	static let shared = NoRedirects()
 

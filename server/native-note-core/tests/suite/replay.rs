@@ -1,9 +1,9 @@
 use crate::support::client::{self, INNER_MAX, Response};
 use crate::support::corpus::{SplitMix64, corpus, payload};
 use crate::support::harness::{Harness, Http, nonce_of};
-use crate::support::open;
 use crate::support::session::{Replays, Session};
-use native_note_core::{EnvelopeKey, Record, Rejection, Reply, Request, Secret, Seq, Version};
+use crate::support::{open, server_key};
+use native_note_core::{Record, Rejection, Reply, Request, Seq, Version};
 use native_note_testkit::scenario::shuffled;
 use std::collections::BTreeSet;
 
@@ -11,10 +11,6 @@ const API_KEY: [u8; 32] = [
 	0x2d, 0xb7, 0x48, 0x91, 0xe3, 0x0f, 0x6c, 0xa5, 0x13, 0xf8, 0x5a, 0x27, 0xc9, 0x84, 0x3e, 0x71,
 	0xd0, 0x66, 0x1b, 0xae, 0x52, 0x09, 0xfd, 0x34, 0x8e, 0xc3, 0x75, 0x1a, 0xb6, 0x4f, 0xe2, 0x98,
 ];
-
-fn server_key(api_key: [u8; 32]) -> EnvelopeKey {
-	EnvelopeKey::derive(&Secret::new(api_key)).expect("a 32-byte key derives")
-}
 
 struct Script {
 	syncs: Vec<(Seq, &'static [Record])>,

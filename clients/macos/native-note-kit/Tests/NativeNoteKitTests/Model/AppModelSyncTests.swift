@@ -25,7 +25,7 @@ func apiKeyText(_ server: SyncServer) throws -> String {
 
 @MainActor
 func answers(_ phrase: AppModel.RecoveryPhrase) -> [String] {
-	phrase.checked.map { phrase.words[$0] }
+	phrase.positionsToConfirm.map { phrase.words[$0] }
 }
 
 func newLibrary(_ start: Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure>) throws -> AppModel.RecoveryPhrase {
@@ -53,7 +53,7 @@ struct AppModelSyncTests {
 		let server = try SyncServer()
 		let (model, _) = try await syncingModel(server)
 		let phrase = try newLibrary(await model.prepareSync(server: " \(server.url.absoluteString) ", apiKey: apiKeyText(server)))
-		#expect(phrase.words.count == 24 && phrase.checked.count == 3 && Set(phrase.checked).count == 3)
+		#expect(phrase.words.count == 24 && phrase.positionsToConfirm.count == 3 && Set(phrase.positionsToConfirm).count == 3)
 		#expect(try await storedBlob(server).v == 0)
 
 		#expect(await model.finishSync(answers: ["wrong", "words", "here"]) == .wordsDoNotMatch)

@@ -4,9 +4,9 @@ use crate::support::memory::MemoryStorage;
 use crate::support::vectors::{
 	Listing, REGISTRY, case, cases, hex, hex_array, replayed, vectors_dir,
 };
-use crate::support::{BODY_MAX, NOTE_MAX, client, open};
+use crate::support::{BODY_MAX, NOTE_MAX, client, open, server_key};
 use native_note_core::{
-	BlindedNoteId, DecodeError, EnvelopeKey, Record, Rejection, Request, Secret, Seq, Version,
+	BlindedNoteId, DecodeError, EnvelopeKey, Record, Rejection, Request, Seq, Version,
 };
 use serde_json::Value;
 use std::panic;
@@ -159,7 +159,7 @@ fn a_request_vector_with_any_byte_appended_has_trailing_bytes() {
 }
 
 fn envelope_vector_key() -> EnvelopeKey {
-	EnvelopeKey::derive(&Secret::new(vector_api_key())).expect("a 32-byte key derives")
+	server_key(vector_api_key())
 }
 
 fn envelope_case(name: &str) -> Value {
@@ -182,7 +182,7 @@ fn the_envelope_key_vector_derives_the_key_its_okm_seals_under() {
 	let nonce = [0x45; 12];
 	let padded = client::pad(&client::encode_request(&Request::Get)).expect("pads");
 	let sealed = client::seal(&okm, nonce, &padded);
-	let key = EnvelopeKey::derive(&Secret::new(ikm)).expect("a 32-byte key derives");
+	let key = server_key(ikm);
 	let opened = open(&key, sealed).expect("opens under the derived key");
 	assert_eq!(opened.nonce(), nonce);
 	assert_eq!(opened.request(), Ok(Request::Get));

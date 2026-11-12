@@ -5,8 +5,7 @@ version="${1:?usage: DEVELOPMENT_TEAM=<team ID> NOTARY_PROFILE=<notarytool keych
 team="${DEVELOPMENT_TEAM:?set DEVELOPMENT_TEAM to the team that holds the Developer ID certificate}"
 notary="${NOTARY_PROFILE:?set NOTARY_PROFILE to a profile stored with xcrun notarytool store-credentials}"
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
-# One app per architecture, so neither download carries code its Mac cannot run.
-architectures=(arm64 x86_64)
+one_app_per_architecture=(arm64 x86_64)
 
 root="$(cd -P "$(dirname "$0")/../.." && pwd -P)"
 if [[ -n "$(git -C "$root" status --porcelain)" ]]; then
@@ -15,7 +14,7 @@ if [[ -n "$(git -C "$root" status --porcelain)" ]]; then
 fi
 "$root/clients/macos/native-note-kit/Scripts/sqlcipher-amalgamation.sh"
 out="$root/releases"
-for arch in "${architectures[@]}"; do
+for arch in "${one_app_per_architecture[@]}"; do
 	if [[ -e "$out/Native-Note-$version-$arch.zip" ]]; then
 		echo "$out/Native-Note-$version-$arch.zip already exists" >&2
 		exit 1
@@ -75,6 +74,6 @@ release() {
 	(cd "$out" && shasum -a 256 "$(basename "$zip")")
 }
 
-for arch in "${architectures[@]}"; do
+for arch in "${one_app_per_architecture[@]}"; do
 	release "$arch"
 done

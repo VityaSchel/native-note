@@ -35,7 +35,6 @@ struct CipherVectorTests {
 		}
 	}
 
-	/// Opening a request is the server's, replayed by the core.
 	private static let serverOnly: Set = ["rejectResponseOpenedAsRequest"]
 
 	@Test func envelopesSealRequestsExactlyAndOpenOnlyTheirOwnResponses() throws {

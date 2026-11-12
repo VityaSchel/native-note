@@ -20,7 +20,6 @@ struct CodecVectorTests {
 		}
 	}
 
-	/// Request decoding is the server's, replayed by the core; the client only encodes requests.
 	private static let serverOnly: Set = [
 		"rejectUnknownAction", "rejectImpossibleCount", "rejectImpossibleLength", "rejectTrailingBytes", "rejectErrorAsRequest",
 	]

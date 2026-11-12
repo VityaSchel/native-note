@@ -28,7 +28,6 @@ const MIGRATIONS: [&str; 1] = ["
 pub struct Store(Connection);
 
 impl Store {
-	/// Refuses a database that fails `integrity_check` before writing to it.
 	pub fn open(path: &Path) -> Result<Store, Cause> {
 		OpenOptions::new()
 			.write(true)
@@ -38,13 +37,7 @@ impl Store {
 			.open(path)?;
 		let mut connection = Connection::open(path)?;
 		connection.busy_timeout(BUSY_TIMEOUT)?;
-		let report = connection
-			.prepare("PRAGMA integrity_check")?
-			.query_map([], |row| row.get::<_, String>(0))?
-			.collect::<Result<Vec<_>, _>>()?;
-		if report != ["ok"] {
-			return Err(Cause::Damaged);
-		}
+		refuse_if_damaged(&connection)?;
 		let mode: String =
 			connection.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get(0))?;
 		if mode != "wal" {
@@ -59,7 +52,6 @@ impl Store {
 		self.transact(|rows| process(rows, request))
 	}
 
-	/// Commits only a reply; a fault, or a failed commit, rolls back as `Rows` drops.
 	pub(crate) fn transact(
 		&mut self,
 		step: impl FnOnce(&mut Rows<'_>) -> Result<Reply, Fault<rusqlite::Error>>,
@@ -71,6 +63,18 @@ impl Store {
 		let reply = step(&mut rows)?;
 		rows.0.commit()?;
 		Ok(reply)
+	}
+}
+
+fn refuse_if_damaged(connection: &Connection) -> Result<(), Cause> {
+	let report = connection
+		.prepare("PRAGMA integrity_check")?
+		.query_map([], |row| row.get::<_, String>(0))?
+		.collect::<Result<Vec<_>, _>>()?;
+	if report == ["ok"] {
+		Ok(())
+	} else {
+		Err(Cause::Damaged)
 	}
 }
 

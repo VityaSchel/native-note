@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// After the server's key is replaced, Change Server with the same address takes the new key, by the checks a reattach makes.
 @MainActor @Suite(.timeLimit(.minutes(1)))
 struct ReplacedAPIKeyTests {
 	private func syncingLibrary(_ server: SyncServer) async throws -> (AppModel, URL, TestTransport) {
@@ -17,7 +16,6 @@ struct ReplacedAPIKeyTests {
 		return (model, directory, transport)
 	}
 
-	/// Restarts the server under a new key, after `meanwhile` changed its data while it was down.
 	private func replaceKey(of server: SyncServer, meanwhile: () throws -> Void = {}) throws -> String {
 		server.kill()
 		try meanwhile()
@@ -236,7 +234,6 @@ struct ReplacedAPIKeyTests {
 	}
 }
 
-/// Holds every request once told to, until it is cancelled.
 private final class Stalling: SyncTransport, @unchecked Sendable {
 	private let real: TestTransport
 	private let lock = NSLock()

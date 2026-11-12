@@ -217,7 +217,7 @@ fn no_key_is_written_without_randomness_or_room_for_its_temporary_file() {
 fn the_server_waits_10_s_per_socket_operation_and_60_s_per_connection() {
 	let timing = Runtime::server().timing;
 	assert_eq!(
-		(timing.io, timing.deadline),
+		(timing.socket_io_timeout, timing.connection_deadline),
 		(Duration::from_secs(10), Duration::from_secs(60))
 	);
 }

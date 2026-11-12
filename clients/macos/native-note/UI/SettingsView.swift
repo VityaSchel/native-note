@@ -184,7 +184,6 @@ struct SyncSection: View {
 		}
 	}
 
-	/// A failure's reason goes on the line under this one.
 	static func statusLine(_ status: AppModel.SyncStatus, now: Date = .now) -> String {
 		switch status.phase {
 		case .syncing: return "Syncing…"

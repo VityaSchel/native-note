@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use native_note_core::http::{body_len, head_len};
+use native_note_core::http::{admitted_body_len, head_len};
 
 const SEALED_MIN: usize = 12 + 16;
 const SEALED_MAX: usize = (2 << 20) + SEALED_MIN;
@@ -22,7 +22,7 @@ fn check(input: &[u8]) {
 	let head = &input[..len];
 	assert!(head.ends_with(b"\r\n\r\n"));
 	assert_eq!(head_len(head), Some(len));
-	if let Ok(body) = body_len(head) {
+	if let Ok(body) = admitted_body_len(head) {
 		assert!(head.starts_with(b"POST / HTTP/1.1\r\n"));
 		assert!((SEALED_MIN..=SEALED_MAX).contains(&body));
 		assert_eq!(headers_named(head, b"content-length:"), 1);

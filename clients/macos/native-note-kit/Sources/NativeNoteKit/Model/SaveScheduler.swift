@@ -68,7 +68,6 @@ final class SaveScheduler {
 		pending[id] != nil
 	}
 
-	/// Keeps saves that fall due from landing until every hold is released, so a sync applies with none landing under it.
 	func hold() {
 		holds += 1
 	}

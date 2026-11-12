@@ -27,7 +27,6 @@ struct SessionEndToEndTests {
 		window.pump()
 	}
 
-	/// A first run starts on the welcome step, whose Next leads to the password fields.
 	private func submit(_ password: String, in window: OffscreenWindow<ContentView>, confirming: Bool) throws {
 		if confirming {
 			try #require(window.accessibilityElements(.button).first { $0.label == "Next" }).press()

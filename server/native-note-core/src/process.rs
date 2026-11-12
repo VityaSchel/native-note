@@ -5,8 +5,6 @@ use crate::storage::Storage;
 use crate::types::{Record, Seq, Version};
 use crate::version::{Status, put_status, write_status};
 
-/// Runs inside one caller-held transaction: commit on `Ok`, then seal; on `Err`, roll back and
-/// seal `Reply::error()`.
 pub fn process<S: Storage>(storage: &mut S, request: &Request) -> Result<Reply, Fault<S::Error>> {
 	let inner = match request {
 		Request::Sync { since, writes } => sync(storage, *since, writes)?,

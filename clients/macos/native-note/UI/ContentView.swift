@@ -20,7 +20,6 @@ struct ContentView: View {
 		Task { await model.delete(id) }
 	}
 
-	/// Undo restores the text as a new note, and redo deletes that note again.
 	private func offerUndo(of kept: UUID) {
 		guard let undoManager else { return }
 		undoManager.registerUndo(withTarget: model) { [weak undoManager] model in
@@ -73,7 +72,6 @@ struct ContentView: View {
 		}
 	}
 
-	/// One view from the first screen to the last, so the new password reaches the Touch ID step after the library opens.
 	private var onboarding: some View {
 		OnboardingView(
 			libraryExists: model.phase == .unlocked,
@@ -99,7 +97,6 @@ struct ContentView: View {
 
 	private static let allNotes = "all"
 
-	/// An empty library says so once, in the list, as Notes does.
 	@ViewBuilder
 	private var detail: some View {
 		if let note = model.selectedNote {
@@ -118,7 +115,6 @@ struct ContentView: View {
 		}
 	}
 
-	/// Window-level, so the buttons sit beside the search field with fixed gaps, as in Mail; column toolbars get a flexible space before search.
 	@ToolbarContentBuilder
 	private var libraryToolbar: some ToolbarContent {
 		ToolbarItemGroup {
@@ -167,7 +163,7 @@ struct ContentView: View {
 		}
 		.toolbar { libraryToolbar }
 		.failureAlert(model.failure, dismiss: model.dismissFailure)
-		.sheet(item: $exchange.presentedSheet, onDismiss: exchange.sheetClosed) { sheet in
+		.sheet(item: $exchange.presentedSheet, onDismiss: exchange.presentSavePanelOnceSheetCloses) { sheet in
 			switch sheet {
 			case .export:
 				ExportSheet(export: exchange.chooseExport(passphrase:)) { exchange.dismiss(.export) }

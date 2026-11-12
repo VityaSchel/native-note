@@ -219,7 +219,7 @@ struct AppDelegateTests {
 			delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
 
 			if away == "screen" {
-				#expect(await Self.post(notice))
+				#expect(await Self.postAndAwaitArrival(notice))
 			} else {
 				workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
 			}
@@ -238,21 +238,18 @@ struct AppDelegateTests {
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, workspace: NotificationCenter(), screenLocked: notice)
 		delegate.applicationDidFinishLaunching(Notification(name: NSApplication.didFinishLaunchingNotification))
 
-		#expect(await Self.post(notice))
+		#expect(await Self.postAndAwaitArrival(notice))
 
 		#expect(model.phase == .needsSetup)
 	}
 }
 
 extension AppDelegateTests {
-	/// A name only this test listens for, so posting it system-wide reaches nothing else.
 	static func privateScreenLockNotice() -> Notification.Name {
 		Notification.Name("dev.hloth.nativenote.tests.screen-locked.\(UUID().uuidString)")
 	}
 
-	/// Waits for the notice itself, which reaches the delegate first, rather than for an effect that may never come.
-	/// Delivery to the posting process ignores suspension, so this proves the subscription, not its delivery to a background app.
-	static func post(_ notice: Notification.Name) async -> Bool {
+	static func postAndAwaitArrival(_ notice: Notification.Name) async -> Bool {
 		let center = DistributedNotificationCenter.default()
 		let arrival = Arrival()
 		let token = center.addObserver(forName: notice, object: nil, queue: nil) { _ in

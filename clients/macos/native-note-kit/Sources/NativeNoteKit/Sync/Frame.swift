@@ -1,13 +1,13 @@
 import Foundation
 
-/// A note write as it travels, per docs/PROTOCOL.md § Action `sync`.
 nonisolated struct Write: Equatable, Sendable {
 	let blindedId: Data
 	let v: UInt32
 	let writeId: Data
 	let payload: Data
 
-	fileprivate static let headerLength = 16 + 4 + 16 + 4
+	fileprivate static let idLength = 16
+	fileprivate static let headerLength = idLength + 4 + idLength + 4
 
 	var encodedLength: Int {
 		Self.headerLength + payload.count
@@ -21,7 +21,7 @@ nonisolated struct Write: Equatable, Sendable {
 	}
 
 	fileprivate static func decode(from reader: inout WireReader) throws(WireError) -> Write {
-		Write(blindedId: try reader.take(16), v: try reader.u32(), writeId: try reader.take(16), payload: try reader.bytes())
+		Write(blindedId: try reader.take(idLength), v: try reader.u32(), writeId: try reader.take(idLength), payload: try reader.bytes())
 	}
 }
 

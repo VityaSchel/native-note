@@ -49,7 +49,7 @@ nonisolated enum Unlock {
 
 	private static func parameters(boundToThisMac: Bool) throws -> UnlockParameters {
 		UnlockParameters(
-			localSalt: SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) },
+			localSalt: Data.random(.bits128),
 			argon: try Argon2.calibrateMemory(),
 			enclaveKey: boundToThisMac ? try MachineKey().representation : nil
 		)
@@ -132,7 +132,7 @@ nonisolated enum Unlock {
 		let oldKey = try await provenKey(password: oldPassword, parameters: parameters, in: directory)
 
 		var next = parameters
-		next.localSalt = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
+		next.localSalt = Data.random(.bits128)
 		let calibrated = try await BlockingWork.run(calibrate)
 		next.argon = calibrated.m > parameters.argon.m ? calibrated : parameters.argon
 		let newKey = try await BlockingWork.run { [next] in try localDbKey(password: newPassword, parameters: next) }

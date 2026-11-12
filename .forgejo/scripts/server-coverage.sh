@@ -2,8 +2,7 @@
 set -euo pipefail
 
 nightly="nightly-2026-09-27"
-# Each package and the percent of its lines, branches and regions that deterministic tests must run.
-gates=("native-note-core 100" "native-note-server 90")
+minimum_percent_by_package=("native-note-core 100" "native-note-server 90")
 
 cd -P "$(dirname "$0")/../../server"
 
@@ -17,8 +16,8 @@ export LLVM_PROFILE_FILE="$work/profiles/%p-%m.profraw"
 export CARGO_TARGET_DIR="$work/target"
 
 packages=()
-for gate in "${gates[@]}"; do
-	packages+=(-p "${gate%% *}")
+for package_minimum in "${minimum_percent_by_package[@]}"; do
+	packages+=(-p "${package_minimum%% *}")
 done
 binaries="$(cargo "+$nightly" test --locked "${packages[@]}" --no-run --message-format=json | grep -oE '"executable":"[^"]+"' | cut -d'"' -f4)"
 objects=()
@@ -32,16 +31,15 @@ tools="$(rustc "+$nightly" --print sysroot)/lib/rustlib/$(rustc "+$nightly" --pr
 coverage=(-instr-profile="$work/tests.profdata" "${objects[@]}")
 
 status=0
-for gate in "${gates[@]}"; do
-	package="${gate%% *}"
-	minimum="${gate##* }"
+for package_minimum in "${minimum_percent_by_package[@]}"; do
+	package="${package_minimum%% *}"
+	minimum="${package_minimum##* }"
 	root="$(pwd -P)/$package/src"
 	sources=()
 	while IFS= read -r source; do
 		sources+=("$source")
 	done < <(find "$root" -name '*.rs' -not -name tests.rs -not -path '*/tests/*' | sort)
 
-	# llvm-cov report TOTAL, lcov LH/LF/BRH/BRF and the JSON summary take the maximum over copies of a function instead of the union, so only per-record data is read.
 	"$tools/llvm-cov" export -format=lcov "${coverage[@]}" -sources "${sources[@]}" >"$work/lcov.info"
 	while IFS= read -r source; do
 		echo "SF:$source"

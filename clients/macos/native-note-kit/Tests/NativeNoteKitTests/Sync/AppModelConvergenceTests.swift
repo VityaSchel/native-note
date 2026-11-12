@@ -3,7 +3,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// The exit run again through `AppModel`: real save scheduling, the editor's selection, and typing while requests are in flight.
 @MainActor @Suite(.timeLimit(.minutes(5)))
 struct AppModelConvergenceTests {
 	private final class Ledger {
@@ -40,7 +39,7 @@ struct AppModelConvergenceTests {
 		let server = try SyncServer()
 		let (first, firstTransport) = try await library(server, settings: nil)
 		let phrase = try newLibrary(await first.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)))
-		try #require(await first.finishSync(answers: phrase.checked.map { phrase.words[$0] }) == nil)
+		try #require(await first.finishSync(answers: phrase.positionsToConfirm.map { phrase.words[$0] }) == nil)
 		let (second, secondTransport) = try await library(server, settings: try await first.store?.syncSettings())
 		let models = [(first, firstTransport), (second, secondTransport)]
 		var random = SeededGenerator(seed: seed)

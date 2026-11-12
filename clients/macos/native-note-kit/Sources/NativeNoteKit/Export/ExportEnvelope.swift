@@ -34,7 +34,7 @@ nonisolated enum ExportEnvelope {
 		_ zip: Data,
 		passphrase: String,
 		parameters: Argon2.Parameters = Argon2.floor,
-		salt: Data = SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) },
+		salt: Data = Data.random(.bits128),
 		nonce: AES.GCM.Nonce = AES.GCM.Nonce()
 	) throws -> Data {
 		precondition(salt.count == saltLength)

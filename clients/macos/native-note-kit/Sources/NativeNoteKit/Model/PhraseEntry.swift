@@ -1,8 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// The join's word entry, per clients/DESIGN.md § Recovery flow. Each field's text is exactly what it shows, since
-/// SwiftUI leaves a field alone when a write does not change its bound value: the field being edited is tidied only once it is left.
 public nonisolated struct PhraseEntry: Equatable, Sendable {
 	public enum Problem: Equatable {
 		case unknownWord(Int)
@@ -18,7 +16,7 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 
 	public static let count = Mnemonic.wordCount
 	public private(set) var texts = Array(repeating: "", count: count)
-	private var settling: [Int: String] = [:]
+	private var deferredUntilLeft: [Int: String] = [:]
 
 	public init() {}
 
@@ -26,27 +24,27 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		texts.indices.map(word(at:))
 	}
 
-	/// Returns the field to focus after a paste or a space typed after a word: the next one, or `index` in the last field.
 	public mutating func set(_ text: String, at index: Int) -> Int? {
 		let old = texts[index]
 		guard text != old else { return nil }
 		texts[index] = text
-		settling[index] = nil
+		deferredUntilLeft[index] = nil
 		let pasted = Self.words(in: text)
 		guard !pasted.isEmpty else { return nil }
-		if Self.inserted(text, over: old) > 1, let numbered = Self.numbered(in: text) {
-			settling[index] = numbered[index].map(Self.completed) ?? old
+		let isPaste = Self.insertedCharacterCount(text, over: old) > 1
+		if isPaste, let numbered = Self.numberedWords(in: text) {
+			deferredUntilLeft[index] = numbered[index].map(Self.completed) ?? old
 			for (number, word) in numbered where number != index {
 				texts[number] = Self.completed(word)
-				settling[number] = nil
+				deferredUntilLeft[number] = nil
 			}
 			return min((numbered.keys.max() ?? index) + 1, Self.count - 1)
 		}
-		if Self.inserted(text, over: old) > 1 {
-			settling[index] = Self.completed(pasted[0])
+		if isPaste {
+			deferredUntilLeft[index] = Self.completed(pasted[0])
 			for (offset, word) in pasted.enumerated().dropFirst() where index + offset < Self.count {
 				texts[index + offset] = Self.completed(word)
-				settling[index + offset] = nil
+				deferredUntilLeft[index + offset] = nil
 			}
 			return min(index + pasted.count, Self.count - 1)
 		}
@@ -55,10 +53,9 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 	}
 
 	public mutating func complete(at index: Int) {
-		texts[index] = settling.removeValue(forKey: index) ?? Self.cleaned(texts[index])
+		texts[index] = deferredUntilLeft.removeValue(forKey: index) ?? Self.cleaned(texts[index])
 	}
 
-	/// A word still being typed in `editing` may be a prefix; anywhere else it must be a whole list word.
 	public func isInvalid(at index: Int, editing: Int?) -> Bool {
 		switch state(at: index) {
 		case .empty, .known: false
@@ -80,15 +77,13 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		Mnemonic.key(from: words)
 	}
 
-	/// Whether typed text is a whole list word, ignoring case and surrounding spaces as the check does.
 	public static func isListWord(_ text: String) -> Bool {
-		let word = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+		let word = normalized(text)
 		return Mnemonic.wordlist?.contains(word) == true
 	}
 
-	/// Whether typed text is a list word or the start of one, so a typo is flagged before the words are checked.
 	public static func couldBeListWord(_ text: String) -> Bool {
-		let word = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+		let word = normalized(text)
 		guard !word.isEmpty, let wordlist = Mnemonic.wordlist else { return true }
 		return wordlist.contains { $0.hasPrefix(word) }
 	}
@@ -102,7 +97,15 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 	}
 
 	private func word(at index: Int) -> String {
-		settling[index] ?? texts[index].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+		deferredUntilLeft[index] ?? Self.normalized(texts[index])
+	}
+
+	private static func normalized(_ text: String) -> String {
+		text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+	}
+
+	private static func isWordSeparator(_ character: Character) -> Bool {
+		character.isWhitespace || character == ","
 	}
 
 	private static func cleaned(_ text: String) -> String {
@@ -110,18 +113,16 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		return trimmed.allSatisfy(\.isLetter) ? completed(trimmed.lowercased()) : trimmed
 	}
 
-	/// Words split at whitespace and commas only, so a stray character inside a word keeps it one word.
 	private static func words(in text: String) -> [String] {
-		text.split { $0.isWhitespace || $0 == "," }
+		text.split(whereSeparator: isWordSeparator)
 			.map { $0.lowercased().trimmingCharacters(in: CharacterSet.letters.inverted) }
 			.filter { !$0.isEmpty }
 	}
 
-	/// Several words that each follow their number, as the shown list copies them ("1. action"), by field, so a list pasted in any order or one column of it lands where it belongs.
-	private static func numbered(in text: String) -> [Int: String]? {
+	private static func numberedWords(in text: String) -> [Int: String]? {
 		var number: Int?
 		var placed: [Int: String] = [:]
-		for token in text.split(whereSeparator: { $0.isWhitespace || $0 == "," }) {
+		for token in text.split(whereSeparator: isWordSeparator) {
 			let digits = token.prefix(while: \.isNumber)
 			let rest = token.dropFirst(digits.count).drop { $0 == "." || $0 == ")" }
 			if !digits.isEmpty {
@@ -137,8 +138,7 @@ public nonisolated struct PhraseEntry: Equatable, Sendable {
 		return placed.count > 1 && number == nil ? placed : nil
 	}
 
-	/// How many characters an edit put in, measured over a selection too, since a paste over a word need not grow the text.
-	private static func inserted(_ text: String, over old: String) -> Int {
+	private static func insertedCharacterCount(_ text: String, over old: String) -> Int {
 		let (new, was) = (Array(text), Array(old))
 		let prefix = zip(new, was).prefix { $0 == $1 }.count
 		let suffix = zip(new.dropFirst(prefix).reversed(), was.dropFirst(prefix).reversed()).prefix { $0 == $1 }.count

@@ -4,7 +4,6 @@ import SwiftUI
 struct ChangePasswordView: View {
 	let turnsTouchIDOff: Bool
 	let change: (String, String) async -> AppModel.Failure?
-	/// Offered right after a change that turned Touch ID unlock off, with the new password.
 	var offerTouchID: ((String) async -> AppModel.Failure?)?
 	var touchID = TouchIDControls()
 	let done: () -> Void
@@ -20,7 +19,7 @@ struct ChangePasswordView: View {
 	@ViewBuilder
 	var body: some View {
 		if let changedTo, let offerTouchID {
-			TurnOnTouchIDView(turnOn: offerTouchID, done: done, touchID: touchID, password: changedTo, declineTitle: "Not Now")
+			TurnOnTouchIDView(turnOn: offerTouchID, done: done, touchID: touchID, changedPassword: changedTo, declineTitle: "Not Now")
 		} else {
 			passwordForm
 		}

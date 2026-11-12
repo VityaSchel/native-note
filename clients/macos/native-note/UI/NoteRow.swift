@@ -30,7 +30,6 @@ struct NoteRow: View {
 		NoteGrouping.dateLabel(for: note.updated, now: now)
 	}
 
-	/// VoiceOver reads 2026.08.06 as a number, so an older date is spoken in words.
 	var spokenDate: String {
 		guard dateLabel.wholeMatch(of: /\d{4}\.\d{2}\.\d{2}/) != nil else { return dateLabel }
 		return note.updated.formatted(date: .long, time: .omitted)

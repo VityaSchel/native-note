@@ -1,9 +1,9 @@
-use super::SEALED_MAX;
 use super::client::{self, Response};
 use super::corpus::SplitMix64;
 use super::memory::{Injected, MemoryStorage};
+use super::{SEALED_MAX, server_key};
 use native_note_core::{
-	DecodeError, Envelope, EnvelopeKey, Fault, Rejection, Reply, Request, Secret, admit, process,
+	DecodeError, Envelope, EnvelopeKey, Fault, Rejection, Reply, Request, admit, process,
 };
 use native_note_testkit::session::Exchange;
 
@@ -36,7 +36,7 @@ pub struct Harness {
 impl Harness {
 	pub fn new(api_key: [u8; 32], storage: MemoryStorage) -> Self {
 		Self {
-			key: EnvelopeKey::derive(&Secret::new(api_key)).expect("a 32-byte key derives"),
+			key: server_key(api_key),
 			client_key: client::envelope_key(&api_key),
 			nonces: SplitMix64::new(NONCE_SEED),
 			storage,
@@ -88,7 +88,7 @@ impl Harness {
 		client::open_response(&self.client_key, request_nonce, reply)
 	}
 
-	pub fn post(&mut self, body: &[u8]) -> Vec<u8> {
+	pub fn post_and_open(&mut self, body: &[u8]) -> Vec<u8> {
 		let response_nonce = self.nonces.array();
 		let Http::Ok(reply) = self.exchange(body.to_vec(), response_nonce) else {
 			panic!("a sealed request gets a sealed reply");
@@ -101,7 +101,7 @@ impl Harness {
 
 	pub fn send(&mut self, inner: &[u8]) -> Vec<u8> {
 		let body = self.seal(inner);
-		self.post(&body)
+		self.post_and_open(&body)
 	}
 
 	pub fn call(&mut self, request: &Request) -> Response {
@@ -114,7 +114,7 @@ impl Exchange for Harness {
 		Harness::seal(self, inner)
 	}
 
-	fn post(&mut self, body: &[u8]) -> Vec<u8> {
-		Harness::post(self, body)
+	fn post_and_open(&mut self, body: &[u8]) -> Vec<u8> {
+		Harness::post_and_open(self, body)
 	}
 }

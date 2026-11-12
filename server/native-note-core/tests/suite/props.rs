@@ -1,10 +1,9 @@
 use crate::support::client::{self, Response, Status, WriteResult};
 use crate::support::harness::{Failure, Harness};
 use crate::support::memory::{Injected, MemoryStorage};
-use crate::support::{NOTE_MAX, open};
+use crate::support::{NOTE_MAX, open, server_key};
 use native_note_core::{
-	BlindedNoteId, DecodeError, EnvelopeKey, Fault, Record, Rejection, Request, Secret, Seq,
-	Version,
+	BlindedNoteId, DecodeError, Fault, Record, Rejection, Request, Seq, Version,
 };
 use proptest::collection::vec;
 use proptest::prelude::*;
@@ -67,10 +66,6 @@ fn decodable_or_not() -> impl Strategy<Value = Vec<u8>> {
 	]
 }
 
-fn server_key() -> EnvelopeKey {
-	EnvelopeKey::derive(&Secret::new(API_KEY)).expect("a 32-byte key derives")
-}
-
 proptest! {
 	#[test]
 	fn a_request_decodes_back_from_its_encoding(request in request()) {
@@ -107,7 +102,7 @@ proptest! {
 		request in request(),
 		nonce in any::<[u8; 12]>(),
 	) {
-		let key = server_key();
+		let key = server_key(API_KEY);
 		let inner = client::encode_request(&request);
 		let body = client::seal_request(&client::envelope_key(&API_KEY), nonce, &inner);
 		for cut in 0..body.len() {

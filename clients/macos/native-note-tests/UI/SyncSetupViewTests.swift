@@ -18,7 +18,7 @@ private final class Calls {
 }
 
 private let realWords = Mnemonic.words(for: .init(data: Data((0 ..< 32).map { UInt8($0 * 5 + 1) }))) ?? []
-private let phrase = AppModel.RecoveryPhrase(words: realWords, checked: [2, 10, 19])
+private let phrase = AppModel.RecoveryPhrase(words: realWords, positionsToConfirm: [2, 10, 19])
 private let checkedWords = [2, 10, 19].map { realWords[$0] }
 private let numberedList = realWords.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
 
@@ -128,7 +128,6 @@ struct SyncSetupViewTests {
 		offscreen.pump()
 	}
 
-	/// Static text and the sheet's title, which VoiceOver reads as a heading.
 	private func texts(_ offscreen: OffscreenWindow<SyncSetupView>) -> [String] {
 		offscreen.accessibilityElements().filter { [.staticText, NSAccessibility.Role(rawValue: "AXHeading")].contains($0.role) }.map { $0.value.isEmpty ? $0.label : $0.value }
 	}

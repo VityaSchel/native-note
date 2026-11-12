@@ -1,7 +1,6 @@
 import NativeNoteKit
 import SwiftUI
 
-/// The toolbar's Sync Now: turns while syncing, and shows a warning with the reason after a failure.
 struct SyncButton: View {
 	let status: AppModel.SyncStatus
 	let sync: () -> Void

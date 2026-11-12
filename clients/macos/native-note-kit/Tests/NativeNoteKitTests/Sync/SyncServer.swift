@@ -5,7 +5,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// The reference server from server/, built once per test run, each instance in its own data directory.
 final class SyncServer: @unchecked Sendable {
 	private static let workspace = URL(filePath: #filePath).appending(path: "../../../../../../../server").standardized
 
@@ -53,7 +52,6 @@ final class SyncServer: @unchecked Sendable {
 		}
 	}
 
-	/// Ends the server at once, as a crash or a power cut would.
 	func kill() {
 		let running = lock.withLock {
 			defer { process = nil }
@@ -96,14 +94,12 @@ final class SyncServer: @unchecked Sendable {
 	}
 }
 
-/// Posts to whatever address the server listens on now, failing or killing on command.
 final class TestTransport: SyncTransport, @unchecked Sendable {
 	enum Fault {
 		case none
 		case dropRequest
 		case dropResponse
 		case killServer
-		/// The server takes the request, then a proxy in front of it answers with an error.
 		case replyReplaced
 	}
 
@@ -111,7 +107,6 @@ final class TestTransport: SyncTransport, @unchecked Sendable {
 	private let lock = NSLock()
 	private var faults: [Fault] = []
 	private(set) var posted = 0
-	/// Runs while a request is in flight, as typing would.
 	var whilePosting: (@MainActor () async -> Void)?
 
 	init(_ server: SyncServer) {

@@ -146,7 +146,7 @@ struct NoteEditorTests {
 		#expect(!textView.isRichText)
 		#expect(textView.allowsUndo)
 		#expect(textView.usesFindBar)
-		#expect(textView.textContainerInset == NSSize(width: 28, height: NoteEditor.topInset))
+		#expect(textView.textContainerInset == NSSize(width: 28, height: NoteEditor.dateLineInset))
 		#expect(!textView.drawsBackground)
 		#expect(!editor.scrollView.drawsBackground)
 		#expect(editor.scrollView.borderType == .noBorder)

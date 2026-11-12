@@ -1,6 +1,5 @@
 import Testing
 
-/// SwiftUI moves focus less reliably while another test's window moves it too, so tests that check focus take turns.
 struct TakesFocus: SuiteTrait, TestTrait, TestScoping {
 	@MainActor private static var held = false
 	@MainActor private static var waiting: [CheckedContinuation<Void, Never>] = []

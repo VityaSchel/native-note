@@ -27,6 +27,14 @@ struct NoteListView: View {
 		return hidden
 	}
 
+	private static func previewSafe(_ row: NoteRow) -> some View {
+		ZStack(alignment: .leading) { row }
+	}
+
+	private var remeasuresFirstRow: Bool {
+		groups.isEmpty
+	}
+
 	var body: some View {
 		List(selection: Binding(get: { selection }, set: { chosen in
 			selection = chosen
@@ -35,9 +43,7 @@ struct NoteListView: View {
 			ForEach(groups) { group in
 				Section(group.title) {
 					ForEach(group.notes) { note in
-						// Containing the row dodges a macOS previews trap on custom views used directly as List rows.
-						// https://developer.apple.com/forums/thread/803429
-						ZStack(alignment: .leading) { NoteRow(note: note, now: now) }
+						Self.previewSafe(NoteRow(note: note, now: now))
 							.listRowInsets(EdgeInsets(top: 0, leading: 18.5, bottom: 0, trailing: 15.5))
 							.listRowSeparator(.hidden, edges: Self.separatorsHidden(for: note, in: group))
 							.tag(note.id)
@@ -46,8 +52,7 @@ struct NoteListView: View {
 			}
 		}
 		.listStyle(.inset)
-		// SwiftUI sizes the first row added to an empty list at the default height and never measures it again.
-		.id(groups.isEmpty)
+		.id(remeasuresFirstRow)
 		.focused($focused)
 		.onDeleteCommand(perform: selection.map { id in { delete(id) } })
 		.contextMenu(forSelectionType: UUID.self) { ids in

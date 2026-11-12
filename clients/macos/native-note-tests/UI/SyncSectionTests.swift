@@ -38,7 +38,6 @@ private struct ChangingSyncForm: View {
 
 @MainActor
 struct SyncSectionTests {
-	/// A retry after a failure keeps the reason's room, so Settings and an open sheet stay put while it runs.
 	@Test func aRetryAfterAFailureKeepsTheSectionsHeightUntilItEnds() {
 		let server = "http://127.0.0.1:8080"
 		let reason = "Could not connect to the server. Check that it is running and that its address is right."

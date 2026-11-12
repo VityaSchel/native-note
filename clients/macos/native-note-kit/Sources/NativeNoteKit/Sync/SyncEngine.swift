@@ -1,6 +1,5 @@
 import Foundation
 
-/// Pushes dirty notes and pulls by `seq` until caught up, per clients/DESIGN.md § Pull verification and § Conflicts.
 final class SyncEngine {
 	typealias Apply = (Commit) async throws -> Applied
 
@@ -17,7 +16,6 @@ final class SyncEngine {
 		cipher = NoteCipher(contentKey: settings.contentKey)
 	}
 
-	/// Each response goes through `apply`, which commits it; a caller with unsaved edits wraps the commit.
 	func sync(apply: Apply? = nil) async throws -> Applied {
 		let apply = apply ?? { [store] in try await store.commit($0) }
 		var total = try await apply(.settleLastVersion)
@@ -42,8 +40,8 @@ final class SyncEngine {
 			}
 			for sealed in batch { unacknowledged[sealed.write.writeId] = nil }
 			let (pulled, unverifiable) = await Self.open(changes, with: cipher)
-			let last = changes.last.map { PullMark(blindedId: $0.blindedId, v: $0.v) }
-			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, last: last)
+			let pullMark = changes.last.map { PullMark(blindedId: $0.blindedId, v: $0.v) }
+			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, pullMark: pullMark)
 			var applied = try await apply(.exchange(exchange))
 			applied.problems += Array(repeating: .unverifiableChange, count: unverifiable)
 			let resolved = Set(pulled.map(\.content.id))
@@ -67,7 +65,6 @@ final class SyncEngine {
 		}
 	}
 
-	/// Seals every dirty note that fits the note limit, as many as fit one request.
 	@concurrent
 	private nonisolated static func seal(_ notes: [Note], with cipher: NoteCipher) async throws -> (batch: [SealedWrite], tooLarge: [UUID]) {
 		var batch: [SealedWrite] = []
@@ -102,7 +99,6 @@ final class SyncEngine {
 }
 
 extension SyncEngine {
-	/// Any server still holding this library as this Mac last saw it has the write a pull last ended on, or one that replaced it, at or after `since`.
 	static func holds(_ mark: PullMark, through connection: SyncConnection, since: UInt64) async throws -> Bool {
 		var after = max(since, 1) - 1
 		while true {

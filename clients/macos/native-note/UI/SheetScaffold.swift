@@ -1,19 +1,15 @@
 import SwiftUI
 
-/// Every sheet's frame, as Apple's own sheets are laid out: a title, one line saying what the sheet does, labeled fields, the error under them, and the buttons at the bottom trailing edge. The error has room kept for it, so one appearing moves nothing.
-/// A multi-step sheet puts Cancel at the leading edge, apart from Back and Continue, as Xcode's assistants do.
 struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 	let title: String
 	var explanation: String?
 	var error: String?
 	var working = false
 	var width: CGFloat = 400
-	/// Off while a step can show no error, such as waiting for a touch, so its content sits midway.
 	var reservesError = true
 	@ViewBuilder var fields: Fields
 	@ViewBuilder var leadingButtons: Leading
 	@ViewBuilder var buttons: Buttons
-	/// A new error is read out, since VoiceOver stays on the field it came from.
 	var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
 
 	var body: some View {

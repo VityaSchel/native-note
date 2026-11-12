@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// A put whose answer is lost or replaced after it reached the server, per clients/DESIGN.md § Recovery flow.
 struct RecoveryFlowTests {
 	private struct Unreachable: SyncTransport {
 		let attempts = Counter()
@@ -22,7 +21,6 @@ struct RecoveryFlowTests {
 		func increment() { lock.withLock { count += 1 } }
 	}
 
-	/// Each attempt reaches the scripted server or not, and loses its answer or not, as the script says.
 	private final class StagedTransport: SyncTransport, @unchecked Sendable {
 		enum Stage {
 			case delivered

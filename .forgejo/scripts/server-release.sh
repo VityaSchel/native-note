@@ -15,8 +15,7 @@ sha256() {
 	if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
 }
 
-# Same bytes for the same inputs: fixed owner, modes, order and time, and gzip without a name or time.
-pack() {
+pack_reproducibly() {
 	local tarball="$1" dir="$2"
 	shift 2
 	if tar --version 2>/dev/null | grep -q "GNU tar"; then
@@ -55,9 +54,10 @@ for remap in "${remaps[@]}"; do
 	rustflags+=("--remap-path-prefix=$remap")
 	cflags+=("-ffile-prefix-map=$remap")
 done
-export CARGO_ENCODED_RUSTFLAGS="$(IFS=$'\x1f'; echo "${rustflags[*]}")"
+CARGO_ENCODED_RUSTFLAGS="$(IFS=$'\x1f'; echo "${rustflags[*]}")"
+SOURCE_DATE_EPOCH="$(git -C "$root" log -1 --format=%ct)"
+export CARGO_ENCODED_RUSTFLAGS SOURCE_DATE_EPOCH
 export CARGO_TARGET_DIR="$work/target"
-export SOURCE_DATE_EPOCH="$(git -C "$root" log -1 --format=%ct)"
 export ZIG_GLOBAL_CACHE_DIR="$work/zig-cache" ZIG_LOCAL_CACHE_DIR="$work/zig-cache"
 
 mkdir -p "$out"
@@ -75,9 +75,8 @@ for target in "${targets[@]}"; do
 	mkdir -p "$package"
 	install -m 0755 "$work/target/$target/release/native-note-server" "$package/native-note-server"
 	install -m 0644 "$root/server/native-note-server.service" "$package/native-note-server.service"
-	pack "$out/native-note-server-$target.tar.gz" "$package" native-note-server native-note-server.service
+	pack_reproducibly "$out/native-note-server-$target.tar.gz" "$package" native-note-server native-note-server.service
 done
-# Cargo hashes `rustc -vV`, which names the build host, into every crate, so only builds on the same host match.
 echo "built on $(rustc -vV | sed -n 's/^host: //p')"
 cd "$out"
 tarballs=("${targets[@]/#/native-note-server-}")

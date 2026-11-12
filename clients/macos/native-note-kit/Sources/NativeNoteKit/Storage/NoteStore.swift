@@ -39,11 +39,9 @@ actor NoteStore {
 
 	enum Saved: Equatable {
 		case saved
-		/// A pull replaced the note after the edit began, at the `v` the note carries, so the edit became this new note.
 		case copied(UUID)
 	}
 
-	/// Writes a local edit, never `v`, never over a tombstone, and never over text a pull wrote after the edit began.
 	@discardableResult
 	func save(_ note: Note) throws -> Saved {
 		try connection.transaction {
@@ -53,7 +51,8 @@ actor NoteStore {
 				try put(note, pulled: false)
 				return .saved
 			}
-			if held.int(0) != Int64(note.v), held.int(1) != 0 {
+			let pulledAfterEditBegan = held.int(0) != Int64(note.v) && held.int(1) != 0
+			if pulledAfterEditBegan {
 				let copy = Note(id: UUID(), body: note.body, createdAt: note.createdAt, updatedAt: note.updatedAt, dirty: true)
 				try put(copy, pulled: false)
 				return .copied(copy.id)
@@ -71,7 +70,6 @@ actor NoteStore {
 		}
 	}
 
-	/// Writes every column, tombstones included, unlike a local save.
 	func put(_ note: Note, pulled: Bool) throws {
 		let statement = try connection.prepare(
 			"""
@@ -153,7 +151,6 @@ actor NoteStore {
 		return try collect(statement)
 	}
 
-	/// A note no server has seen leaves no trace; one that synced leaves a tombstone, as a delete does.
 	func discardUnsynced(id: UUID, at moment: Int64) throws {
 		try connection.transaction {
 			let statement = try connection.prepare("DELETE FROM note WHERE uuid = ?1 AND v = 0 RETURNING uuid")
@@ -163,7 +160,6 @@ actor NoteStore {
 		}
 	}
 
-	/// A note never saved gets a tombstone the server never hears of, so a save still pending for it cannot bring it back.
 	func markDeleted(id: UUID, at moment: Int64) throws {
 		let statement = try connection.prepare(
 			"""

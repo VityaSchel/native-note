@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// The library in `fixtures/` was written through `NoteStore` by the prebuilt SQLCipher 4.17.0 the app shipped before building it from source.
 enum PrebuiltLibrary {
 	static let key = SymmetricKey(data: Data(0 ..< 32))
 	static let moment: Int64 = 1_760_000_000_000

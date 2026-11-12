@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// A directory of its own under the system temporary directory, removed on drop.
 pub struct Scratch(PathBuf);
 
 impl Scratch {

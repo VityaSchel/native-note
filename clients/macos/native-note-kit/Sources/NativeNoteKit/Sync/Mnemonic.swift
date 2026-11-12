@@ -1,13 +1,11 @@
 import CryptoKit
 import Foundation
 
-/// BIP39's English word mapping and checksum for a 256-bit key; BIP39 seed derivation is never used.
 nonisolated enum Mnemonic {
 	static let wordCount = 24
 	private static let bitsPerWord = 11
 	private static let wordlistSHA256 = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
 
-	/// The pinned list from spec/wordlists, or nil when the bundled file is not exactly it.
 	static let wordlist: [String]? = {
 		guard let url = Bundle.module.url(forResource: "english", withExtension: "txt"),
 			let file = try? Data(contentsOf: url),
@@ -16,7 +14,6 @@ nonisolated enum Mnemonic {
 		return String(decoding: file, as: UTF8.self).split(separator: "\n").map(String.init)
 	}()
 
-	/// Bits are read in place rather than collected, so no array of key bits outlives the call.
 	static func words(for key: SymmetricKey) -> [String]? {
 		guard let wordlist else { return nil }
 		return key.withUnsafeBytes { entropy in

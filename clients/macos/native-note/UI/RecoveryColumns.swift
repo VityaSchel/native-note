@@ -17,10 +17,10 @@ struct RecoveryColumns: NSViewRepresentable {
 	}
 }
 
-/// One text in a TextKit 1 container per column; this view takes the mouse, since a column's text view only selects within itself.
 final class RecoveryColumnsView: NSView {
 	static let gap: CGFloat = 24
 	private static let lineSpacing: CGFloat = 6
+	fileprivate static let figureSpace = "\u{2007}"
 
 	private let storage = NSTextStorage()
 	private let typesetting = NSLayoutManager()
@@ -101,11 +101,10 @@ final class RecoveryColumnsView: NSView {
 		.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
 	}
 
-	/// A column's lines; a number shorter than the column's longest gets figure spaces so the words line up, which copying leaves out.
 	static func lines(_ words: [String], column: Int) -> [String] {
 		let numbers = (column * RecoveryWords.rows ..< min((column + 1) * RecoveryWords.rows, words.count)).map { $0 + 1 }
 		let width = String(numbers.last ?? 0).count
-		return numbers.map { String(repeating: "\u{2007}", count: width - String($0).count) + "\($0). \(words[$0 - 1])" }
+		return numbers.map { String(repeating: figureSpace, count: width - String($0).count) + "\($0). \(words[$0 - 1])" }
 	}
 
 	private static func attributed(_ words: [String]) -> NSAttributedString {
@@ -192,7 +191,7 @@ final class RecoveryColumnsView: NSView {
 
 private final class ColumnTextView: NSTextView {
 	override func writeSelection(to pasteboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
-		let text = (string as NSString).substring(with: selectedRange()).replacingOccurrences(of: "\u{2007}", with: "")
+		let text = (string as NSString).substring(with: selectedRange()).replacingOccurrences(of: RecoveryColumnsView.figureSpace, with: "")
 		guard !text.isEmpty else { return false }
 		pasteboard.clearContents()
 		return pasteboard.setString(text, forType: .string)

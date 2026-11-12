@@ -3,7 +3,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// A save carries the `v` its edit began at; it never overwrites text a pull wrote after that.
 @MainActor
 struct SaveArbitrationTests {
 	private func pulled(_ store: NoteStore, _ note: Note, body: String, v: UInt32) async throws {

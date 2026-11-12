@@ -5,7 +5,6 @@ import Foundation
 
 let sharedContentKey = SymmetricKey(data: Data((0 ..< 32).map { UInt8($0) }))
 
-/// One client of a test server: its own library, engine and clock.
 @MainActor
 final class SyncDevice {
 	let store: NoteStore
@@ -53,7 +52,6 @@ final class SyncDevice {
 		try await engine.sync()
 	}
 
-	/// A fresh engine, as after a relaunch, which has forgotten every unacknowledged write.
 	func relaunch() {
 		engine = SyncEngine(store: store, settings: settings, transport: transport)
 	}

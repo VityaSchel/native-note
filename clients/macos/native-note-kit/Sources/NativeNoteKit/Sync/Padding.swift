@@ -1,6 +1,5 @@
 import Foundation
 
-/// `len_be32 ‖ inner ‖ zero fill` to the smallest bucket that holds it, per docs/PROTOCOL.md § Padding.
 nonisolated enum Padding {
 	static let bodyMax = 2 << 20
 	static let innerMax = bodyMax - lengthPrefix

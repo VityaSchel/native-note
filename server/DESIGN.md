@@ -28,7 +28,7 @@ Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. With `ring` the server
 - `Envelope`, `Opened` and `Reply`, which hold whole sealed or padded frames, have no `Debug`.
 - The HTTP request head is parsed in the core, so it falls under the coverage gate and a fuzz target.
 - The non-test builds of both crates forbid panicking APIs and unchecked arithmetic by lint; [lib.rs](native-note-core/src/lib.rs) and [clippy.toml](clippy.toml) list the bans.
-- Every line, branch and region of `native-note-core/src` outside its tests runs under a deterministic test, property tests excluded, and at least 90% of `native-note-server/src`'s, measured with the nightly pinned in [server-coverage.sh](../.forgejo/scripts/server-coverage.sh).
+- Every line, branch and region of `native-note-core/src` outside its tests runs under a deterministic test, property tests excluded, and at least 90% of `native-note-server/src`'s, measured with the nightly pinned in [server-coverage.sh](../.forgejo/scripts/server-coverage.sh), from per-record data, since `llvm-cov`'s summaries take the maximum over a function's copies instead of their union.
 
 ## Server API
 

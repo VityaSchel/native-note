@@ -19,10 +19,8 @@ import UniformTypeIdentifiers
 	var isExporting = false
 	private var chosenExport: ExportChoice?
 	static let window = "library"
-	/// Brings the library window back after it closed; set by its view, which can open windows.
 	@ObservationIgnored var showWindow: (() -> Void)?
-	/// Swapped by tests, which must not show a panel.
-	@ObservationIgnored var presentPanel: @MainActor (NSSavePanel, @escaping (URL) -> Void) -> Void = LibraryExchange.run
+	@ObservationIgnored var presentPanel: @MainActor (NSSavePanel, @escaping (URL) -> Void) -> Void = LibraryExchange.presentAttachedToWindow
 	private(set) var pendingImport: URL?
 	private(set) var isImporting = false
 	var lastImport: ImportSummary?
@@ -51,7 +49,6 @@ import UniformTypeIdentifiers
 		!isImporting && sheet == nil
 	}
 
-	/// The library's commands wait for it to show, past unlock and the first-run sync step.
 	var acceptsCommands: Bool {
 		showsLibrary && sheet == nil
 	}
@@ -83,7 +80,6 @@ import UniformTypeIdentifiers
 		}
 	}
 
-	/// The library's commands bring a closed window back first, as Notes does.
 	func newNote() {
 		showWindow?()
 		Task { await model.createNote() }
@@ -99,7 +95,6 @@ import UniformTypeIdentifiers
 		isExporting = true
 	}
 
-	/// The list's search lives in the window's toolbar, which AppKit focuses as Notes and Mail do.
 	func focusSearch(in window: NSWindow? = NSApp.mainWindow) {
 		window?.toolbar?.items.lazy.compactMap { $0 as? NSSearchToolbarItem }.first?.beginSearchInteraction()
 	}
@@ -111,8 +106,7 @@ import UniformTypeIdentifiers
 		isExporting = false
 	}
 
-	/// A window shows one sheet at a time, so the save panel waits for the export sheet to close.
-	func sheetClosed() {
+	func presentSavePanelOnceSheetCloses() {
 		guard let choice = chosenExport else { return }
 		chosenExport = nil
 		guard showsLibrary else { return }
@@ -131,8 +125,7 @@ import UniformTypeIdentifiers
 		presentPanel(panel) { url in Task { await self.receive(url) } }
 	}
 
-	/// Attached to the library window, as Apple apps attach their save and open panels.
-	private static func run(_ panel: NSSavePanel, chosen: @escaping (URL) -> Void) {
+	private static func presentAttachedToWindow(_ panel: NSSavePanel, chosen: @escaping (URL) -> Void) {
 		guard let window = NSApp.mainWindow ?? NSApp.keyWindow else {
 			if panel.runModal() == .OK, let url = panel.url { chosen(url) }
 			return
@@ -148,19 +141,19 @@ import UniformTypeIdentifiers
 		if AppModel.isEncryptedExport(at: url) {
 			pendingImport = url
 		} else {
-			await run(url, passphrase: nil)
+			await importLibrary(from: url, passphrase: nil)
 		}
 	}
 
 	func importPending(passphrase: String) async {
 		guard let url = pendingImport, !isImporting else { return }
 		if passphraseRefused { model.dismissFailure() }
-		await run(url, passphrase: passphrase)
+		await importLibrary(from: url, passphrase: passphrase)
 		guard !passphraseRefused else { return }
 		pendingImport = nil
 	}
 
-	private func run(_ url: URL, passphrase: String?) async {
+	private func importLibrary(from url: URL, passphrase: String?) async {
 		isImporting = true
 		defer { isImporting = false }
 		lastImport = await model.importLibrary(from: url, passphrase: passphrase)

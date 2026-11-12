@@ -34,8 +34,7 @@ extension SyncControls {
 
 struct SyncSetupView: View {
 	let controls: SyncControls
-	/// Runs once sync is on, before `done`, which also runs on Cancel.
-	let finished: () -> Void
+	let syncTurnedOn: () -> Void
 	let done: () -> Void
 	let clipboard: RecoveryClipboard
 	let announce: (String) -> Void
@@ -46,8 +45,8 @@ struct SyncSetupView: View {
 	@State private var phraseTookEffect = false
 	@State private var running: Task<Void, Never>?
 
-	init(mode: SyncSetupForm.Mode, controls: SyncControls, clipboard: RecoveryClipboard = .shared, finished: @escaping () -> Void = {}, done: @escaping () -> Void) {
-		self.init(form: SyncSetupForm(mode: mode), controls: controls, clipboard: clipboard, finished: finished, done: done)
+	init(mode: SyncSetupForm.Mode, controls: SyncControls, clipboard: RecoveryClipboard = .shared, syncTurnedOn: @escaping () -> Void = {}, done: @escaping () -> Void) {
+		self.init(form: SyncSetupForm(mode: mode), controls: controls, clipboard: clipboard, syncTurnedOn: syncTurnedOn, done: done)
 	}
 
 	init(
@@ -55,13 +54,13 @@ struct SyncSetupView: View {
 		controls: SyncControls,
 		clipboard: RecoveryClipboard = .shared,
 		announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() },
-		finished: @escaping () -> Void = {},
+		syncTurnedOn: @escaping () -> Void = {},
 		done: @escaping () -> Void
 	) {
 		self.controls = controls
 		self.clipboard = clipboard
 		self.announce = announce
-		self.finished = finished
+		self.syncTurnedOn = syncTurnedOn
 		self.done = done
 		_form = State(initialValue: form)
 	}
@@ -98,7 +97,7 @@ struct SyncSetupView: View {
 	}
 
 	private func unknownAnswer(_ phrase: AppModel.RecoveryPhrase) -> Int? {
-		zip(phrase.checked, form.answers).first { !PhraseEntry.couldBeListWord($0.1) }.map { $0.0 + 1 }
+		zip(phrase.positionsToConfirm, form.answers).first { !PhraseEntry.couldBeListWord($0.1) }.map { $0.0 + 1 }
 	}
 
 	@ViewBuilder
@@ -122,7 +121,7 @@ struct SyncSetupView: View {
 		case .server where form.mode == .changeServer: "Enter this library's server and its API key, also after the server moved or its key was replaced. An empty server takes the library under new recovery words; one that holds another library is refused."
 		case .server: nil
 		case .words: "These words are used to encrypt your notes on your sync server. Keep them safe and never share with anyone."
-		case let .confirm(phrase): "Enter words \(Self.list(phrase.checked.map { $0 + 1 })) from the phrase you wrote down."
+		case let .confirm(phrase): "Enter words \(Self.list(phrase.positionsToConfirm.map { $0 + 1 })) from the phrase you wrote down."
 		case .join: "This server already holds a library. Enter its current 24-word recovery phrase, and this Mac syncs with it."
 		case .currentPhrase: "The recovery phrase was changed on another Mac. Enter its current 24 words to continue."
 		}
@@ -164,7 +163,7 @@ struct SyncSetupView: View {
 			Button("Copy Words") { clipboard.copy(phrase.words) }
 		case let .confirm(phrase):
 			Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 6) {
-				ForEach(Array(phrase.checked.enumerated()), id: \.offset) { position, index in
+				ForEach(Array(phrase.positionsToConfirm.enumerated()), id: \.offset) { position, index in
 					GridRow {
 						WordNumber(index: index)
 						TextField("Word \(index + 1)", text: $form.answers[position], prompt: Text(verbatim: ""))
@@ -196,7 +195,7 @@ struct SyncSetupView: View {
 				let start = await controls.prepareSync(server, apiKey)
 				guard start != .success(.reattached) else {
 					form.finished(nil)
-					finished()
+					syncTurnedOn()
 					return done()
 				}
 				form.prepared(start)
@@ -211,7 +210,7 @@ struct SyncSetupView: View {
 				form.finished(failure)
 				guard failure == nil else { return }
 				phraseTookEffect = true
-				finished()
+				syncTurnedOn()
 				done()
 			}
 		case .join:
@@ -221,7 +220,7 @@ struct SyncSetupView: View {
 				let failure = await controls.joinSync(server, apiKey, phrase)
 				form.finished(failure)
 				guard failure == nil else { return }
-				finished()
+				syncTurnedOn()
 				done()
 			}
 		case .currentPhrase:
@@ -238,11 +237,9 @@ struct SyncSetupView: View {
 	}
 }
 
-/// The words flow down each column, then across, as a list written on paper.
 struct RecoveryWords: View {
 	static let columns = 3
 	static let rows = 8
-	/// Shown blurred in place of every word until they are revealed, so the blur gives nothing away.
 	static let hiddenWord = "••••••••"
 	static let warning = "Make sure your screen isn't watched"
 	let words: [String]

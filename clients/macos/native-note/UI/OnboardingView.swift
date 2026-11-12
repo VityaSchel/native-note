@@ -7,7 +7,6 @@ struct OnboardingView: View {
 		case welcome, password, touchID, sync
 	}
 
-	/// Steps 3 and 4 open on a library that already exists, as when the window is made again mid-onboarding.
 	let libraryExists: Bool
 	let createLibrary: (String) async -> AppModel.Failure?
 	var failure: AppModel.Failure?
@@ -22,8 +21,7 @@ struct OnboardingView: View {
 
 	@State private var chosen: Step?
 	@State private var form = UnlockForm()
-	/// The new password, held only until the Touch ID step uses or skips it.
-	@State private var password: String?
+	@State private var passwordForTouchID: String?
 	@State private var touchIDForm = TurnOnTouchIDForm()
 	@State private var touchIDAttempt = 0
 	@State private var settingUpSync = false
@@ -43,7 +41,7 @@ struct OnboardingView: View {
 			.padding(32)
 			.failureAlert(failure, dismiss: dismissFailure)
 			.sheet(isPresented: $settingUpSync) {
-				SyncSetupView(mode: .setUp, controls: sync, clipboard: clipboard, finished: finish) { settingUpSync = false }
+				SyncSetupView(mode: .setUp, controls: sync, clipboard: clipboard, syncTurnedOn: finish) { settingUpSync = false }
 			}
 	}
 
@@ -99,7 +97,6 @@ struct OnboardingView: View {
 		}
 	}
 
-	/// Markdown with an interpolated URL in a `Text` key opened a URL Launch Services refused, so the link is set as an attribute.
 	static var syncSubtitle: AttributedString {
 		var server = AttributedString("Native Note server")
 		server.link = Guide.syncServer
@@ -148,7 +145,7 @@ struct OnboardingView: View {
 			form.finish(failure)
 			guard failure == nil else { return }
 			if touchIDAvailable {
-				password = typed
+				passwordForTouchID = typed
 				chosen = .touchID
 			} else {
 				chosen = .sync
@@ -157,8 +154,8 @@ struct OnboardingView: View {
 	}
 
 	private func setUpTouchID() {
-		guard let password else { return skipTouchID() }
-		touchIDForm.password = password
+		guard let passwordForTouchID else { return skipTouchID() }
+		touchIDForm.password = passwordForTouchID
 		guard let sent = touchIDForm.submit() else { return }
 		touchIDAttempt += 1
 		let attempt = touchIDAttempt
@@ -177,7 +174,7 @@ struct OnboardingView: View {
 
 	private func leaveTouchID() {
 		touchIDAttempt += 1
-		password = nil
+		passwordForTouchID = nil
 		touchIDForm = TurnOnTouchIDForm()
 		chosen = .sync
 	}
@@ -230,7 +227,6 @@ private struct SymbolPicture: View {
 	}
 }
 
-/// HIG Buttons: a step that does not complete at once shows an activity indicator beside its title.
 struct OnboardingLabel: View {
 	let title: String
 	var busy = false
@@ -266,7 +262,6 @@ private struct TallSecureField: View {
 	}
 }
 
-/// A line kept for a message, so one appearing moves nothing.
 private struct ReservedMessage: View {
 	let text: String?
 

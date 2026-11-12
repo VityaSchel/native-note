@@ -3,7 +3,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// The server sees a payload's length; per docs/ARCHITECTURE.md § Threat model it learns only whole 4 KiB blocks.
 struct PayloadLengthTests {
 	private let cipher = NoteCipher(contentKey: sharedContentKey)
 	private let fields = 1 + 1 + 16 + 8 + 8 + 4

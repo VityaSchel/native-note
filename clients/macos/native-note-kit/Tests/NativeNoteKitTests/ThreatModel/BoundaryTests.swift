@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// The out-of-scope items and documented risks of docs/ARCHITECTURE.md § Threat model hold exactly where they are drawn.
 @MainActor @Suite(.timeLimit(.minutes(2)))
 struct BoundaryTests {
 	private let repository = URL(filePath: #filePath).appending(path: "../../../../../../..").standardized

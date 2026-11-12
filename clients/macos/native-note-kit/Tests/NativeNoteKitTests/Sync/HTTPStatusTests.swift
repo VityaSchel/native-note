@@ -4,7 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-/// Only a 400 can mean a refused key, and it names the proxy that may have caused it; a redirect or a fault says so instead.
 @MainActor
 struct HTTPStatusTests {
 	private struct Answering: SyncTransport {

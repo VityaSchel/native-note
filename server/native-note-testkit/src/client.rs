@@ -17,7 +17,6 @@ pub fn sync(since: u64, writes: &[Record]) -> Request {
 	}
 }
 
-/// Reads an API key file as a server writes it.
 pub fn read_api_key(path: &Path) -> [u8; 32] {
 	let text = fs::read_to_string(path).expect("reads the API key file");
 	let text = text.trim();

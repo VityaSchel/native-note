@@ -296,7 +296,6 @@ struct ContentViewTests {
 		defer { offscreen.close() }
 		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
 		let undo = try #require(offscreen.window.undoManager)
-		// Offscreen, AppKit never closes the group it opens per event, so each delete gets its own as a key press would.
 		undo.groupsByEvent = false
 		for remaining in [2, 1] {
 			model.selection = model.notes.first?.id

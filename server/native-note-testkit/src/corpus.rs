@@ -42,7 +42,6 @@ impl SplitMix64 {
 	}
 }
 
-/// A write whose `writeId` is the id repeated with `v` in its last four bytes.
 pub fn write(id: u8, v: u32, len: usize) -> Record {
 	let mut write_id = [id; 16];
 	write_id[12..].copy_from_slice(&v.to_be_bytes());

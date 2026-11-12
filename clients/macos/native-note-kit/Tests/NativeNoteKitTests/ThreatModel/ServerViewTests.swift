@@ -20,8 +20,6 @@ final class RecordingTransport: SyncTransport, @unchecked Sendable {
 	}
 }
 
-/// What docs/ARCHITECTURE.md § Threat model lets the server, a reverse proxy and the network see: sealed envelopes, plaintext `v`,
-/// payload length in whole blocks, and nothing else.
 @MainActor @Suite(.timeLimit(.minutes(2)))
 struct ServerViewTests {
 	private struct Library {
@@ -51,7 +49,6 @@ struct ServerViewTests {
 		return Library(model: model, recorder: recorder, phrase: phrase, ids: ids, settings: settings)
 	}
 
-	/// Words long enough not to occur by chance, from every note body.
 	private var secrets: [Data] {
 		bodies.flatMap { $0.split(whereSeparator: \.isWhitespace).filter { $0.utf8.count >= 8 }.prefix(2) }.map { Data($0.utf8) }
 	}

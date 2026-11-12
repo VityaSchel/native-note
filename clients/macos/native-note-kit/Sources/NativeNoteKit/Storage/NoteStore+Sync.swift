@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 
-/// Sync state in `meta` and the transaction that applies a response, per clients/DESIGN.md § Conflicts.
 extension NoteStore {
 	private enum Meta: String {
 		case server, apiKey, contentKey, since, pin, lastPulled
@@ -17,7 +16,6 @@ extension NoteStore {
 		return SyncSettings(server: server, apiKey: apiKey, contentKey: contentKey)
 	}
 
-	/// Refuses a library that already holds a Content key, so neither setup nor a join replaces one.
 	func enableSync(_ settings: SyncSettings, pin: UInt32) throws {
 		try connection.transaction {
 			guard try key(.contentKey) == nil else { throw SyncAlreadySetUp() }
@@ -31,7 +29,6 @@ extension NoteStore {
 
 	struct SyncNotSetUp: Error {}
 
-	/// What a library that synced keeps after Turn Off Sync, so it can reattach or move without a new identity.
 	struct KeptLibrary {
 		let contentKey: SymmetricKey
 		let pin: UInt32
@@ -44,18 +41,13 @@ extension NoteStore {
 		return KeptLibrary(contentKey: contentKey, pin: try pin(), since: try since(), mark: try lastPulled())
 	}
 
-	/// Forgets the server and its key only; the Content key, the pin and every note's version stay for a later reattach.
 	func disconnectSync() throws {
 		try connection.transaction {
-			for key in [Meta.server, .apiKey] {
-				let statement = try connection.prepare("DELETE FROM meta WHERE k = ?1")
-				statement.bind(1, key.rawValue)
-				try statement.step()
-			}
+			try deleteMeta(.server)
+			try deleteMeta(.apiKey)
 		}
 	}
 
-	/// The same library at another address or under another key.
 	func reattachSync(server: URL, apiKey: SymmetricKey) throws {
 		try connection.transaction {
 			guard try key(.contentKey) != nil else { throw SyncNotSetUp() }
@@ -64,7 +56,6 @@ extension NoteStore {
 		}
 	}
 
-	/// An empty server takes this library under a new phrase: every note is new to it, and tombstones have nothing left to delete there.
 	func moveSync(to settings: SyncSettings, pin: UInt32) throws {
 		try connection.transaction {
 			guard try key(.contentKey) != nil else { throw SyncNotSetUp() }
@@ -72,9 +63,7 @@ extension NoteStore {
 			try settings.apiKey.withUnsafeBytes { try setMeta(.apiKey, $0) }
 			try setMeta(.since, Self.bigEndian(UInt64(0)))
 			try setMeta(.pin, Self.bigEndian(pin))
-			let forget = try connection.prepare("DELETE FROM meta WHERE k = ?1")
-			forget.bind(1, Meta.lastPulled.rawValue)
-			try forget.step()
+			try deleteMeta(.lastPulled)
 			try connection.prepare("DELETE FROM note WHERE deleted = 1").step()
 			try connection.prepare("UPDATE note SET v = 0, seq = NULL, dirty = 1, pulled = 0").step()
 		}
@@ -104,7 +93,6 @@ extension NoteStore {
 		}
 	}
 
-	/// A dirty note at the last version takes no write: its text moves to a copy, and the original stays as it is, clean.
 	private func settleLastVersion() throws -> Applied {
 		try connection.transaction {
 			var applied = Applied()
@@ -133,7 +121,7 @@ extension NoteStore {
 				try apply(change, unacknowledged: exchange.unacknowledged, into: &applied)
 			}
 			try setMeta(.since, Self.bigEndian(exchange.nextSeq))
-			if let last = exchange.last { try setMeta(.lastPulled, last.blindedId + Self.bigEndian(last.v)) }
+			if let pullMark = exchange.pullMark { try setMeta(.lastPulled, pullMark.blindedId + Self.bigEndian(pullMark.v)) }
 			return applied
 		}
 	}
@@ -157,13 +145,11 @@ extension NoteStore {
 		applied.pulled.insert(pulled.id)
 	}
 
-	/// Sets the stored `v`, and clears `dirty` only if the note was not saved after the write was sealed.
 	private func acknowledge(_ sent: SealedWrite, at v: UInt32, into applied: inout Applied) throws {
 		guard var held = try note(id: sent.note.id), held.v < v else { return }
 		held.v = v
-		if held.body == sent.note.body, held.updatedAt == sent.note.updatedAt, held.deleted == sent.note.deleted {
-			held.dirty = false
-		}
+		let unchangedSinceSealed = held.body == sent.note.body && held.updatedAt == sent.note.updatedAt && held.deleted == sent.note.deleted
+		if unchangedSinceSealed { held.dirty = false }
 		try put(held, pulled: false)
 		applied.changed[held.id] = held
 	}
@@ -181,7 +167,6 @@ extension NoteStore {
 		try statement.step()
 	}
 
-
 	private static func note(_ change: PulledChange, over held: Note?) -> Note {
 		switch change.content {
 		case let .note(id, createdAt, updatedAt, body):
@@ -191,16 +176,18 @@ extension NoteStore {
 		}
 	}
 
-	private func meta(_ key: Meta) throws -> Data? {
+	private func metaRow(_ key: Meta) throws -> SQLiteStatement? {
 		let statement = try connection.prepare("SELECT v FROM meta WHERE k = ?1")
 		statement.bind(1, key.rawValue)
-		return try statement.step() ? statement.data(0) : nil
+		return try statement.step() ? statement : nil
+	}
+
+	private func meta(_ key: Meta) throws -> Data? {
+		try metaRow(key)?.data(0)
 	}
 
 	private func key(_ key: Meta) throws -> SymmetricKey? {
-		let statement = try connection.prepare("SELECT v FROM meta WHERE k = ?1")
-		statement.bind(1, key.rawValue)
-		return try statement.step() ? statement.key(0) : nil
+		try metaRow(key)?.key(0)
 	}
 
 	private func setMeta(_ key: Meta, _ value: Data) throws {
@@ -211,6 +198,12 @@ extension NoteStore {
 		let statement = try connection.prepare("INSERT INTO meta (k, v) VALUES (?1, ?2) ON CONFLICT(k) DO UPDATE SET v = excluded.v")
 		statement.bind(1, key.rawValue)
 		statement.bind(2, value)
+		try statement.step()
+	}
+
+	private func deleteMeta(_ key: Meta) throws {
+		let statement = try connection.prepare("DELETE FROM meta WHERE k = ?1")
+		statement.bind(1, key.rawValue)
 		try statement.step()
 	}
 

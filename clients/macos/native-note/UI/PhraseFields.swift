@@ -18,11 +18,11 @@ struct PhraseFields: View {
 					}
 				}
 			}
-			Text(problem ?? " ")
+			Text(checksumMessage ?? " ")
 				.font(.callout)
 				.foregroundStyle(.red)
 				.fixedSize(horizontal: false, vertical: true)
-				.accessibilityHidden(problem == nil)
+				.accessibilityHidden(checksumMessage == nil)
 		}
 		.onChange(of: editing) { left, now in
 			let spoken = left.map { entry.isInvalid(at: $0, editing: $0) } ?? true
@@ -36,12 +36,10 @@ struct PhraseFields: View {
 			Task { if editing == nil { editing = 0 } }
 		}
 		.onChange(of: unknownWord) { _, index in
-			// A word left behind is spoken once it is completed, above; until then a prefix reads as unknown.
 			if let index, index == editing { announce(Self.unknownWordMessage(index + 1)) }
 		}
 	}
 
-	/// Spoken only: the red word shows it, and VoiceOver hears why.
 	static func unknownWordMessage(_ number: Int) -> String {
 		"Word \(number) is not in the recovery word list."
 	}
@@ -63,10 +61,8 @@ struct PhraseFields: View {
 		}
 	}
 
-	/// Shift-Tab arrives as the back-tab character.
 	private static let backTab = KeyEquivalent("\u{19}")
 
-	/// Tab follows the words down each column, as Return and Space do, not the fields' order across the rows.
 	private func moveByTab(from index: Int, back: Bool) -> KeyPress.Result {
 		let next = back ? index - 1 : index + 1
 		guard (0 ..< PhraseEntry.count).contains(next) else { return .ignored }
@@ -93,13 +89,11 @@ struct PhraseFields: View {
 		}
 	}
 
-	/// A word off the list shows in red; only a checksum failure, which no single field shows, gets a line.
-	private var problem: String? {
+	private var checksumMessage: String? {
 		entry.problem(editing: editing) == .checksum ? "These words are not a recovery phrase. Check for a mistyped or swapped word." : nil
 	}
 }
 
-/// The secondary, right-aligned number every view of the recovery words puts before a word, so columns line up past 9.
 struct WordNumber: View {
 	let index: Int
 

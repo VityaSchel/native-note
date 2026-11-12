@@ -84,7 +84,7 @@ struct TestHostTests {
 			menu.addItem(title == "—" ? .separator() : NSMenuItem(title: title, action: nil, keyEquivalent: ""))
 		}
 
-		MenuSeparators.tidy(menu)
+		MenuSeparators.hideDoubledAndEdgeSeparators(in: menu)
 
 		#expect(menu.items.filter { !$0.isHidden }.map { $0.isSeparatorItem ? "—" : $0.title } == ["A", "—", "B"])
 	}

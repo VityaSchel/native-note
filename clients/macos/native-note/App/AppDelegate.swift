@@ -37,7 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 	@objc private func tidyMenus(_ notification: Notification) {
 		guard let menu = notification.object as? NSMenu, menu === NSApp.mainMenu else { return }
-		MenuSeparators.tidy(menu)
+		MenuSeparators.hideDoubledAndEdgeSeparators(in: menu)
 	}
 
 	func applicationWillFinishLaunching(_ notification: Notification) {
@@ -51,7 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		for name in [NSWorkspace.willSleepNotification, NSWorkspace.sessionDidResignActiveNotification] {
 			workspace.addObserver(self, selector: #selector(lockWhileAway), name: name, object: nil)
 		}
-		// Delivered while another app is in front too, which is when a screen usually locks.
 		DistributedNotificationCenter.default().addObserver(
 			self, selector: #selector(lockWhileAway), name: screenLocked, object: nil, suspensionBehavior: .deliverImmediately
 		)
@@ -70,7 +69,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 		model.appBecameActive()
 	}
 
-	/// Closing the window keeps the app running, as Notes does; the Dock icon brings the window back.
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
 		false
 	}

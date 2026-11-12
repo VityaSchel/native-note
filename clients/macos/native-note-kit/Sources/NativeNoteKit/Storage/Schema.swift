@@ -54,7 +54,6 @@ nonisolated enum Schema {
 		) STRICT;
 		"""
 
-	/// Marks a row whose text a pull wrote, so a save of an edit begun before that pull lands as a copy.
 	private static let version2 = """
 		ALTER TABLE note ADD COLUMN pulled INTEGER NOT NULL DEFAULT 0;
 		"""

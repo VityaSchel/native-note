@@ -22,10 +22,8 @@ pub type Fill = fn(&mut [u8]) -> Result<(), Unspecified>;
 
 #[derive(Clone, Copy)]
 pub struct Timing {
-	/// Bounds each socket read and write.
-	pub io: Duration,
-	/// Bounds a connection from accept to its last write.
-	pub deadline: Duration,
+	pub socket_io_timeout: Duration,
+	pub connection_deadline: Duration,
 }
 
 #[derive(Clone)]
@@ -39,8 +37,8 @@ impl Runtime {
 	pub fn server() -> Runtime {
 		Runtime {
 			timing: Timing {
-				io: Duration::from_secs(10),
-				deadline: Duration::from_secs(60),
+				socket_io_timeout: Duration::from_secs(10),
+				connection_deadline: Duration::from_secs(60),
 			},
 			fill: |bytes| SystemRandom::new().fill(bytes),
 			log: Arc::new(Stderr),
@@ -92,7 +90,6 @@ impl Server {
 		self.address
 	}
 
-	/// Serves forever on a fixed number of threads, this one included, unless one cannot start.
 	pub fn serve(self) -> Cause {
 		let listener = Arc::new(self.listener);
 		for _ in 1..WORKERS {
@@ -153,7 +150,7 @@ impl Shared {
 			}
 			Err(Refusal::Status(status)) => {
 				wire.send(status.response(), &[]).unwrap_or(());
-				wire.drain();
+				wire.close_without_reset();
 			}
 			Err(Refusal::Failed(failure)) => {
 				self.fail(failure);
@@ -198,7 +195,7 @@ impl Shared {
 
 struct Wire {
 	stream: TcpStream,
-	io: Duration,
+	socket_io_timeout: Duration,
 	deadline: Instant,
 }
 
@@ -207,8 +204,8 @@ impl Wire {
 		let now = Instant::now();
 		Wire {
 			stream,
-			io: timing.io,
-			deadline: now.checked_add(timing.deadline).unwrap_or(now),
+			socket_io_timeout: timing.socket_io_timeout,
+			deadline: now.checked_add(timing.connection_deadline).unwrap_or(now),
 		}
 	}
 
@@ -217,7 +214,7 @@ impl Wire {
 		if left.is_zero() {
 			return Err(io::ErrorKind::TimedOut.into());
 		}
-		Ok(left.min(self.io))
+		Ok(left.min(self.socket_io_timeout))
 	}
 
 	fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Refusal> {
@@ -245,7 +242,7 @@ impl Wire {
 			.get(..filled)
 			.and_then(|received| received.split_at_checked(head_len))
 			.unwrap_or_default();
-		let body_len = http::body_len(head)?;
+		let body_len = http::admitted_body_len(head)?;
 		let mut body: Vec<u8> = early.iter().copied().take(body_len).collect();
 		let mut filled = body.len();
 		body.resize(body_len, 0);
@@ -255,9 +252,7 @@ impl Wire {
 		Ok(body)
 	}
 
-	/// Reads what the client is still sending, so closing does not reset the refusal it has yet to
-	/// read.
-	fn drain(&mut self) {
+	fn close_without_reset(mut self) {
 		self.stream.shutdown(Shutdown::Write).unwrap_or(());
 		let mut discard = [0; HEAD_MAX];
 		while self.read(&mut discard).is_ok() {}

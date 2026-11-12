@@ -14,7 +14,7 @@ fn three_devices_sync_two_thousand_notes_over_http_and_replaying_every_request_c
 	let count = session.captured.len();
 	for index in (0..count).chain(shuffled(count, &mut rng)) {
 		let body = session.captured[index].body.clone();
-		let inner = session.server.post(&body);
+		let inner = session.server.post_and_open(&body);
 		session.check_replay(index, &inner, &mut replays);
 	}
 	assert_eq!(

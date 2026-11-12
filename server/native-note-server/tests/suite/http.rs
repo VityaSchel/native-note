@@ -1,6 +1,6 @@
 use crate::support::{
-	Client, DEADLINE, IO, Running, api_key, call, call_inner, connect, hasty, post, read_reply,
-	request, runtime, send, serve_at, start,
+	CONNECTION_DEADLINE, Client, Running, SOCKET_IO_TIMEOUT, api_key, call, call_inner, connect,
+	post, read_reply, request, runtime, runtime_with_short_timeouts, send, serve_at, start,
 };
 use native_note_core::{Request, Seq, Version};
 use native_note_testkit::SEALED_MAX;
@@ -16,7 +16,6 @@ use std::sync::mpsc::{self, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-/// Holds the database's write lock from another connection until told to let go.
 fn hold_write_lock(data: &Path) -> (Sender<()>, JoinHandle<()>) {
 	let connection = Connection::open(data.join("native-note.sqlite")).expect("opens");
 	connection
@@ -31,20 +30,14 @@ fn hold_write_lock(data: &Path) -> (Sender<()>, JoinHandle<()>) {
 }
 
 fn head_of(len: usize, body: &[u8]) -> Vec<u8> {
-	let fixed = format!(
-		"POST / HTTP/1.1\r\nContent-Length: {}\r\nX-Pad: \r\n\r\n",
-		body.len()
-	);
-	let pad = "a".repeat(len - fixed.len());
-	[
+	let head = |pad: &str| {
 		format!(
 			"POST / HTTP/1.1\r\nContent-Length: {}\r\nX-Pad: {pad}\r\n\r\n",
 			body.len()
 		)
-		.as_bytes(),
-		body,
-	]
-	.concat()
+	};
+	let pad = "a".repeat(len - head("").len());
+	[head(&pad).as_bytes(), body].concat()
 }
 
 fn status(running: &Running, bytes: &[u8]) -> Option<u16> {
@@ -185,7 +178,7 @@ fn an_expect_header_gets_no_interim_response() {
 		body.len()
 	)
 	.expect("sends the head");
-	thread::sleep(IO / 3);
+	thread::sleep(SOCKET_IO_TIMEOUT / 3);
 	stream.write_all(&body).expect("sends the body");
 	let reply = read_reply(stream).expect("a reply");
 	assert!(
@@ -224,12 +217,18 @@ fn closed_after(address: SocketAddr, trickle: Option<Duration>) -> Duration {
 #[test]
 fn a_stalled_client_is_closed_at_the_read_timeout_and_a_trickling_one_at_the_deadline() {
 	let running = start("http-slow");
-	let address = serve_at(running.data.path(), hasty(&running.log));
+	let address = serve_at(
+		running.data.path(),
+		runtime_with_short_timeouts(&running.log),
+	);
 	let stalled = closed_after(address, None);
-	assert!(stalled >= IO && stalled < DEADLINE, "{stalled:?}");
-	let trickling = closed_after(address, Some(IO / 4));
 	assert!(
-		trickling >= DEADLINE && trickling < DEADLINE + IO,
+		stalled >= SOCKET_IO_TIMEOUT && stalled < CONNECTION_DEADLINE,
+		"{stalled:?}"
+	);
+	let trickling = closed_after(address, Some(SOCKET_IO_TIMEOUT / 4));
+	assert!(
+		trickling >= CONNECTION_DEADLINE && trickling < CONNECTION_DEADLINE + SOCKET_IO_TIMEOUT,
 		"{trickling:?}"
 	);
 	assert_eq!(running.log.lines(), Vec::<String>::new());
@@ -238,11 +237,14 @@ fn a_stalled_client_is_closed_at_the_read_timeout_and_a_trickling_one_at_the_dea
 #[test]
 fn stalled_clients_hold_only_their_own_workers_and_the_ninth_waits_in_the_backlog() {
 	let running = start("http-workers");
-	let address = serve_at(running.data.path(), hasty(&running.log));
+	let address = serve_at(
+		running.data.path(),
+		runtime_with_short_timeouts(&running.log),
+	);
 	let mut client = Client::new(address, running.key, 7);
 	let stall = |count: usize| -> Vec<TcpStream> {
 		let streams: Vec<_> = (0..count).map(|_| connect(address)).collect();
-		thread::sleep(IO / 6);
+		thread::sleep(SOCKET_IO_TIMEOUT / 6);
 		streams
 	};
 
@@ -252,17 +254,25 @@ fn stalled_clients_hold_only_their_own_workers_and_the_ninth_waits_in_the_backlo
 		panic!("a sync response");
 	};
 	assert_eq!(results[0].status, Status::Accepted);
-	assert!(started.elapsed() < IO * 3 / 4, "{:?}", started.elapsed());
+	assert!(
+		started.elapsed() < SOCKET_IO_TIMEOUT * 3 / 4,
+		"{:?}",
+		started.elapsed()
+	);
 	drop(seven);
 
-	thread::sleep(IO * 2);
+	thread::sleep(SOCKET_IO_TIMEOUT * 2);
 	let eight = stall(8);
 	let started = Instant::now();
 	let Response::Sync { changes, .. } = call(&mut client, &sync(0, &[])) else {
 		panic!("a sync response");
 	};
 	assert_eq!(changes, [write(1, 1, 64)]);
-	assert!(started.elapsed() >= IO / 2, "{:?}", started.elapsed());
+	assert!(
+		started.elapsed() >= SOCKET_IO_TIMEOUT / 2,
+		"{:?}",
+		started.elapsed()
+	);
 	drop(eight);
 }
 
@@ -357,14 +367,17 @@ fn a_failed_nonce_draw_or_a_reflected_nonce_answers_500_and_one_log_line() {
 #[test]
 fn a_reply_ready_only_after_the_deadline_is_not_sent_and_is_logged_as_a_failed_response() {
 	let running = start("http-late");
-	let address = serve_at(running.data.path(), hasty(&running.log));
+	let address = serve_at(
+		running.data.path(),
+		runtime_with_short_timeouts(&running.log),
+	);
 	let (release, holder) = hold_write_lock(running.data.path());
 	let body = running
 		.client(9)
 		.seal(&client::encode_request(&sync(0, &[write(1, 1, 64)])));
 	let mut stream = connect(address);
 	stream.write_all(&request(&body)).expect("sends");
-	thread::sleep(DEADLINE + IO);
+	thread::sleep(CONNECTION_DEADLINE + SOCKET_IO_TIMEOUT);
 	release.send(()).expect("lets go");
 	holder.join().expect("lets go");
 	assert!(read_reply(stream).is_none());

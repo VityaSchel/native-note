@@ -82,7 +82,6 @@ nonisolated enum AppLock {
 		try durablyReplace(url, with: encoder.encode(parameters), sync: sync)
 	}
 
-	/// On disk before it returns, as the database's own commits are with F_FULLFSYNC, so a rekey never outlives the salt it needs.
 	static func durablyReplace(_ url: URL, with data: Data, sync: (Int32) throws -> Void = fullSync) throws {
 		let directory = url.deletingLastPathComponent()
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
