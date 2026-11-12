@@ -10,7 +10,7 @@ A personal note-taking app for macOS, self-hosted and end-to-end encrypted. Andr
 - 🍃 **Native:** a SwiftUI app for macOS
 - 📏 **Straightforward:** feels like Apple's Notes app — no learning curve and no overengineering
 - 🪨 **Rock-solid:** prioritizes security and reliability
-- 🔐 **Secure:** notes stay encrypted under a key bound to the Secure Enclave where the Mac has one, optionally unlock with a pinned biometrics set, human code audit (*planned* before the first release)
+- 🔐 **Secure:** notes stay encrypted under a key bound to the Secure Enclave where the Mac has one, with optional Touch ID unlock; a human code audit is *planned* before the first release
 - 🪶 **Lightweight:** the optional sync server is a single Rust executable binary (🚀🚀🚀)
 - ☁️ **Syncable:** self-host a sync & backup server to use the app across several devices, with every note end-to-end encrypted
 

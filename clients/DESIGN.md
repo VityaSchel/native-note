@@ -2,13 +2,17 @@
 
 ## Local DB
 
-SQLCipher, WAL, `synchronous=FULL` with `fullfsync` and `checkpoint_fullfsync` on; on macOS `synchronous=FULL` alone does not survive power loss. A database whose `user_version` is newer than the app is refused, not opened. `PRAGMA foreign_keys = ON` from v1, so every relation added later carries an explicit `ON DELETE`.
+SQLCipher in WAL mode with `synchronous=FULL`, `fullfsync` and `checkpoint_fullfsync`; on macOS `synchronous=FULL` alone does not survive power loss. A database whose `user_version` is newer than the app is refused. `PRAGMA foreign_keys = ON` from v1, so every later relation declares its `ON DELETE`.
 
-A note saves locally at most ~300 ms after its first unsaved edit, so continuous typing still saves. Leaving the note, locking, and the app resigning active, sleeping, or quitting save at once. A new note is not marked for sync until its first edit, and one New Note made and left empty is discarded: a note no server has seen leaves no trace, one that synced leaves a tombstone. A local save never bumps `v` and never writes to a tombstone, so Undo Delete restores the text as a new note with the deleted one's timestamps, until the library locks. A failed save keeps retrying with the latest text, including across lock and unlock, and is reported once until no save is failing. Lock does not wait for a failing save and shows its failure on the lock screen. Quit with an unsaved edit asks first, and only Quit Anyway quits.
+- A note saves at most ~300 ms after its first unsaved edit, and at once on leaving the note, lock, the app resigning active, sleep and quit.
+- A new note is marked for sync only at its first edit. A New Note left empty is discarded: removed if no server has seen it, tombstoned otherwise.
+- A local save never bumps `v` and never writes to a tombstone. Undo Delete restores the text as a new note with the deleted one's timestamps, until the library locks.
+- A failed save retries with the latest text, across lock and unlock, and is reported once until no save fails. Lock does not wait for it and shows the failure on the lock screen.
+- Quit with an unsaved edit asks first.
 
-The library locks when the Mac sleeps, its screen locks or its user session is switched away, since the next person at the Mac is untrusted; locking cancels a sync or Change Server check in flight and waits for it before closing the database. An unlock that finishes after one of these events locks again. Closing the window keeps the app running and the library unlocked, as Notes does.
+The library locks when the Mac sleeps, its screen locks or the user session switches away. Locking cancels a sync or Change Server check in flight and waits for it before closing the database; an unlock that finishes after one of these events locks again. Closing the window keeps the app running and the library unlocked.
 
-Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`, so once locked the database on disk is `notes.db` alone, indistinguishable from random, beside the public unlock parameters in `app-lock.plist`. The sidecars exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock; their headers read as SQLite.
+Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`: a locked library on disk is `notes.db`, indistinguishable from random, beside the public `app-lock.plist`. The sidecars, whose headers read as SQLite, exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock.
 
 ```sql
 CREATE TABLE note (
@@ -41,13 +45,13 @@ END;
 CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 ```
 
-`content=note` is an external-content index: without the three triggers it is populated once and never updated again.
+Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `seq` stays `NULL`, since a change carries no `seq`. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, and the recovery blob's pinned `v`.
 
-Timestamps are epoch milliseconds, the same representation [note content](../docs/PROTOCOL.md#content) uses on the wire, so syncing needs no date conversion; notes hold them as `Int64` and convert to `Date` only to display, so a pulled timestamp anywhere in `i64` survives. Everything sits behind SQLCipher, so columns are plaintext to SQLite and FTS5 works. `dirty` marks pending pushes — the outbox is a flag, not a table. `seq` stays `NULL`, since a change carries no `seq`. Search matches whole words, and the last word as a prefix once it has two characters; results show as one list ranked by relevance. A search survives lock and reruns on unlock. `meta` holds the Content key, API key, server URL, last pulled `seq` with the blinded ID and `v` of the write there, and the recovery blob's pinned `v`, only when sync is configured.
+Search matches whole words, and the last word as a prefix from two characters, ranked by relevance. A search survives lock and reruns on unlock.
 
 ### Local DB encryption
 
-Unlocks the app. Only used for app database encryption, never leaves the device. Derived from the unlock password. Optionally bounded to the machine using secure hardware element. On some platforms optionally storable under current biometrics set for authentication.
+`localDbKey` encrypts the local database and never leaves the device. It derives from the unlock password, bound to the device's secure hardware where there is one.
 
 ```
 localSalt  = 128-bit random
@@ -56,117 +60,104 @@ machineId  = hardwareBinding()
 localDbKey = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-note/localdb/v1", 32)
 ```
 
-Argon2id is version `0x13` with no secret or associated data, and `m` is in KiB. A password or passphrase enters it as UTF-8 bytes, unnormalized.
+Argon2id is version `0x13` with no secret or associated data, `m` in KiB. A password or passphrase enters it as UTF-8 bytes, unnormalized.
 
-`localDbKey` is passed as a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, not a passphrase. It opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
+`localDbKey` is a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, never a passphrase; it opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
 
-The app keeps no copy of `localDbKey` while unlocked; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and the scratch buffers the app fills with key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
+The app keeps no copy of `localDbKey` while unlocked; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and scratch buffers holding key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
 
 #### `hardwareBinding`
 
-
-Hardware binding adds protection against a stolen disk image, but unlike Argon2id does not add per-guess cost. One operation on the device's secure hardware, independent of the password.
+One operation on the device's secure hardware, independent of the password:
 
 ```
 machineId = HKDF-SHA256(hardwareOp(), info: "native-note/machine-id/v1", 32)
 ```
 
-`hardwareOp` is platform-specific and must satisfy three properties:
+`hardwareOp` is platform-specific and:
 
-1. **Only this physical device can compute it.** The hardware key is non-extractable, so a disk image cannot reproduce `machineId` at any password length.
-2. **It never prompts.** Biometric or presence gating would break the password-only path.
-3. **It is deterministic and takes no secret input.** Anything derived from the password must not reach the hardware: ECDH is symmetric, so `devicePriv·(sG)` equals `s·devicePub`, the attacker derives `s` from their own password guess, and the device public key is recoverable from the stored key blob.
+1. **Only this physical device can compute it.** The hardware key is non-extractable, so a disk image cannot reproduce `machineId`.
+2. **It never prompts**, so the password alone unlocks.
+3. **It is deterministic and takes no secret input.** Nothing derived from the password reaches the hardware: ECDH is symmetric, so `devicePriv·(sG)` equals `s·devicePub`, which an attacker computes from a guessed password's `s` and the public key in the stored key blob.
 
-Platforms without secure hardware omit `machineId` and warn in UI; Argon2id alone carries those users. A hardware key that cannot load, as on another device, is reported as notes bound to another device.
+Without secure hardware, `machineId` is omitted, the UI warns, and Argon2id alone protects the library. A hardware key that cannot load, as on another device, is reported as notes bound to another device.
 
 #### Unlock parameters
 
-`localSalt` and `argonParams` are public key parameters, so they're stored outside of the database. They must exactly match the values that produced the key. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, to the largest value whose measured in-process run takes at most 0.4 s, capped at 2 GiB, and a password change never lowers it. A cold unlock in a freshly launched app costs more than an in-process run, so 0.4 s lands a cold unlock around 0.4–1 s.
+`localSalt` and `argonParams` are public and stored outside the database. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, to the largest value whose in-process run takes at most 0.4 s, capped at 2 GiB; a password change never lowers it.
 
 #### Changing the password
-
-`localDbKey` changes with the password, so the database is rekeyed:
 
 1. Confirm the current password with a fresh open
 2. Write the new unlock parameters, with a fresh salt and recalibrated `argonParams`, to a pending file, keeping the current one
 3. Rekey with `sqlite3_rekey_v2`
-4. Verify a fresh open with the new key; if it fails, reconnect the store with the old key, delete the pending file and keep the old password
-5. Replace the current key file with the pending one
+4. Verify a fresh open with the new key; on failure, reconnect with the old key, delete the pending file and keep the old password
+5. Replace the current parameter file with the pending one
 
-Unlock tries the pending file, then the current one, and keeps whichever opens the database as the only file, so a crash between any steps leaves it openable. Every parameter file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed, so it reaches the disk before the rekey it enables, as the database's own commits do. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside a database left without parameter files rather than deleting it, moving its sidecars first so an interrupted set-aside finishes on the next setup.
+Unlock tries the pending file, then the current one, and keeps whichever opens the database, so a crash between steps leaves it openable. A parameter file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed, before the rekey it enables. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside, never deletes, a database left without parameter files, moving its sidecars first so an interrupted set-aside finishes on the next setup.
 
 #### Forgotten password
 
-The unlock screen offers to erase the library and start over, behind a confirmation. Erasing deletes the biometric key, then the unlock parameters, which leaves the notes unrecoverable, then the database with its sidecars and any set-aside copies, and returns to setup. A file that cannot be deleted is reported; once the parameters are gone the app returns to setup anyway.
+The unlock screen offers to erase the library, behind a confirmation. Erasing deletes the biometric key, then the unlock parameters, then the database with its sidecars and set-aside copies, and returns to setup. A file that cannot be deleted is reported; once the parameters are gone, setup follows anyway.
 
 #### Unlocking with biometrics
 
-Optional, off by default. When enabled, `localDbKey` is stored in the platform's key store linked to the current biometric enrollment, so the OS invalidates it if the enrolled set changes. The OS does the fingerprint check against the key's access control; the app never decides a match itself.
+Optional, off by default. `localDbKey` is stored in the platform key store bound to the current biometric enrollment, which the OS invalidates when the enrolled set changes. The OS, not the app, decides a match.
 
-The biometric prompt lives inside the app's window, never in a system alert. On macOS it is [`LAAuthenticationView`](https://developer.apple.com/documentation/localauthenticationembeddedui/laauthenticationview), and pairing comes before evaluation: the view is created with its `LAContext` and is in the window before that context evaluates the key's access control. The key is then read through the same context with interaction not allowed, and the context is invalidated after the read, whatever the outcome. Each attempt gets a fresh context.
+The prompt is in the app's window, never a system alert. On macOS it is [`LAAuthenticationView`](https://developer.apple.com/documentation/localauthenticationembeddedui/laauthenticationview), created with a fresh `LAContext` per attempt and in the window before that context evaluates the key's access control. The key is read through the same context with interaction not allowed, then the context is invalidated, whatever the outcome. The view is never hidden, since the OS refuses a touch through a hidden view: it stays at full opacity behind the opaque password field.
 
-When biometric unlock is enabled, the screen listens for a touch whenever it is in front: at launch, on returning to the app, and right after the user locks. A touch with an enrolled finger unlocks without a click. While listening, the paired view stays in the window at full opacity, behind the password field and covered by the field's opaque background; it is never hidden, because the OS refuses a touch through a hidden view. It is not an accessibility element. The screen says whether Touch ID can be used:
+The unlock screen listens whenever it is in front: at launch, on return to the app and after Lock. Listening pauses while another app is active, while a password is checked, and while the field shakes after a wrong password or a non-matching finger (a lockout does not shake). After a miss, a fresh attempt starts when the shake ends, so a resting wrong finger can use up the attempts until macOS locks Touch ID.
 
-- Usable: listening, in the background, while a password is checked, while the field shakes, and while the library opens after a touch. A finger that does not match keeps it usable.
-- Stopped on this screen: a lockout (macOS locks Touch ID Mac-wide after five misses in a row), an attempt the OS ends while the app is in front, or a library that fails to open after a touch.
+Touch ID stops on the unlock screen, with no retry click, after a lockout, an attempt the OS ends while the app is in front, or an attempt whose view left the window, until the next return to the app, and for a lockout until the OS has lifted it. A new unlock screen listens again unless biometrics are still locked out.
 
-Listening continues while the user types. It stops while another app is active, so that app's biometric prompts keep working, while a password is checked, and while the field shakes. VoiceOver announces a wrong password and a stop of Touch ID. While the library opens after a touch, the field is disabled.
+- Biometrics become unavailable: Touch ID drops until the next return to the app.
+- The key fails to read, or no longer opens the database: show the error and forget the key. A key that cannot be forgotten stays, and Touch ID stops.
+- The library fails to open after a touch for another reason: show the error, keep the key, and Touch ID stops.
 
-A wrong password and a finger that does not match shake the field. A shake asked for while one runs is ignored.
+Turning it on takes the password, checks the derived key opens the database, stores it, and is on only once a touch reads it back; waiting for the touch pauses while another app is active. A wrong password stores nothing; a wrong finger or an attempt the OS ends waits for a click to retry; anything else short of a matching touch deletes the key: cancel, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quit, lock, or a password change. Turning it off asks nothing.
 
-LocalAuthentication reports a finger that does not match only when an attempt ends with failed authentication, and that is the only trigger for its shake; a lockout does not shake. Nothing listens while the field shakes: after a wrong password listening resumes when the shake ends, not when the check ends, and after a miss a fresh attempt listens when the shake ends, without a click. A resting wrong finger can therefore use up the attempts until macOS locks Touch ID.
-
-The lock screen offers no retry click. Three stops end on the next return to the app: a lockout the OS has lifted, an attempt the OS ended, and an attempt whose view left the window.
-
-Other outcomes:
-
-- Biometrics become unavailable: the screen drops Touch ID until the next return to the app.
-- Reading the key fails: show an error and forget the stored key.
-- The stored key no longer opens the database: the same.
-- A stored key that cannot be forgotten stays, and Touch ID stops on this screen.
-- The library fails to load for another reason: show the error, keep the key and stop Touch ID on this screen.
-
-A new unlock screen listens again unless the OS still has biometrics locked out or another app is in front.
-
-Turning it on asks for the password, derives the key and confirms it opens the database, stores it, then listens in the same sheet for a touch that reads it back. Listening in the sheet also stops while another app is active. In the sheet, a wrong finger or an attempt the OS ends waits for a click to try again. A wrong password stores nothing. Anything else short of a matching touch deletes the key and leaves the option off: cancelling, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quitting, or a lock or password change before the touch. The option shows on only once the touch confirms it. Turning it off asks nothing.
-
-Onboarding offers Touch ID unlock right after the password creates the library, where Touch ID is available, and turns it on with the password just set, which the view holds only until that step ends. Changing the password deletes the stored key, and so does setting up a new library in the same place. When a change deletes it, the same sheet then offers to turn Touch ID unlock on again with the new password, which waits only for the touch.
-
-The Settings window, where Touch ID unlock is turned on and off, offers its settings only while the library is unlocked.
+Onboarding offers it after the password step, with the password just set, held only until that step ends. Changing the password, or setting up a new library in the same place, deletes the stored key; after a password change the same sheet offers to turn it on again.
 
 ## Recovery flow
 
-Only applicable when a sync server is configured. The recovery credential is the [Recovery key](../docs/PROTOCOL.md#recovery-key)'s 24 words; the API key and the server URL are not part of it. The word checksum is only a UI check; the real check is GCM verification.
+Applies only with a sync server. The recovery credential is the [Recovery key](../docs/PROTOCOL.md#recovery-key)'s 24 words, without the API key or server URL. The word checksum is a typing check; GCM verification is the real one.
 
-Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key), and one whose response is lost is sent again unchanged. A `put` whose answer never arrives intact, as when a proxy forwards it and then fails, is settled by a `get`: a blob that opens under the Recovery key still in memory means it landed, and when the `get` fails too the outcome is reported as unknown and the words stay in memory for a retry. A `put` counts as not sent only when every attempt failed to reach the server, and a conflict whose `get` fails is unknown too. A `put` the client gave up on can still land later, since nothing in it expires. When a `put` conflicts and the blob it then gets [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key still in memory, setup routes to the join and rotation reports that another device rotated.
+Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key):
 
-**Setup:** offered once as the last onboarding step, after the unlock password is set and Touch ID is offered, before the library shows, so a new or wiped Mac starts from its synced notes. Set Up opens the Settings sheet; Not Now leaves it to Settings. Locking or quitting after the password step drops both offers, and the library's commands wait for them.
+- A `put` whose response is lost is sent again unchanged.
+- A `put` whose answer never arrives intact, as when a proxy forwards it and then fails, is settled by a `get`: a blob that opens under the Recovery key still in memory means it landed. When that `get` fails, or a conflict's `get` fails, the outcome is unknown and the words stay in memory for a retry.
+- A `put` counts as not sent only when every attempt failed to reach the server. A `put` given up on can still land later, since nothing in it expires.
+- A conflict whose fetched blob [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key in memory routes setup to the join, and makes rotation report that another device rotated.
+
+Cancel stops setup, join and Change Server while nothing is stored, and is off while a recovery-blob `put` is in flight.
+
+**Setup** is the last onboarding step, so a new or wiped Mac starts from its synced notes, and stays in Settings for later. Locking or quitting during onboarding drops its remaining offers.
+
 1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to the join before any words are shown.
 2. Generate the Content key and the Recovery key with a CSPRNG.
-3. Show the 24 words blurred until Reveal, then selectable and copyable as numbered lines, and require three random words to be filled back in, ignoring case and surrounding spaces; the check waits until each is a list word. While blurred, every word is drawn as the same placeholder, so the blur reveals no length. Copy Words puts the numbered list on this Mac's pasteboard only, marked concealed and transient, and clears it when setup is cancelled, the library locks or the app quits, unless something else was copied over it, so it can still be pasted after the phrase is confirmed.
+3. Show the 24 words hidden until revealed, every hidden word drawn as the same placeholder, then require three random words typed back. Copying puts the numbered list on this Mac's pasteboard only, marked concealed and transient, and clears it on cancel, lock or quit unless something else was copied over it.
 4. `put` the Content key encrypted under the Recovery key and, once that `put` has landed, store the Content key, API key, URL and pin in `meta`, and enable sync.
 
-Cancel stops a server check that has stored nothing yet: setup, join and Change Server. It is off while a recovery-blob `put` is in flight, because its outcome would be unknown.
+**Turn Off Sync and Change Server:** Turn Off Sync forgets only the server address and API key; the Content key, the pin, the last pulled `seq` with its mark, and every note's version stay. Set Up Sync on such a library, or Change Server on a syncing one, checks the server: one that holds this library takes it back with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge.
 
-**Turn Off Sync and Change Server:** turning sync off forgets only the server's address and API key; the Content key, the pin, the last pulled `seq` and its mark, and every note's version stay. Set Up Sync on such a library, and Change Server on a syncing one, then check the server: one that holds this library takes it back at once with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge.
+**A replaced API key:** Change Server with the same address takes the new key. The server holds this library when it answers under the new key with a recovery blob at or above the pin and, once this Mac has pulled, with the write its last pull ended on, by blinded ID at that `v` or later, whether or not it opens, so a write forged with a leaked key cannot block the change. A mistyped key, a server holding another library or one restored from an older backup leaves the old address, key and sync as they were; without the recovery phrase this is as close as the Mac can check.
 
-**A replaced API key:** after the server's key is replaced, Change Server with the same address takes the new key. A server holds this library when it answers under the new key with a recovery blob at or above the pin and, once this Mac has pulled, with the write its last pull ended on, by blinded ID at that `v` or later, whether or not it opens, so a write forged with a leaked key cannot block the change. A mistyped key, a server holding another library or one restored from an older backup leaves the old address, key and sync as they were; without the recovery phrase this is as close as the Mac can check.
+**Rotation:** shows new words as setup does, then `put`s the Content key under the new Recovery key. After it reports that another device rotated, rotation asks for the current words; once the fetched blob opens under them and holds this library's Content key, the pin takes its `v` and rotation can run again.
 
-**Rotation:** shows new words the same way as setup, then `put`s the Content key under the new Recovery key. After it reports that another device rotated, rotation asks for the current words; once the fetched blob opens under them and holds this library's Content key, the pin takes its `v` and rotation can run again.
+**Restore and add-device** are a join: restore runs after setting up a library with a new [local DB password](#local-db-encryption), add-device from an unlocked library. A library that already holds a Content key refuses a join.
 
-**Restore and add-device** are a join: restore runs it after setting up a library with a new [local DB password](#local-db-encryption), add-device from an unlocked library. A library that already holds a Content key refuses a join.
-1. Take the server URL and the API key as setup does, then the 24 words, one field each. Each field keeps exactly the text it shows. A paste fills the fields from the current one onward with the words of the field's new text, split at whitespace and commas and trimmed of anything but letters at their ends, so a word with a stray character inside stays one word; when every word follows its number, as in the copied list, each lands in its numbered field, whatever field the paste went into; a space typed after a word moves to the next field. Leaving a field, or Return, trims it and, when it is all letters, lowercases it and completes a prefix only one list word starts with; pasted words complete the same way. A word is flagged once no list word starts with it or its field is left unfinished, and 24 list words that fail the checksum are flagged at once. A lost API key is read from the server's [`api-key` file](../server/DESIGN.md#server-storage).
+1. Take the server URL and the API key as setup does, then the 24 words, one per field. A paste splits at whitespace and commas, trims anything but letters from each word's ends, and fills the fields from the current one onward, or by number when every word follows its number, as in the copied list. Leaving a field lowercases an all-letter word and completes a prefix only one list word starts with. Words no list word starts with, and 24 list words that fail the checksum, are flagged. A lost API key is read from the server's [`api-key` file](../server/DESIGN.md#server-storage).
 2. `get` the blob and open it with the Recovery key; nothing is stored unless it opens. A server that holds no blob routes back to setup.
 3. Store the Content key, API key, URL and the `get`'s `v` as the pin in `meta`.
-4. Sync as usual from `seq = 0`. The library's existing notes are dirty, so they push.
+4. Sync from `seq = 0`. The library's existing notes are dirty, so they push.
 
 ## Sync
 
-A sync runs 30 s after the last edit, when the app becomes or stops being the active app, after unlock, and on Sync Now, one at a time. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. While one applies, saves that fall due wait, and an edit typed meanwhile on a note a pull replaced moves to that note's copy. Requests made during a sync share the next one.
+A sync runs 30 s after the last edit, when the app becomes or stops being active, after unlock, and on Sync Now, one at a time; requests made during a sync share the next one. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. Saves that fall due meanwhile wait, and an edit typed on a note a pull replaced moves to that note's copy.
 
-A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text whichever path flushes it.
+A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text.
 
-The server URL may be plain `http`: everything after the URL is sealed, so the app allows arbitrary loads under App Transport Security. Requests carry only fixed headers, the same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
+The server URL may be plain `http`, since everything past the URL is sealed; the app allows arbitrary loads under App Transport Security. Requests carry only fixed headers, the same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
 
 ## Pull verification
 
@@ -174,15 +165,15 @@ Each pulled change, tombstones included, must pass three checks:
 
 - It decrypts and its content decodes.
 - Its decrypted `uuid` re-derives the `blindedId` it arrived under.
-- Its `v` is not below the local `v`. Equal is allowed, since a device's own write comes back, and is not applied.
+- Its `v` is not below the local `v`. Equal passes, since a device's own write comes back, and is not applied.
 
-A change that fails a check is reported and not applied, so a local note is removed only by a pulled tombstone that passes all three. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, a `put` `conflict` below the pin, or a `nextSeq` below the client's `since`, means the server is behind the client: the client reports it and does not retry in a loop. A response whose `nextSeq` is below `since` is not applied at all, and `since` stays.
+A change that fails a check is reported and not applied, so only a pulled tombstone that passes all three removes a local note. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, a `put` `conflict` below the pin, or a `nextSeq` below the client's `since` means the server is behind the client: the client reports it and does not retry in a loop. A response whose `nextSeq` is below `since` is not applied at all, and `since` stays.
 
 ## Conflicts
 
 Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note, with a new UUID, the unpushed `createdAt` and `updatedAt`, and dirty at `v = 0`, and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text, and the original keeps it locally and is marked clean; a dirty tombstone there is marked clean without a push.
 
-A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored, after a lost response: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. Unacknowledged `writeId`s live in memory, each until a pull resolves it; after a relaunch, a lost response takes the copy path, where matching bodies make no copy.
+A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored after a lost response: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. Unacknowledged `writeId`s live in memory until a pull resolves each; after a relaunch, a lost response takes the copy path, where matching bodies make no copy.
 
 A conflicted push stays dirty until its pull arrives. A failed sync retries at the next scheduled sync. A note whose payload would exceed the [note limit](../docs/PROTOCOL.md#limits) stays dirty and unpushed, and is reported.
 
@@ -198,8 +189,6 @@ header      = "NNEXPORT1" ‖ argonParams ‖ salt
 file        = header ‖ nonce ‖ ciphertext ‖ tag
               # AES-256-GCM(exportKey, zipBytes, aad: header)
 ```
-
-The parameters travel in the header because the recipient has only the passphrase.
 
 Exports use the Argon2id floor, so any device can open them. Before hashing, a reader refuses `m` above 2 GiB or below `8p`, `t` outside 1–10 and `p` outside 1–16.
 

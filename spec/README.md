@@ -1,6 +1,6 @@
 # Conformance vectors
 
-Conformance vectors keep clients implementations of protocol identical. A client is conformant when it reproduces every case here.
+A client is conformant when it reproduces every case here. Commands: [CONTRIBUTING.md](../CONTRIBUTING.md#conformance-vectors).
 
 ```
 vectors/     the vectors themselves, committed
@@ -8,19 +8,9 @@ generator/   Rust tool that produces and verifies them
 wordlists/   BIP39 wordlists, pinned by hash
 ```
 
-```sh
-cd generator
-cargo test                    # generator reproduces every committed vector
-cargo run --bin gen-vectors   # regenerate after an intentional protocol change
-```
-
-The generator is deterministic, enforced by CI. A spec change is not done until the vectors are regenerated in the same commit.
-
 ## Reading a vector file
 
-Each file is `{ "$generated": ..., "description": ..., "cases": [ ... ] }`, and each case has a `name`. Each case carries every input it needs, except that the exchanges in `sync.json` and `recovery.json` run in order against one server.
-
-**These files are generated and must not be hand-edited.** CI regenerates and fails on any difference, a protocol change shows up as a reviewable vector diff, and a client can run its conformance tests without a Rust toolchain.
+Each file is `{ "$generated": ..., "description": ..., "cases": [ ... ] }`, and each case has a `name`. Each case carries every input it needs, except that the exchanges in `sync.json` and `recovery.json` run in order against one server. The files are generated; never hand-edit them.
 
 All binary is lowercase hex.
 
@@ -45,7 +35,7 @@ A boolean field is an **assertion the implementation must satisfy**, not data to
 | `UnknownDiscriminant` | A `version`, `kind`, `action` or `status` byte the position does not allow                                                                                                         |
 | `NotCanonical`        | A boolean other than `0x00` or `0x01`, invalid UTF-8, a non-zero `seq` on a non-accepted result, or content whose length is not the smallest multiple of 4096 B holding its fields |
 
-Every case whose name starts with `reject` is a negative test. Passing them matters as much as the positive cases — most of them exist because a plausible implementation would silently accept the input.
+A case whose name starts with `reject` is a negative test.
 
 ## Files
 
@@ -67,19 +57,17 @@ Every case whose name starts with `reject` is a negative test. Passing them matt
 
 ## Notes on specific files
 
-**`mnemonic.json`** pins the wordlist by the SHA-256 of `wordlists/english.txt`, the BIP39 English list byte for byte as [bitcoin/bips](https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt) publishes it: 2048 lines, each ending in LF. Substituting a different list would still produce 24 valid-looking words that decode to different entropy — silently, and only discovered when a recovery fails. Verify the hash before trusting a decode. The encoding is BIP39's word mapping and checksum only; **BIP39 seed derivation is never used**.
+**`mnemonic.json`** pins the wordlist by the SHA-256 of `wordlists/english.txt`, the BIP39 English list byte for byte as [bitcoin/bips](https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt) publishes it: 2048 lines, each ending in LF. Verify the hash before trusting a decode: another list still yields 24 valid-looking words that decode to different entropy. The encoding is BIP39's word mapping and checksum only; **BIP39 seed derivation is never used**.
 
-**`argon2.json`** uses `m=1024, t=1, p=1` so CI stays fast. Production parameters are calibrated per device and stored in the unlock parameter file — see [`clients/DESIGN.md`](../clients/DESIGN.md#unlock-parameters). This vector exists to confirm you are calling Argon2**id** as [`clients/DESIGN.md`](../clients/DESIGN.md#local-db-encryption) specifies, nothing more.
+**`argon2.json`** uses `m=1024, t=1, p=1` and only confirms the Argon2id call; production parameters are in [clients/DESIGN.md](../clients/DESIGN.md#unlock-parameters).
 
-**`content.json` and `frames.json`** carry most of the negative cases, because the binary decoder is the only attacker-reachable parser after GCM verification. Every `reject` case there corresponds to a rejection rule in [`docs/PROTOCOL.md`](../docs/PROTOCOL.md).
+**`content.json` and `frames.json`**: every `reject` case maps to a rejection rule in [docs/PROTOCOL.md](../docs/PROTOCOL.md).
 
 **`frames.json`** marks each case's `direction`, `request` or `response`: the decoder it goes through.
 
 **`envelope.json`**'s `errorFor*` cases carry a request `frame` that opens but fails to unpad or decode, and the server's `response` to it: `responseInner` padded and sealed under `responseNonce`, with the frame's nonce as AAD.
 
-**`sync.json`** exercises protocol semantics rather than framing — the version rule, `seq` assignment, conflict reporting, the losing edit kept as a new note, tombstones, and writes applied in the order submitted. Each step carries the encoded `request` and `response` a client would seal, with a readable `outcome` alongside, and the Content key and each write's content, `writeId` and nonce. A request's write order is the client's choice, and a step's `writes` come in the order its `request` carries them. Step 2 carries the conflict copy's `copyUuid`. A step whose `device` is `null` is no client's: it `replays` an earlier step's request bytes. Envelope framing is covered by `envelope.json`; the two compose.
-
-Step 2 is the case worth implementing against first: two devices produce `v = 1` for the same note while offline, and the second is rejected with the server's current `v` rather than overwriting.
+**`sync.json`** exercises protocol semantics: the version rule, `seq` assignment, conflict reporting, the losing edit kept as a new note, tombstones, and writes applied in the order submitted. Each step carries the encoded `request` and `response` a client would seal, with a readable `outcome` alongside, and the Content key and each write's content, `writeId` and nonce. A request's write order is the client's choice, and a step's `writes` come in the order its `request` carries them. In step 2 two offline devices write `v = 1` to one note, the second gets `conflict` with the server's current `v`, and the step carries the conflict copy's `copyUuid`. A step whose `device` is `null` is no client's: it `replays` an earlier step's request bytes. Envelope framing is covered by `envelope.json`; the two compose.
 
 **`recovery.json`** exchanges name the `device` that sends them. A `put` carries the `recoveryKey`, `contentKey` and `nonce` that seal its blob; a `get` that returns a blob carries the `recoveryKey` the client holds and whether the blob `opens` under it.
 
@@ -89,4 +77,4 @@ Step 2 is the case worth implementing against first: two devices produce `v = 1`
 
 ## Adding a vector
 
-Add the case to the generator, run `cargo run --bin gen-vectors`, and commit the regenerated JSON in the same commit as the spec change that motivated it. `cargo test` will fail if the committed file and the generator disagree, and separately if a `.json` appears in `vectors/` that the generator does not produce.
+Add the case to the generator, run `cargo run --bin gen-vectors`, and commit the regenerated JSON with the spec change. `cargo test` fails if a committed file and the generator disagree, or if `vectors/` holds a `.json` the generator does not produce.

@@ -16,9 +16,7 @@ Authorizes API requests to the server. 32 secure random bytes generated during s
 
 ### Content key
 
-Encrypts note content for storage and sync via the server. Identical on every device, stored inside the encrypted local DB. 32 secure random bytes generated during server setup (client-side).
-
-Stored on the server in encrypted form to allow recovery. Server never learns it, only stores encrypted with Recovery key.
+Encrypts note content for storage and sync via the server. Identical on every device, stored inside the encrypted local DB. 32 secure random bytes generated during server setup (client-side). The server stores it only encrypted under the Recovery key.
 
 ### Recovery key
 
@@ -35,8 +33,6 @@ A blob that opens to anything but 32 bytes does not open.
 Clients never persist the recovery key, user is responsible for storing it securely. A client puts the blob at its pinned `v + 1`, never at a fetched `v + 1`. The pin is the `v` of the last blob the client put or opened, 0 before either.
 
 ## Notes
-
-Clients render the first line of `body` as the title.
 
 Note store request, visible to the server:
 
@@ -98,7 +94,7 @@ The server stamps every accepted write with a `seq`, inside the same transaction
 
 ## Transport
 
-Authentication is proved by sealing the envelope. Metadata is encrypted, not just content, so a reverse proxy sees only the sealed envelope. No device IDs so an observer can't tell which device has sent request and how many of them there are. No certificates, no domain name, no TLS required.
+Sealing the envelope proves authentication. Metadata is sealed too, so a reverse proxy sees only the envelope. No device IDs, so an observer cannot tell devices apart or count them. No certificates, domain name or TLS required.
 
 A replayed write is rejected by `v == storedV + 1`, since the server has already advanced. A write that never reached the server carries no expiry, so one held back and delivered later is still accepted while its `v` is next. A replayed pull returns a response sealed to a key the attacker does not hold.
 
@@ -182,7 +178,7 @@ A request that unseals but fails to unpad or decode, or hits a fault after unsea
 
 ## HKDF label registry
 
-Every `info` label in the protocol, in one place. New labels must not collide; a changed derivation bumps its `/v`, and a changed envelope layout bumps `native-note/envelope/v1`. `info` is the label's ASCII bytes, and a derivation shown without a salt uses RFC 5869's default of 32 zero bytes.
+New labels must not collide; a changed derivation bumps its `/v`, and a changed envelope layout bumps `native-note/envelope/v1`. `info` is the label's ASCII bytes, and a derivation shown without a salt uses RFC 5869's default of 32 zero bytes.
 
 | Label                                          | Derives             | From                   |
 | ---------------------------------------------- | ------------------- | ---------------------- |

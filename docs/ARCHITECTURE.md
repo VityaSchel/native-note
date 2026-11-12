@@ -2,23 +2,26 @@
 
 ## Cryptography
 
-- **AEAD:** AES-256-GCM
-  - More hardware-acceleration support, available in Android Keystore
-  - Not XChaCha20-Poly1305: not available natively, CryptoKit's `ChaChaPoly` and Android's `ChaCha20/Poly1305` are both the 96-bit-nonce IETF variant
-  - Not IETF ChaCha20-Poly1305: less hardware acceleration support, not available in Android Keystore
-- **Password KDF**: Argon2id, client only
-  - Not PBKDF2: Crackable on GPUs for users without secure enclave
-- **Protocol format:** fixed-layout binary
+- **AEAD:** AES-256-GCM, for hardware acceleration and Android Keystore support
+  - Not XChaCha20-Poly1305: not native on any platform; CryptoKit's `ChaChaPoly` and Android's `ChaCha20/Poly1305` are the 96-bit-nonce IETF variant
+  - Not IETF ChaCha20-Poly1305: less hardware acceleration, absent from Android Keystore
+- **Key derivation:** HKDF-SHA256 (RFC 5869)
+- **MAC and ID blinding:** HMAC-SHA256
+- **Password KDF:** Argon2id, client only
+  - Not PBKDF2: GPU-crackable without a secure enclave
+- **Hardware binding:** platform-specific
+- **Protocol format:** fixed-layout binary, one valid encoding per message
   - Not JSON: base64 is ~133% of binary and needs a parser
-  - Not CBOR or MessagePack: not natively available
-  - Fixed layout removes canonicalization as a rule to follow
-- **Transport envelope:** HKDF-SHA256 (RFC 5869) into AES-256-GCM, `nonce ‖ ciphertext ‖ tag`
-  - Not JWE: JOSE's algorithm-agility pitfalls, on top of the base64 cost
-  - Not libsodium `secretbox`: not platform-native anywhere
-  - Not HPKE PSK mode: absent on Android, which ships Base mode only
-- **Note nonce:** Per-write key from random `writeId`, plus random nonce
-  - Not a counter-based nonce: two devices offline can both produce `v=5` for one note, so counters collide and GCM breaks catastrophically
-  - Not a single key for all notes: a random `writeId` per write makes reuse structurally impossible, and binds the key to that one write
+  - Not CBOR or MessagePack: not native
+- **Transport envelope:** HKDF-SHA256 into AES-256-GCM
+  - Not JWE: JOSE's algorithm-agility pitfalls, plus base64
+  - Not libsodium `secretbox`: not native anywhere
+  - Not HPKE PSK mode: Android ships Base mode only
+- **Note keys:** a per-write key from a random `writeId`, plus a random nonce
+  - Not a counter nonce: two offline devices can both write `v = 5` to one note, and a repeated GCM nonce is catastrophic
+  - Not one key for every note: a key per write rules out nonce reuse and binds the key to its write
+
+All keys are 256-bit. Nonces are random 96-bit.
 
 ## Components
 
@@ -29,34 +32,19 @@
 
 No shared core. Each client implements [clients/DESIGN.md](../clients/DESIGN.md) and must pass the [conformance vectors](../spec/README.md).
 
-## Primitives
-
-| Purpose          | Primitive         |
-| ---------------- | ----------------- |
-| AEAD             | AES-256-GCM       |
-| Key → key        | HKDF-SHA256       |
-| Password → key   | Argon2id          |
-| MAC / blinding   | HMAC-SHA256       |
-| Hardware binding | platform-specific |
-
-All keys are 256-bit. Nonces are securely-random 96-bit.
-
 ## Storage
 
-The app works offline-first and encrypts notes at rest using mandatory unlock password. A sync server can be optionally configured for E2EE storage of notes remotely and syncing across multiple devices.
+Offline-first. Notes are encrypted at rest under a mandatory unlock password; a sync server is optional.
 
 ### Notes
 
-Note model:
-
-- ID — a client-generated UUIDv4
-- Created At — creation date
-- Updated At — modification date
-- Body — stored as plain text, formatted as markdown by clients; title is the first line
+- ID: a client-generated UUIDv4
+- Created At, Updated At
+- Body: plain text, rendered as markdown; the first line is the title
 
 ### Exports
 
-Markdown files in a zip, one per live note, metadata in front matter. Produces an unencrypted copy of everything, so the flow warns and offers passphrase encryption (separate from ZIP's native password protection, because it allows to list files in the archive).
+A zip of markdown files, one per live note, with metadata in front matter, optionally encrypted whole under a passphrase rather than with zip's own encryption, which leaves file names readable.
 
 ## Threat model
 
@@ -68,7 +56,7 @@ Markdown files in a zip, one per live note, metadata in front matter. Produces a
 | Reverse proxy                 | Untrusted, sees sealed envelopes only                                                      |
 | Network                       | Untrusted, sees sealed envelopes only                                                      |
 
-Every row and entry in this section names the tests that prove it, non-goals included, in [ThreatModelCoverageTests](../clients/macos/native-note-kit/Tests/NativeNoteKitTests/ThreatModel/ThreatModelCoverageTests.swift), which fails on an entry without one.
+[ThreatModelCoverageTests](../clients/macos/native-note-kit/Tests/NativeNoteKitTests/ThreatModel/ThreatModelCoverageTests.swift) maps every row and entry in this section, non-goals included, to the tests that prove it.
 
 Known limitations, out of scope:
 
@@ -83,15 +71,15 @@ Known limitations, out of scope:
 
 Documented risks and vulnerabilities:
 
-- **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes, except those that also crossed TLS
-- **Argon2 and SQLCipher** are third-party C in the client, built from source: Argon2 pinned to a commit revision, SQLCipher a submodule pinned to its release tag's commit, its generated amalgamation checked by SHA-256.
-- **Hand-rolled HTTP parser.** Constrained grammar, fuzzed, reverse proxy recommended for public deployments.
+- **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes, except those that also crossed TLS.
+- **Argon2 and SQLCipher** are third-party C in the client, built from pinned source.
+- **Hand-rolled HTTP parser.** Constrained grammar, fuzzed; a reverse proxy is recommended for public deployments.
 - **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule.
 - **Payload length leaks note size in 4 KiB steps.** [Content](./PROTOCOL.md#content) is zero-filled to a multiple of 4096 B, so the server and its backups see how many blocks each version takes, but not which writes delete or how long a short note is.
-- **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. They cannot substitute a key they control — a planted blob fails the tag on decrypt — only render recovery unusable.
-- **Server data-directory compromise leaks the API key.** An attacker who reads `/var/lib/native-note-server/api-key` can decrypt metadata and forge writes.
+- **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. A planted blob fails the tag on decrypt, so they can only make recovery unusable.
+- **Server data-directory compromise leaks the API key.** Reading `/var/lib/native-note-server/api-key` decrypts metadata and forges writes.
 - **No per-device revocation.** Losing a device means [replacing the API key](guides/setup-sync-server.md#connect-a-client) and entering it on the rest.
 - **A short password or pin without hardware binding** is brute-forceable offline in hours.
-- **No in-app unlock attempt limiting.** A counter would sit in storage the attacker owns, and a real attacker attacks the database file rather than the app. A forgotten password leads to erasing the library behind a confirmation only, since anyone at an unlocked session can delete the library folder anyway.
-- **Hardware binding does not add per-guess cost.** A disk image cannot compute `machineId` at any password length, so it cannot be attacked offline at all. An attacker who runs code on the machine reads `machineId` with one call and then guesses offline at Argon2id cost.
-- **The content key never rotates.** The recovery layer exists so a leaked mnemonic does not require entire database re-encryption. A leaked mnemonic still opens any copy of the recovery blob from before a phrase change, such as a server backup, and with it every note.
+- **No in-app unlock attempt limiting.** A counter would sit in storage the attacker owns, and an attacker goes after the database file, not the app. Erasing a library with a forgotten password needs only a confirmation; anyone in an unlocked session can delete its folder anyway.
+- **Hardware binding does not add per-guess cost.** A disk image alone cannot be attacked offline at all, but code running on the machine reads `machineId` with one call and then guesses offline at Argon2id cost.
+- **The content key never rotates.** The recovery layer spares re-encrypting every note when the mnemonic leaks, but a leaked mnemonic still opens any older copy of the recovery blob, such as a server backup, and with it every note.

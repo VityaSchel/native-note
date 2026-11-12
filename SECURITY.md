@@ -4,7 +4,7 @@
 
 Email a PGP-encrypted message to **hi@hloth.dev** with the email's [PGP key](https://hloth.dev/pgp) or send an encrypted message over Matrix to [@hloth:hloth.dev](https://matrix.to/#/@hloth:hloth.dev). Do not open a public issue.
 
-Include what you need to make the problem reproducible: affected component and version, steps, and impact. A proof of concept helps but is not required to report.
+Include the affected component and version, steps to reproduce, and impact. A proof of concept is welcome, not required.
 
 Expect an acknowledgement within 7 days and an assessment within 30. Fixes ship as soon as they are ready; you will be credited unless you ask otherwise.
 
@@ -20,19 +20,17 @@ In scope:
 - Memory-safety or parsing faults in the server's request path.
 - Data loss or corruption under crash, power loss, or concurrent writes.
 
-Out of scope: the documented non-goals in [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model). They are boundaries, not oversights.
+Out of scope: the non-goals in [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model).
+
+Claims in the README and the documents below are verified against the code before each release; report one the code does not support as a vulnerability.
 
 ## Design
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — key hierarchy, encryption, transport, recovery.
-- [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) — adversaries, guarantees, explicit non-goals.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — primitives, components, threat model.
 - [docs/PROTOCOL.md](docs/PROTOCOL.md) — keys, note encryption, transport, recovery.
+- [clients/DESIGN.md](clients/DESIGN.md) — local encryption, unlock, recovery flow, sync.
 - [spec/README.md](spec/README.md) — conformance vectors every client must reproduce.
-
-Claims in the README and these documents are verified against the code before each release. If you find a claim that the code does not support, report it as a vulnerability.
 
 ## Cryptography
 
-No custom primitives. AES-256-GCM, HKDF-SHA256, HMAC-SHA256, Argon2id, and P-256 ECDH in the Secure Enclave, taken from platform crypto where available. The local database uses SQLCipher 4's defaults, AES-256-CBC with HMAC-SHA512 per page, under a raw 256-bit key.
-
-The server depends directly on `ring` and `rusqlite` alone, per [server/DESIGN.md](server/DESIGN.md), with SQLite bundled and statically linked. The client adds Argon2 and SQLCipher to platform frameworks, both built from source: Argon2 pinned to a commit revision in `Package.resolved`, SQLCipher a git submodule pinned to its `v4.17.0` commit, from which [a script](clients/macos/native-note-kit/Scripts/sqlcipher-amalgamation.sh) generates the amalgamation and checks it against pinned SHA-256s.
+No custom primitives; platform crypto where available. The local database uses SQLCipher 4's defaults, AES-256-CBC with HMAC-SHA512 per page, under a raw 256-bit key. The server depends directly on `ring` and `rusqlite` alone, with SQLite bundled. The client adds Argon2 and SQLCipher, both built from pinned source; see [clients/macos/README.md](clients/macos/README.md).

@@ -6,20 +6,20 @@ Dependencies:
 - LocalAuthentication
 - LocalAuthenticationEmbeddedUI
 - Security
-- [SQLCipher](https://github.com/sqlcipher/sqlcipher) — tag `v4.17.0`, built from source with FTS5 its only optional feature, from the amalgamation that [sqlcipher-amalgamation.sh](native-note-kit/Scripts/sqlcipher-amalgamation.sh) generates from the tag's commit, a submodule, and checks by SHA-256
+- [SQLCipher](https://github.com/sqlcipher/sqlcipher) — submodule at tag `v4.17.0`, built from source as an amalgamation, with FTS5 its only optional feature
 - [phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) — revision `f57e61e`, built from source
 
 ## Implementation details
 
-- Crypto, storage, unlock and the model live in the local package `NativeNoteKit`, so they test without the app host
-- Editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage. We chose it over SwiftUI `TextEditor` because `TextEditor` cannot do reliable per-range styling, so the heading would need its own field and unified selection would break. Also the right base for the markdown editor later
-- The editor styles the title and writes the note from the text storage, so paste, undo and redo reach the note. Each note has its own undo history. Input-method text reaches the note on commit, and only text the editor did not show or write itself replaces its contents, so a composition survives a redraw such as a sync status change
-- Database writes off `@MainActor`, published state on it, so it doesn't jank on large notes
-- Argon2 and Secure Enclave calls run on one serial queue, `BlockingWork`, off the main actor and the concurrency pool, which concurrent Secure Enclave calls deadlock
+- Crypto, storage, unlock and the model live in the local package `NativeNoteKit`, which tests without the app host
+- The editor is `NSTextView` (TextKit 2) in an `NSViewRepresentable`, one text storage, not SwiftUI `TextEditor`, which cannot style per range
+- The editor styles the title and writes the note from the text storage, so paste, undo and redo reach the note. Each note has its own undo history. Input-method text reaches the note on commit, and only text the editor did not show or write itself replaces its contents, so a composition survives a redraw
+- Database writes run off `@MainActor`; published state lives on it
+- Argon2 and Secure Enclave calls run on one serial queue, `BlockingWork`, off the main actor and the concurrency pool; concurrent Secure Enclave calls deadlock
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
-- `AppModel` is owned by the `AppDelegate`, not the `App`, so `applicationShouldTerminate` can hold quit until pending saves land
-- No `try!` outside tests, so it doesn't crash on any Keychain ACL or directory failure
+- The `AppDelegate` owns `AppModel`, so `applicationShouldTerminate` can hold quit until pending saves land
 - The test host runs with `.prohibited` activation, so tests never take focus or show in the Dock
+- Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee
 
 Primitives:
 
@@ -28,12 +28,9 @@ Primitives:
 - Argon2id — `phc-winner-argon2`, the reference implementation
 - HMAC-SHA256 — `CryptoKit.HMAC<SHA256>`
 - P-256 ECDH — `CryptoKit.SecureEnclave.P256.KeyAgreement`
+- SQLCipher — the CommonCrypto backend, not a bundled OpenSSL
 
-SQLCipher uses the **CommonCrypto** backend, not a bundled OpenSSL — `PRAGMA cipher_provider` returns `commoncrypto` on a keyed connection.
-
-Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee.
-
-Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics), so a new fingerprint cannot unlock it. It needs a team-signed build and is turned on in Settings with the password.
+Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics).
 
 ### Entitlements
 
@@ -46,7 +43,7 @@ Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAc
 
 The encryption declaration and the App Transport Security justification for review are in [docs/EXPORT_COMPLIANCE.md](../../docs/EXPORT_COMPLIANCE.md).
 
-`com.apple.security.get-task-allow` is injected for non-distribution signing and lets any local process attach a debugger to the running app, which holds the content key in memory. Releases come only from [macos-release.sh](../../.forgejo/scripts/macos-release.sh), whose Developer ID export drops it and which refuses an export that keeps it.
+`com.apple.security.get-task-allow`, injected for non-distribution signing, lets any local process debug the app and read the content key from memory. Releases come only from [macos-release.sh](../../.forgejo/scripts/macos-release.sh): a clean checkout, exported with Developer ID, refused if it keeps `get-task-allow`, lacks the hardened runtime or misses an entitlement, and notarized as one app per architecture.
 
 ### Storage
 
@@ -56,11 +53,11 @@ The encryption declaration and the App Transport Security justification for revi
 | Notes, and sync settings with the API key and Content key | the SQLCipher database (`meta`) |
 | Touch ID copy of `localDbKey`                             | the data-protection keychain    |
 
-Unlock parameters are stored in a binary plist because they're part of the database's identity, migrated along with it and not overridable by a managed value from a configuration profile.
+Unlock parameters are a binary plist beside the database, not `UserDefaults`, so they migrate with it and no configuration profile can override them.
 
 ### Unlock parameters
 
-`localSalt` and `argonParams` per [clients/DESIGN.md](../DESIGN.md#unlock-parameters), stored in `app-lock.plist`, mode `0600`, the absolute path is `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`.
+[Unlock parameters](../DESIGN.md#unlock-parameters) live in `app-lock.plist`, mode `0600`, in `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`. A password change writes the pending `app-lock.next.plist`.
 
 ```
 version     1
@@ -69,16 +66,13 @@ argon       { m: ≥262144, t: 3, p: 4 }   # m in KiB, calibrated per Mac from 2
 enclaveKey  Secure Enclave key blob      # absent without a Secure Enclave
 ```
 
-A rekey writes `app-lock.next.plist` and keeps `app-lock.plist` until the new key is proven. Startup tries the pending file first and falls back to the current one, so an interrupted rekey still opens.
-
 ### Machine ID
 
-The Apple implementation of [`hardwareOp`](../DESIGN.md#hardwarebinding). The Enclave holds only **P-256** keys, so the operation is a key agreement of the device key with its own public key:
+The Apple [`hardwareOp`](../DESIGN.md#hardwarebinding). The Enclave holds only **P-256** keys, so the operation is a key agreement of the device key with its own public key:
 
 ```
 enclaveKey = SecureEnclave.P256.KeyAgreement.PrivateKey    # device-bound, non-extractable, no ACL flags
 hardwareOp() = ECDH(enclaveKey, publicKey(enclaveKey))     # d²G, runs on the chip
 ```
 
-`app-lock.plist` stores the key blob, and that blob contains `dG` in the clear. Recovering `d²G` from `dG` is the computational Diffie-Hellman problem, so the result is unreachable without the chip. `enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`.
-
+`enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`. The key blob in `app-lock.plist` holds `dG` in the clear; recovering `d²G` from it is the computational Diffie-Hellman problem.

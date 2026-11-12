@@ -4,47 +4,29 @@
 
 ```
 docs/              cross-cutting design, sync protocol, roadmap
-spec/vectors/      language-neutral conformance vectors
-spec/generator/    Rust tool that generates and verifies them
-spec/wordlists/    BIP39 wordlists, pinned by hash
+spec/              conformance vectors, their generator, BIP39 wordlists
 server/            Rust server workspace, docs in its root
 clients/           shared client design, one directory per platform
 clients/macos/     Xcode project, docs in its root
 devtools/          development-only tools, never shipped
 ```
 
-## Build and test
+## Checks
 
-Every pull request runs [.forgejo/workflows/checks.yml](.forgejo/workflows/checks.yml) on Linux: repository hygiene, documentation links, and the Rust commands below with `--locked` added. Supply-chain checks run nightly in [.forgejo/workflows/audit.yml](.forgejo/workflows/audit.yml).
+CI runs repository hygiene, the link check and the Rust checks below with `--locked` on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), and the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)).
 
 ### Conformance vectors
-
-Format and per-file contents: [spec/README.md](spec/README.md).
 
 ```sh
 cd spec/generator
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
-cargo test                                # verify the generator reproduces every vector
-cargo run --bin gen-vectors               # regenerate after an intentional protocol change
-../../.forgejo/scripts/rust-coverage.sh   # line coverage of src/, excluding src/bin
-```
-
-The generator is deterministic: salts, nonces, and keys are fixed. Regenerating without a protocol change must produce no diff.
-
-Every line of `src/` outside `src/bin` must run under test; the coverage script lists any that do not.
-
-Supply chain:
-
-```sh
-cargo install --locked cargo-deny@0.20.2 cargo-audit@0.22.2   # versions pinned in audit.yml
-cargo deny --config ../../deny.toml check
-cargo audit --deny warnings
+cargo test
+cargo run --bin gen-vectors
+../../.forgejo/scripts/rust-coverage.sh
 ```
 
 ### Server
-
-Design: [server/DESIGN.md](server/DESIGN.md). `native-note-core` is the request path without IO, `native-note-server` the binary, and `native-note-testkit` the test client both share.
 
 ```sh
 cd server
@@ -52,126 +34,54 @@ cargo fmt --check
 rustfmt --check --edition 2024 native-note-core/fuzz/fuzz_targets/*.rs
 cargo clippy --all-targets -- -D warnings
 cargo test
-../.forgejo/scripts/server-coverage.sh   # line, branch and region coverage of both crates' src, excluding tests
+../.forgejo/scripts/server-coverage.sh
 ```
 
-The coverage script enforces the [coverage gate](server/DESIGN.md#server-core), 100% for the core and 90% for the server, and lists anything missed. Property tests live in modules named `props`, which the coverage run skips, and no other test's path contains `props`.
+- Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
+- Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
+- Release tarballs: `.forgejo/scripts/server-release.sh`, per [server/DESIGN.md § Server release](server/DESIGN.md#server-release).
 
-A new vector file, or a new case in a file the server replays, fails the suite until `native-note-core/tests/suite/support/vectors.rs` lists it as replayed or client-only.
+### Supply chain
 
-Fuzzing is manual, not in CI, on the nightly pinned in the coverage script. Run each target overnight:
-
-```sh
-cargo install --locked cargo-fuzz@0.13.2
-cd server/native-note-core
-nightly="$(sed -n 's/^nightly="\(.*\)"$/\1/p' ../../.forgejo/scripts/server-coverage.sh)"
-rustup toolchain install "$nightly" --profile minimal
-cargo "+$nightly" fuzz run frame -- -max_total_time=28800 -malloc_limit_mb=16
-cargo "+$nightly" fuzz run envelope -- -max_total_time=28800 -malloc_limit_mb=16
-cargo "+$nightly" fuzz run http -- -max_total_time=28800 -malloc_limit_mb=16
-```
-
-Minimize a finding with `cargo "+$nightly" fuzz tmin <target> <artifact>` and add its bytes as a regression test in `tests/suite`.
-
-Run a server locally, and talk to it with curl through the development-only `envelope` tool, which seals a request and opens its reply:
+In `server/` and `spec/generator/`, with the versions [audit.yml](.forgejo/workflows/audit.yml) pins:
 
 ```sh
-cd server
-cargo run -p native-note-server -- 127.0.0.1:8080 /tmp/native-note-data
-printf '02' | xxd -r -p | cargo run -q -p native-note-testkit --bin envelope -- seal /tmp/native-note-data/api-key >get.body
-curl -sS -H 'Expect:' --data-binary @get.body -o get.reply http://127.0.0.1:8080/
-cargo run -q -p native-note-testkit --bin envelope -- open /tmp/native-note-data/api-key get.body <get.reply | xxd -p
-```
-
-Release tarballs, each holding the static binary for `x86_64` or `aarch64` Linux and the systemd unit, land in `releases/` with their SHA-256; the script builds only a clean checkout, and hashes compare only between builds on the same host:
-
-```sh
-.forgejo/scripts/server-release.sh
-```
-
-Supply chain, with cargo-deny and cargo-audit installed as above:
-
-```sh
-cd server
-cargo deny --config ../deny.toml check
+cargo deny --config <repository>/deny.toml check
 cargo audit --deny warnings
 ```
 
 ### macOS client
 
-Open `clients/macos/native-note.xcodeproj` in Xcode 26.2 or newer on macOS 26.0. `xcodebuild` needs Xcode selected, not the Command Line Tools (`sudo xcode-select -s /Applications/Xcode.app`). Before the first build, run `native-note-kit/Scripts/sqlcipher-amalgamation.sh`, which checks out the SQLCipher submodule and generates its amalgamation. The first build fetches Argon2.
-
-Touch ID unlock needs a team-signed build. Put your team in `clients/macos/Local.xcconfig`, which git ignores, and pass `-allowProvisioningUpdates` to `xcodebuild`:
+Xcode 26.2 or newer on macOS 26.0. Touch ID needs a team-signed build: put these in the git-ignored `clients/macos/Local.xcconfig` and pass `-allowProvisioningUpdates` to `xcodebuild`:
 
 ```
 DEVELOPMENT_TEAM = <your team ID>
 NATIVE_NOTE_ENTITLEMENTS = NativeNote.entitlements
 ```
 
-Without it the app builds without the keychain entitlement, Touch ID unlock is unavailable, and its keychain tests skip.
-
-On a free Personal Team the development profile expires after 7 days; rebuild before then.
-
-Build and install a Release copy:
-
 ```sh
 cd clients/macos
+native-note-kit/Scripts/sqlcipher-amalgamation.sh
 xcodebuild build -project native-note.xcodeproj -scheme native-note -configuration Release -destination 'generic/platform=macOS' -derivedDataPath build -allowProvisioningUpdates
-rm -rf "/Applications/Native Note.app"
 ditto "build/Build/Products/Release/Native Note.app" "/Applications/Native Note.app"
-```
-
-A distributable release needs a Developer ID Application certificate in the keychain and notary credentials stored once with `xcrun notarytool store-credentials <profile>`. It builds only a clean checkout, archives in its own DerivedData with the commit count as the build number, exports with Developer ID, refuses a build that keeps `get-task-allow`, lacks the hardened runtime or misses any entitlement, Touch ID's keychain group included, notarizes and staples, and leaves one zip per architecture, `arm64` and `x86_64`, in `releases/` with its SHA-256; it refuses a binary holding any other architecture:
-
-```sh
-DEVELOPMENT_TEAM=<team ID> NOTARY_PROFILE=<profile> .forgejo/scripts/macos-release.sh <version>
-```
-
-Package tests run without the app host. Like `xcodebuild`, they need Xcode selected, and the sync tests build and run the server from `server/`, so they need the Rust toolchain too:
-
-```sh
-cd clients/macos/native-note-kit
-swift test
-```
-
-App and view tests run hosted:
-
-```sh
-cd clients/macos
 xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 'platform=macOS'
+(cd native-note-kit && swift test)
 ```
 
-Read the `Test run with N tests` line, not `TEST SUCCEEDED`: `-only-testing` without the test's trailing `()` runs nothing and still succeeds.
+The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`: `DEVELOPMENT_TEAM=<team ID> NOTARY_PROFILE=<profile> .forgejo/scripts/macos-release.sh <version>`.
 
-Tests never present windows, sheets, or alerts. Call view logic directly or host the view in `OffscreenWindow`.
-
-Every feature gets unit tests and headless end-to-end tests. End-to-end tests run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`, so the package run takes about two minutes. The force-quit test kills `NativeNoteTypist` while it types: everything typed before the 300 ms save window plus 100 ms must survive. The typing tests hold a keystroke on 1,000 notes to 20 times one in a plain text view and 3 times one on 10 notes, and a save to 100 ms at the 95th percentile.
-
-Power loss is checked in a macOS VM: [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
-
-Coverage is off in the shared scheme. Measure the package with `swift test --enable-code-coverage`, and the hosted tests with the sandbox off, since a sandboxed host writes no coverage data:
-
-```sh
-rm -rf build/coverage.xcresult
-xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 'platform=macOS' -enableCodeCoverage YES -resultBundlePath build/coverage.xcresult ENABLE_APP_SANDBOX=NO
-xcrun xccov view --report --only-targets build/coverage.xcresult
-```
-
-Views below `ContentView` take plain data, not `AppModel`, so the Xcode canvas can render them without a database. Sample fixtures live behind `#if DEBUG` — and so must the `#Preview` blocks that use them, because previews are compiled in Release too.
-
-Package tests read `spec/vectors` from their bundle, copied in through the `Tests/NativeNoteKitTests/vectors` symlink. A new vector file fails the tests until `VectorFile` lists it.
-
-**Verified locally only.** CI has no macOS runner, so run both test commands before a pull request that touches the client.
+- Every feature gets unit tests and headless end-to-end tests, which run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`.
+- Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.
+- Budgets: a force-quit loses at most the last 400 ms of typing; a keystroke on 1,000 notes costs at most 20 times one in a plain text view and 3 times one on 10 notes; a save takes at most 100 ms at the 95th percentile.
+- Views below `ContentView` take plain data, not `AppModel`.
+- Power loss: [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
 
 ## Rules
 
-**A spec change is not done until the vectors are regenerated in the same commit.** CI fails if the generator produces a diff against what is committed.
-
-**No floating dependencies.** No release candidates, no betas, no version ranges, no branch or tag references. Pin the strongest immutable reference the ecosystem offers: an exact version backed by a lockfile checksum, an exact commit revision, or a content hash.
-
-**Adding a dependency to the server needs a written justification** in [server/DESIGN.md](server/DESIGN.md).
-
-**Every claim in the README and docs must match the code.** A documentation claim the code does not support is treated as a defect.
+- A spec change regenerates the vectors in the same commit. A new vector file is listed in the server's `tests/suite/support/vectors.rs` and the client's `VectorFile`.
+- No floating dependencies: pin an exact version backed by a lockfile checksum, a commit revision or a content hash.
+- A new server dependency needs a written justification in [server/DESIGN.md](server/DESIGN.md).
+- Every claim in the README and docs matches the code; a mismatch is a defect.
 
 ## Naming
 
@@ -182,24 +92,17 @@ Package tests read `spec/vectors` from their bundle, copied in through the `Test
 | PascalCase languages, mainly Swift | `NativeNote`                                    | type names, the files holding them, Swift modules (`NativeNote`, `NativeNoteKit`) |
 | Where a hyphen is not allowed      | `nativenote` or `native_note`, decided per case | bundle IDs, Rust crate names in code                                              |
 
-Never `nativeNote`. Never `NativeNote` outside a PascalCase language context — it is a type name, not a path.
-
-The bundle ID is `dev.hloth.nativenote` rather than `dev.hloth.native-note` because Android package segments disallow hyphens and the identifier must be the same on every platform.
+Never `nativeNote`. The bundle ID is `dev.hloth.nativenote` on every platform, since Android package segments disallow hyphens.
 
 ## Style
 
 - Tabs for indentation, four-wide, where possible.
-- Avoid comments, comment only what the code genuinely cannot say, and add a spec citation or reference link.
-- Split files past roughly 300–400 lines into smaller modules.
-- Aim for less code.
+- Comment only what the code cannot say, with a spec citation or reference link.
+- Split files past roughly 300–400 lines.
 - Rust: `rustfmt` with hard tabs. Clippy warnings are errors.
 - Swift: no `try!` outside tests. Database writes never run on `@MainActor`.
 - Dates as `YYYY-MM-DD`. US English. Metric units.
 
-## Security work
+## Security
 
-Read [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) before touching crypto, key storage, or the request path.
-
-Never log secrets or plaintext. In the Rust server, key material stays in [`Secret<T>`](server/DESIGN.md#server-storage); the generator's published fixture keys stay bare. In Swift, key material stays in `SymmetricKey`, reaches no log or error, and its one text form is the raw-key literal buffer that `SQLiteConnection.withRawKeyLiteral` wipes after use.
-
-Report vulnerabilities per [SECURITY.md](SECURITY.md) rather than in a public issue.
+Read [docs/ARCHITECTURE.md § Threat model](docs/ARCHITECTURE.md#threat-model) before touching crypto, key storage or the request path. Never log secrets or plaintext: server key material stays in [`Secret<T>`](server/DESIGN.md#server-storage), Swift key material in `SymmetricKey`. Report vulnerabilities per [SECURITY.md](SECURITY.md).
