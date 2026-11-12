@@ -1,7 +1,7 @@
 import Foundation
 
 enum GuestKit {
-	static let requiredItems = ["power-loss-agent", "power-loss-flush-probe", "NativeNoteTypist", "setup.sh", "allow-agent.sh", "install-agent.sh", "start-agent.sh", "dev.hloth.devtools.native-note-power-loss-test.plist"]
+	static let requiredItems = ["power-loss-agent", "NativeNoteTypist", "setup.sh", "install-agent.sh", "start-agent.sh", "dev.hloth.devtools.native-note-power-loss-test.plist"]
 
 	static var built: URL {
 		let executable = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
@@ -22,23 +22,5 @@ enum GuestKit {
 			}
 			try manager.copyItem(at: built.appending(path: item), to: target)
 		}
-		try stageSSHKey(layout)
-	}
-
-	private static func stageSSHKey(_ layout: Layout) throws {
-		let publicKey = URL(fileURLWithPath: layout.sshKey.path + ".pub")
-		if !layout.exists(layout.sshKey) {
-			let keygen = Process()
-			keygen.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
-			keygen.arguments = ["-q", "-t", "ed25519", "-N", "", "-C", "native-note-power-loss", "-f", layout.sshKey.path]
-			try keygen.run()
-			keygen.waitUntilExit()
-			guard keygen.terminationStatus == 0 else { throw HarnessError("ssh-keygen exited with \(keygen.terminationStatus)") }
-		}
-		let staged = layout.kit.appending(path: "power-loss.pub")
-		if layout.exists(staged) {
-			try FileManager.default.removeItem(at: staged)
-		}
-		try FileManager.default.copyItem(at: publicKey, to: staged)
 	}
 }

@@ -37,32 +37,16 @@ struct NBDServerTests {
 		return client
 	}
 
-	private func connectLoopback(_ port: Int) throws -> NBDTestClient {
-		let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-		var address = sockaddr_in()
-		address.sin_family = sa_family_t(AF_INET)
-		address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-		address.sin_port = UInt16(port).bigEndian
-		address.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
-		let connected = withUnsafePointer(to: &address) { pointer in
-			pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
-		}
-		let client = NBDTestClient(descriptor: descriptor)
-		try #require(connected == 0, "connect failed with errno \(errno)")
-		return client
-	}
-
 	@Test func aUnixSocketServerNamesItsSocketInTheURLAndRemovesItOnStop() throws {
 		defer { finish() }
 		let path = scratch.directory.appending(path: "nbd.sock").path
 
-		let url = try server.start(.unixSocket(path: path))
+		let url = try server.start(socketPath: path)
 		let client = try connectUnixSocket(path)
 		try client.connect()
 		let written = try client.write([42], at: 7)
 
 		#expect(url.absoluteString == "nbd+unix:///library?socket=\(path)")
-		#expect(url == NBDServer.url(for: .unixSocket(path: path)))
 		#expect(written.error == 0)
 		#expect(try scratch.disk.read(at: 7, count: 1) == [42])
 		server.stop()
@@ -70,23 +54,10 @@ struct NBDServerTests {
 		#expect(!FileManager.default.fileExists(atPath: path))
 	}
 
-	@Test func aLoopbackServerNamesItsPortInTheURL() throws {
-		defer { finish() }
-
-		let url = try server.start(.loopback(port: 0))
-		let port = try #require(url.port)
-		let client = try connectLoopback(port)
-		try client.connect()
-
-		#expect(url.absoluteString == "nbd://127.0.0.1:\(port)/library")
-		#expect(url == NBDServer.url(for: .loopback(port: UInt16(port))))
-		#expect(try client.read(at: 3, count: 1).data == [3])
-	}
-
 	@Test func restoringPowerDisconnectsTheFirstBootAndTheNextBootReadsWhatWasAcknowledged() throws {
 		defer { finish() }
 		let path = scratch.directory.appending(path: "nbd.sock").path
-		try server.start(.unixSocket(path: path))
+		try server.start(socketPath: path)
 		let firstBoot = try connectUnixSocket(path)
 		try firstBoot.connect()
 		_ = try firstBoot.write([1], at: 0)
@@ -109,8 +80,8 @@ struct NBDServerTests {
 		close(leftover)
 		try Data([1]).write(to: URL(fileURLWithPath: other))
 
-		#expect(throws: NBDServer.Failure.notASocket(other)) { try NBDServer(disk: scratch.disk).start(.unixSocket(path: other)) }
-		try server.start(.unixSocket(path: stale))
+		#expect(throws: NBDServer.Failure.notASocket(other)) { try NBDServer(disk: scratch.disk).start(socketPath: other) }
+		try server.start(socketPath: stale)
 		let client = try connectUnixSocket(stale)
 
 		#expect(try Data(contentsOf: URL(fileURLWithPath: other)) == Data([1]))
@@ -121,14 +92,14 @@ struct NBDServerTests {
 		defer { finish() }
 		let path = "/tmp/" + String(repeating: "a", count: 104)
 
-		#expect(throws: NBDServer.Failure.socketPathTooLong(path)) { try server.start(.unixSocket(path: path)) }
+		#expect(throws: NBDServer.Failure.socketPathTooLong(path)) { try server.start(socketPath: path) }
 	}
 
 	@Test func aServerStartsOnlyOnce() throws {
 		defer { finish() }
 
-		try server.start(.loopback(port: 0))
+		try server.start(socketPath: scratch.directory.appending(path: "first.sock").path)
 
-		#expect(throws: NBDServer.Failure.alreadyStarted) { try server.start(.loopback(port: 0)) }
+		#expect(throws: NBDServer.Failure.alreadyStarted) { try server.start(socketPath: scratch.directory.appending(path: "second.sock").path) }
 	}
 }

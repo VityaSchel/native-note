@@ -13,9 +13,4 @@ struct AgentLogTests {
 	@Test func everyAgentLineCarriesItsTime() {
 		#expect(AgentLog.line("vsock port 7040 failed with errno 48", at: moment) == "power-loss-agent: 2026-09-21T14:13:20Z vsock port 7040 failed with errno 48\n")
 	}
-
-	@Test func anEmptyTailSaysTheAgentWroteNothing() {
-		#expect(AgentLog.shown([]) == ["(empty: the agent has written nothing since the setup script restarted it)"])
-		#expect(AgentLog.shown(["power-loss-agent: 2026-09-21T14:13:20Z listening on vsock port 7040"]) == ["power-loss-agent: 2026-09-21T14:13:20Z listening on vsock port 7040"])
-	}
 }

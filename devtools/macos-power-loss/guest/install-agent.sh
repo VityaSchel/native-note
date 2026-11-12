@@ -8,8 +8,12 @@ daemon=$2
 log=$3
 label=$(basename "$daemon" .plist)
 
+load_or_restart_daemon() {
+	launchctl bootstrap system "$daemon" 2>/dev/null || launchctl kickstart -k "system/$label"
+}
+
 install -d -m 0755 "$(dirname "$launcher")"
 install -m 0755 "$kit/start-agent.sh" "$launcher"
 install -m 0644 "$kit/$label.plist" "$daemon"
 : >"$log"
-launchctl bootstrap system "$daemon" 2>/dev/null || launchctl kickstart -k "system/$label"
+load_or_restart_daemon

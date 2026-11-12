@@ -54,7 +54,6 @@ struct NBDCountingTests {
 		_ = try client.reply()
 
 		#expect(server.activity == DiskActivity(reads: 2, writes: 2, forcedWrites: 2, flushes: 1, trims: 1, writeZeroes: 1, cache: 1))
-		#expect(server.rejections.isEmpty)
 		#expect(rejectionLines.isEmpty)
 	}
 
@@ -68,7 +67,7 @@ struct NBDCountingTests {
 		#expect(server.activity == DiskActivity(writes: 1, flushes: 1))
 	}
 
-	@Test func everyRejectedRequestIsCountedLoggedAndKeptWithItsDetails() throws {
+	@Test func everyRejectedRequestIsCountedAndLoggedWithItsDetails() throws {
 		defer { finish() }
 
 		try client.request(99, flags: 1 << 3, cookie: 10, offset: 7, length: 3)
@@ -80,13 +79,6 @@ struct NBDCountingTests {
 		_ = try client.read(at: 0, count: 8_193)
 
 		#expect(server.activity == DiskActivity(rejected: 4, unknown: 1))
-		#expect(server.rejections == [
-			NBDRejection(type: 99, flags: 1 << 3, offset: 7, length: 3, error: 22, reason: "the server does not know this command"),
-			NBDRejection(type: 3, flags: 1 << 2, offset: 0, length: 0, error: 22, reason: "unsupported flags 0x0004 (DF)"),
-			NBDRejection(type: 1, flags: 0, offset: UInt64(ScratchDisk.size - 4), length: 8, error: 28, reason: "beyond the end of the 65536-byte disk"),
-			NBDRejection(type: 1, flags: 0, offset: 0, length: 8_193, error: 22, reason: "longer than the 8192-byte maximum payload"),
-			NBDRejection(type: 0, flags: 0, offset: 0, length: 8_193, error: 22, reason: "longer than the 8192-byte maximum payload"),
-		])
 		#expect(rejectionLines == [
 			"nbd: rejected unknown command 99 flags 0x0008 (REQ_ONE) offset 7 length 3: the server does not know this command, answered EINVAL",
 			"nbd: rejected FLUSH flags 0x0004 (DF) offset 0 length 0: unsupported flags 0x0004 (DF), answered EINVAL",
@@ -94,20 +86,6 @@ struct NBDCountingTests {
 			"nbd: rejected WRITE flags 0x0000 offset 0 length 8193: longer than the 8192-byte maximum payload, answered EINVAL",
 			"nbd: rejected READ flags 0x0000 offset 0 length 8193: longer than the 8192-byte maximum payload, answered EINVAL",
 		])
-	}
-
-	@Test func onlyTheFirstRejectionsAreKeptButEveryOneIsCountedAndLogged() throws {
-		defer { finish() }
-		let count = NBDLedger.keptRejections + 3
-
-		for cookie in 0 ..< count {
-			try client.request(42, cookie: UInt64(cookie))
-			_ = try client.reply()
-		}
-
-		#expect(server.activity == DiskActivity(unknown: count))
-		#expect(server.rejections.count == NBDLedger.keptRejections)
-		#expect(rejectionLines.count == count)
 	}
 
 	@Test func aDisconnectIsNotCounted() throws {

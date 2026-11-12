@@ -18,14 +18,13 @@ enum Setup {
 	static func run(_ layout: Layout) async throws {
 		try layout.requireInstalled()
 		try GuestKit.stage(layout)
-		for marker in [layout.setupFinished, layout.agentTransport] where layout.exists(marker) {
-			try FileManager.default.removeItem(at: marker)
+		if layout.exists(layout.setupFinished) {
+			try FileManager.default.removeItem(at: layout.setupFinished)
 		}
 		try DiskBudget.check(layout.home)
-		let server = NBDServer(disk: try OrderedDisk(backing: layout.library), log: say)
+		let (server, nbd) = try layout.serveLibrary()
 		defer { server.stop() }
-		let nbd = try server.start(NBDTransport.unix.endpoint)
-		let machine = Machine(try MachineConfiguration.make(layout, role: .setup(nbd: nbd, kit: layout.kit)))
+		let machine = try Machine(try MachineConfiguration.make(layout, role: .setup(library: nbd)))
 		let window = SetupWindow(machine: machine)
 		defer { window.close() }
 		try await machine.virtualMachine.start()
@@ -39,22 +38,19 @@ enum Setup {
 		}
 
 		say("setup: the script is done, checking the guest agent")
-		guard let link = await AgentLink.firstAnswering([.vsock, .ssh], layout: layout, on: machine, within: agentTimeout) else {
-			say("setup: the guest agent answers neither over vsock nor over SSH. The end of \(SSHLogin.agentLog) in the VM:")
-			for line in AgentLog.shown(await AgentLink.recentLog(layout)) {
-				say("  \(line)")
-			}
-			say("setup: close the VM window when you are done looking.")
+		do {
+			try await machine.waitForAgent(within: agentTimeout)
+		} catch {
+			say("setup: \(error). Its log in the VM is \(AgentLog.path). Close the VM window when you are done looking.")
 			while !machine.hasStopped {
 				try? await Task.sleep(for: .seconds(1))
 			}
 			throw HarnessError("the guest agent did not answer; run power-loss setup again once it does")
 		}
-		say("setup: the agent answers over \(link), shutting the VM down")
-		await link.shutDown(machine)
+		say("setup: the agent answers, shutting the VM down")
+		await machine.shutDownGuest()
 		server.stop()
 		try BackingFile.restore(layout.formattedLibrary, from: layout.library)
-		try Data(link.kind.rawValue.utf8).write(to: layout.agentTransport)
 		say("setup: done. Next: power-loss run --count 20")
 	}
 }

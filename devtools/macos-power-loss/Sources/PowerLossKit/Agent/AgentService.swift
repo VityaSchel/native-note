@@ -3,38 +3,24 @@ import Foundation
 
 public struct AgentService: Sendable {
 	public let typist: URL
-	public let probe: URL
 	public let kit: URL
-	public let systemFolder: URL
-	public let diagnosis: [DiagnosisStep]
 	public let libraryDirectory: @Sendable () throws -> URL
 	public let shutDown: @Sendable () -> Void
 
 	static let longestRequest = 4096
 
-	public init(
-		typist: URL,
-		probe: URL = LocalKit.probe,
-		kit: URL = LocalKit.folder,
-		systemFolder: URL = URL(filePath: "/private/var/tmp", directoryHint: .isDirectory),
-		diagnosis: [DiagnosisStep] = GuestDiagnosis.steps,
-		libraryDirectory: @escaping @Sendable () throws -> URL,
-		shutDown: @escaping @Sendable () -> Void
-	) {
+	public init(typist: URL, kit: URL = LocalKit.folder, libraryDirectory: @escaping @Sendable () throws -> URL, shutDown: @escaping @Sendable () -> Void) {
 		self.typist = typist
-		self.probe = probe
 		self.kit = kit
-		self.systemFolder = systemFolder
-		self.diagnosis = diagnosis
 		self.libraryDirectory = libraryDirectory
 		self.shutDown = shutDown
 	}
 
-	public func serve(input: Int32, output: Int32) {
+	public func serve(_ connection: Int32) {
 		var enabled: Int32 = 1
-		setsockopt(output, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
-		let replies = ReplyChannel(descriptor: output)
-		guard let line = Self.request(from: input) else { return }
+		setsockopt(connection, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
+		let replies = ReplyChannel(descriptor: connection)
+		guard let line = Self.request(from: connection) else { return }
 		guard let request = AgentRequest(line: line) else {
 			replies.send(.failure("unknown request"))
 			return
@@ -47,19 +33,12 @@ public struct AgentService: Sendable {
 				replies.send(.done)
 				shutDown()
 			case .install(let byteCount):
-				try LocalKit.unpack(from: input, byteCount: byteCount, into: kit)
+				try LocalKit.unpack(from: connection, byteCount: byteCount, into: kit)
 				replies.send(.done)
-			case .diagnose:
-				GuestDiagnosis.run(diagnosis, executing: Self.execute) { replies.send(.output($0.joined(separator: "\n"))) }
-				replies.send(.done)
-			case .probe(let target):
-				let folder = target == .library ? try libraryDirectory().deletingLastPathComponent() : systemFolder
-				let pacing = FileHandle(fileDescriptor: input, closeOnDealloc: false)
-				replies.send(.exit(try relay(probe, [folder.path], input: pacing, to: replies)))
 			case .prepare, .type, .verify:
 				guard let (mode, password) = request.typistArguments else { return }
 				let library = try libraryDirectory()
-				replies.send(.exit(try relay(typist, [mode, library.path, password], input: FileHandle.nullDevice, to: replies)))
+				replies.send(.exit(try relay(typist, [mode, library.path, password], to: replies)))
 			}
 		} catch {
 			replies.send(.failure(String(describing: error)))
@@ -90,12 +69,12 @@ public struct AgentService: Sendable {
 		return nil
 	}
 
-	private func relay(_ executable: URL, _ arguments: [String], input: FileHandle, to replies: ReplyChannel) throws -> Int32 {
+	private func relay(_ executable: URL, _ arguments: [String], to replies: ReplyChannel) throws -> Int32 {
 		let output = Pipe()
 		let process = Process()
 		process.executableURL = executable
 		process.arguments = arguments
-		process.standardInput = input
+		process.standardInput = FileHandle.nullDevice
 		process.standardOutput = output
 		process.standardError = output
 		try process.run()
@@ -113,25 +92,6 @@ public struct AgentService: Sendable {
 		}
 		process.waitUntilExit()
 		return process.terminationStatus
-	}
-
-	static func execute(_ command: DiagnosticCommand) -> DiagnosticRun {
-		guard let executable = command.arguments.first else { return DiagnosticRun(status: nil, output: "", failure: "no command") }
-		let output = Pipe()
-		let process = Process()
-		process.executableURL = URL(filePath: executable)
-		process.arguments = Array(command.arguments.dropFirst())
-		process.standardInput = FileHandle.nullDevice
-		process.standardOutput = output
-		process.standardError = output
-		do {
-			try process.run()
-		} catch {
-			return DiagnosticRun(status: nil, output: "", failure: String(describing: error))
-		}
-		let printed = output.fileHandleForReading.readDataToEndOfFile()
-		process.waitUntilExit()
-		return DiagnosticRun(status: process.terminationStatus, output: String(decoding: printed, as: UTF8.self))
 	}
 }
 

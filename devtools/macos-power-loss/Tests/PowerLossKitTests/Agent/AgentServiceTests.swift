@@ -29,11 +29,7 @@ struct AgentServiceTests {
 	}
 
 	private func typist(_ body: String) throws -> URL {
-		try script("typist", body)
-	}
-
-	private func script(_ name: String, _ body: String) throws -> URL {
-		let url = directory.appending(path: name)
+		let url = directory.appending(path: "typist")
 		try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
 		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
 		return url
@@ -53,7 +49,7 @@ struct AgentServiceTests {
 		let (host, guest) = (ends[0], ends[1])
 		defer { close(host) }
 		Thread {
-			service.serve(input: guest, output: guest)
+			service.serve(guest)
 			close(guest)
 		}.start()
 		Thread {
@@ -80,7 +76,7 @@ struct AgentServiceTests {
 		let kit = directory.appending(path: "kit-\(typist)")
 		try FileManager.default.createDirectory(at: kit, withIntermediateDirectories: true)
 		try Data(typist.utf8).write(to: kit.appending(path: "NativeNoteTypist"))
-		try Data("probe".utf8).write(to: kit.appending(path: "power-loss-flush-probe"))
+		try Data("agent".utf8).write(to: kit.appending(path: "power-loss-agent"))
 		return kit
 	}
 
@@ -96,15 +92,15 @@ struct AgentServiceTests {
 		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "sent")
 	}
 
-	@Test func anIncompleteKitIsRefusedWithTheReason() throws {
+	@Test func aKitWithoutTheTypistIsRefusedWithTheReason() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
 		let service = AgentService(typist: local.appending(path: "NativeNoteTypist"), kit: local, libraryDirectory: { throw Failure() }, shutDown: {})
-		let archive = try LocalKit.archive(["NativeNoteTypist"], from: try kit(typist: "alone"))
+		let archive = try LocalKit.archive(["power-loss-agent"], from: try kit(typist: "missing"))
 
 		let replies = try exchange(Data("install \(archive.count)\n".utf8) + archive, with: service)
 
-		#expect(replies == ["error the kit arrived without power-loss-flush-probe", ""])
+		#expect(replies == ["error the kit arrived without NativeNoteTypist", ""])
 		#expect(!FileManager.default.fileExists(atPath: local.path))
 	}
 
@@ -130,7 +126,7 @@ struct AgentServiceTests {
 		}
 		_ = Array("shutdown\n".utf8).withUnsafeBytes { write(host, $0.baseAddress, $0.count) }
 
-		service.serve(input: guest, output: guest)
+		service.serve(guest)
 
 		#expect(answeredFirst.value == 1)
 	}
@@ -168,59 +164,6 @@ struct AgentServiceTests {
 		let service = service(typist: try typist("echo typed")) { throw Failure() }
 
 		#expect(try exchange("verify power loss\n", with: service) == ["error the PowerLossLibrary volume is not mounted", ""])
-	}
-
-	@Test func diagnoseRunsEveryStepThenAnswersOk() throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let steps = [
-			DiagnosisStep(DiagnosticCommand("/bin/sh", "-c", "echo disk0; echo disk1 >&2; exit 3"), then: { output in
-				output.split(separator: "\n").map { DiagnosticCommand("/bin/echo", "info", String($0)) }
-			}),
-			DiagnosisStep(DiagnosticCommand(directory.appending(path: "missing").path)),
-		]
-		let service = AgentService(typist: try typist("exit 9"), diagnosis: steps, libraryDirectory: { throw Failure() }, shutDown: {})
-
-		let lines = try exchange("diagnose\n", with: service)
-
-		#expect(Array(lines.prefix(7)) == [
-			"== /bin/sh -c 'echo disk0; echo disk1 >&2; exit 3' (exit 3)",
-			"| disk0",
-			"| disk1",
-			"== /bin/echo info disk0 (exit 0)",
-			"| info disk0",
-			"== /bin/echo info disk1 (exit 0)",
-			"| info disk1",
-		])
-		#expect(lines[7].hasPrefix("== \(directory.path)/missing (could not run: "))
-		#expect(Array(lines.suffix(2)) == ["ok", ""])
-		#expect(lines.count == 10)
-	}
-
-	@Test func aLibraryProbeRunsOnTheLibraryVolumeAndIsPacedByTheHarness() throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let volume = directory.appending(path: "volume")
-		let probe = try script("probe", #"echo "on $1"; read first; echo "then $first"; read second; echo "then $second"; exit 4"#)
-		let service = AgentService(typist: try typist("exit 9"), probe: probe, libraryDirectory: { volume.appending(path: "library") }, shutDown: {})
-
-		let lines = try exchange("probe library\ngo\nagain\n", with: service)
-
-		#expect(lines == ["on \(volume.path)", "then go", "then again", "exit 4", ""])
-	}
-
-	@Test func aSystemProbeRunsInTheSystemFolderWithoutTheLibrary() throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let probe = try script("probe", #"echo "on $1""#)
-		let service = AgentService(typist: try typist("exit 9"), probe: probe, systemFolder: directory, libraryDirectory: { throw Failure() }, shutDown: {})
-
-		#expect(try exchange("probe system\n", with: service) == ["on \(directory.path)", "exit 0", ""])
-	}
-
-	@Test func aLibraryProbeWithoutTheVolumeIsRefused() throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let probe = try script("probe", "echo probed")
-		let service = AgentService(typist: try typist("exit 9"), probe: probe, libraryDirectory: { throw Failure() }, shutDown: {})
-
-		#expect(try exchange("probe library\n", with: service) == ["error the PowerLossLibrary volume is not mounted", ""])
 	}
 
 	@Test func anUnknownRequestIsRefused() throws {

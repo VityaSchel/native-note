@@ -71,37 +71,9 @@ import Foundation
 	}
 
 	public func send(_ request: AgentRequest, payload: Data = Data()) throws {
-		try write(Data((request.line + "\n").utf8) + payload)
-	}
-
-	public func send(line: String) throws {
-		try write(Data((line + "\n").utf8))
-	}
-
-	private func write(_ data: Data) throws {
 		guard !hasEnded else { throw Failure.ended }
 		lastTraffic = .now
-		try writing.write(contentsOf: data)
-	}
-
-	public func follow(within timeout: Duration, _ handle: (String) throws -> Void) async rethrows -> AgentReply? {
-		let deadline = ContinuousClock.now + timeout
-		var handled = 0
-		while true {
-			let ended = hasEnded
-			while handled < lines.count {
-				let line = lines[handled]
-				handled += 1
-				switch AgentReply(line: line) {
-				case .done, .exit, .failure:
-					return AgentReply(line: line)
-				case .ready, .output:
-					try handle(line)
-				}
-			}
-			if ended || ContinuousClock.now >= deadline { return nil }
-			try? await Task.sleep(for: .milliseconds(5))
-		}
+		try writing.write(contentsOf: Data((request.line + "\n").utf8) + payload)
 	}
 
 	public func wait(within timeout: Duration, until condition: () -> Bool) async -> Bool {

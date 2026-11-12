@@ -28,7 +28,7 @@ struct AgentSessionTests {
 		try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &ends) == 0)
 		let (host, guest) = (ends[0], ends[1])
 		Thread {
-			service.serve(input: guest, output: guest)
+			service.serve(guest)
 			close(guest)
 		}.start()
 		let handle = FileHandle(fileDescriptor: host, closeOnDealloc: false)
@@ -136,26 +136,6 @@ struct AgentSessionTests {
 		}
 	}
 
-	@Test func followingHandsOverEachLineInTimeToPaceTheProbeThroughKeepalives() async throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let probe = directory.appending(path: "probe")
-		try Data("#!/bin/sh\nsleep 0.5\necho one\nanswer=\nwhile [ -z \"$answer\" ]; do read answer || exit 5; done\necho \"two $answer\"\nexit 0\n".utf8).write(to: probe)
-		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: probe.path)
-		let session = try connect(to: AgentService(typist: probe, probe: probe, systemFolder: directory, libraryDirectory: { throw VolumeMissing() }, shutDown: {}))
-		defer { session.close() }
-		var handled: [String] = []
-
-		try session.send(.probe(.system))
-		let ending = try await session.follow(within: .seconds(10)) { line in
-			handled.append(line)
-			if line == "one" { try session.send(line: "go") }
-		}
-
-		#expect(ending == .exit(0))
-		#expect(handled == ["one", "two go"])
-		#expect(session.keepAlives >= 1)
-	}
-
 	@Test func sendingAfterTheSessionEndedIsRefusedInsteadOfWritingToAReleasedDescriptor() async throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let replies = Pipe()
@@ -164,52 +144,7 @@ struct AgentSessionTests {
 		try replies.fileHandleForWriting.close()
 		#expect(await session.wait(within: .seconds(5)) { session.hasEnded })
 
-		#expect(throws: AgentSession.Failure.ended) { try session.send(line: "go") }
 		#expect(throws: AgentSession.Failure.ended) { try session.send(.hello) }
-	}
-
-	@Test func followingEndsAtAnAgentFailure() async throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let session = try connect(to: try service(typing: "exit 9") { throw VolumeMissing() })
-		defer { session.close() }
-		var handled: [String] = []
-
-		try session.send(.verify(password: "power loss"))
-		let ending = await session.follow(within: .seconds(10)) { handled.append($0) }
-
-		#expect(ending == .failure("the PowerLossLibrary volume is not mounted"))
-		#expect(handled.isEmpty)
-	}
-
-	@Test func followingASessionThatEndsWithoutAnEndingHandsOverEveryLineAndNoEnding() async throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let replies = Pipe()
-		let requests = Pipe()
-		let session = AgentSession(reading: replies.fileHandleForReading, writing: requests.fileHandleForWriting, interrupt: {})
-		defer { session.close() }
-		var handled: [String] = []
-		try replies.fileHandleForWriting.write(contentsOf: Data("first\nlast without newline".utf8))
-		try replies.fileHandleForWriting.close()
-
-		let ending = await session.follow(within: .seconds(10)) { handled.append($0) }
-
-		#expect(ending == nil)
-		#expect(handled == ["first", "last without newline"])
-	}
-
-	@Test func followingASilentSessionGivesUpAtTheLimit() async throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let silent = Pipe()
-		let requests = Pipe()
-		let session = AgentSession(reading: silent.fileHandleForReading, writing: requests.fileHandleForWriting, interrupt: {})
-		defer { session.close() }
-
-		let started = ContinuousClock.now
-		let ending = await session.follow(within: .milliseconds(100)) { _ in }
-
-		#expect(ending == nil)
-		#expect(ContinuousClock.now - started < .seconds(5))
-		withExtendedLifetime(silent) {}
 	}
 
 	@Test func aPeerThatWaitsToHearFromTheHarnessIsKeptAlive() async throws {
@@ -225,12 +160,11 @@ struct AgentSessionTests {
 			_ = try? peerReads.read(upToCount: 1)
 			try? peerWrites.write(contentsOf: Data("ok\n".utf8))
 		}.start()
-		var handled: [String] = []
 
-		let ending = await session.follow(within: .seconds(10)) { handled.append($0) }
+		let answered = await session.wait(within: .seconds(10)) { session.replies.contains(.done) }
 
-		#expect(ending == .done)
-		#expect(handled == ["first"])
+		#expect(answered)
+		#expect(session.lines == ["first", "ok"])
 		#expect(session.keepAlives >= 1)
 	}
 

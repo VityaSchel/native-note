@@ -19,10 +19,8 @@ struct Layout {
 	var formattedLibrary: URL { bundle.appending(path: "library-formatted.img") }
 	var preparedLibrary: URL { bundle.appending(path: "library-prepared.img") }
 	var installed: URL { bundle.appending(path: "installed") }
-	var sshKey: URL { bundle.appending(path: "ssh-key") }
 	var kit: URL { bundle.appending(path: "kit") }
 	var setupFinished: URL { kit.appending(path: "setup-finished") }
-	var agentTransport: URL { bundle.appending(path: "agent-transport") }
 
 	func exists(_ url: URL) -> Bool {
 		FileManager.default.fileExists(atPath: url.path)
@@ -45,14 +43,10 @@ struct Layout {
 		guard exists(formattedLibrary) else { throw HarnessError("the VM is not set up; run power-loss setup first") }
 	}
 
-	func setUpAccount() throws -> String {
-		let account = String(decoding: try Data(contentsOf: setupFinished), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-		guard !account.isEmpty else { throw HarnessError("\(setupFinished.path) names no account") }
-		return account
-	}
-
-	func savedTransport() -> AgentTransport? {
-		(try? String(contentsOf: agentTransport, encoding: .utf8)).flatMap { AgentTransport(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+	func serveLibrary() throws -> (server: NBDServer, url: URL) {
+		let server = NBDServer(disk: try OrderedDisk(backing: library), log: say)
+		let socket = URL.temporaryDirectory.appending(path: "power-loss-\(getpid()).sock")
+		return (server, try server.start(socketPath: socket.path))
 	}
 }
 

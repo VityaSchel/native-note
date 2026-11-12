@@ -22,38 +22,25 @@ func listen(on port: UInt32) -> Int32 {
 	return listener
 }
 
-signal(SIGPIPE, SIG_IGN)
-let options: AgentOptions
-do {
-	options = try AgentOptions(CommandLine.arguments, currentDirectory: URL.currentDirectory())
-} catch {
-	fail("\(error)\n\(AgentOptions.usage)")
+func shutDownTheGuest() {
+	let shutdown = Process()
+	shutdown.executableURL = URL(fileURLWithPath: "/sbin/shutdown")
+	shutdown.arguments = ["-h", "now"]
+	try? shutdown.run()
 }
-let service = AgentService(
-	typist: LocalKit.typist,
-	libraryDirectory: LibraryVolume.libraryDirectory,
-	shutDown: {
-		let shutdown = Process()
-		shutdown.executableURL = URL(fileURLWithPath: "/sbin/shutdown")
-		shutdown.arguments = ["-h", "now"]
-		try? shutdown.run()
-	}
-)
 
-if options.stdio {
-	service.serve(input: STDIN_FILENO, output: STDOUT_FILENO)
-} else {
-	let listener = listen(on: AgentRequest.port)
-	FileHandle.standardError.write(Data(AgentLog.listening(on: AgentRequest.port).utf8))
-	while true {
-		let connection = accept(listener, nil, nil)
-		guard connection >= 0 else {
-			if errno != EINTR, errno != ECONNABORTED { fail("accept failed with errno \(errno)") }
-			continue
-		}
-		Thread {
-			service.serve(input: connection, output: connection)
-			close(connection)
-		}.start()
+signal(SIGPIPE, SIG_IGN)
+let service = AgentService(typist: LocalKit.typist, libraryDirectory: LibraryVolume.libraryDirectory, shutDown: shutDownTheGuest)
+let listener = listen(on: AgentRequest.port)
+FileHandle.standardError.write(Data(AgentLog.listening(on: AgentRequest.port).utf8))
+while true {
+	let connection = accept(listener, nil, nil)
+	guard connection >= 0 else {
+		if errno != EINTR, errno != ECONNABORTED { fail("accept failed with errno \(errno)") }
+		continue
 	}
+	Thread {
+		service.serve(connection)
+		close(connection)
+	}.start()
 }

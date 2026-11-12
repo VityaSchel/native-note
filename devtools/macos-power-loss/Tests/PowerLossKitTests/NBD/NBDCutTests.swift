@@ -82,7 +82,7 @@ struct NBDCutTests {
 		settle { server.cut.dropped.cache == 1 }
 
 		#expect(server.cut == CutReport(torn: nil, dropped: DiskActivity(writes: 1, cache: 1, unknown: 1)))
-		#expect(server.rejections.isEmpty)
+		#expect(server.activity == DiskActivity())
 		#expect(!client.hasUnreadReply)
 		#expect(try scratch.durable == DiskModel().bytes)
 	}

@@ -2,15 +2,11 @@ import Darwin
 import Foundation
 
 public enum LocalKit {
-	public static let items = ["NativeNoteTypist", "power-loss-flush-probe"]
+	public static let items = ["NativeNoteTypist"]
 	public static let folder = URL(filePath: "/Users/Shared/NativeNotePowerLoss", directoryHint: .isDirectory)
 
 	public static var typist: URL {
 		folder.appending(path: "NativeNoteTypist")
-	}
-
-	public static var probe: URL {
-		folder.appending(path: "power-loss-flush-probe")
 	}
 
 	public struct Failure: Error, CustomStringConvertible {

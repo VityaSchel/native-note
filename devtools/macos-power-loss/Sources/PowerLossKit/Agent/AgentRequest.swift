@@ -1,16 +1,9 @@
-public enum ProbeTarget: String, CaseIterable, Sendable {
-	case library
-	case system
-}
-
 public enum AgentRequest: Equatable, Sendable {
 	case hello
 	case prepare(password: String)
 	case type(password: String, control: TypistControl? = nil)
 	case verify(password: String)
 	case install(byteCount: Int)
-	case diagnose
-	case probe(ProbeTarget)
 	case shutdown
 
 	public static let port: UInt32 = 7040
@@ -23,10 +16,6 @@ public enum AgentRequest: Equatable, Sendable {
 		switch (word, argument) {
 		case ("hello", nil): self = .hello
 		case ("shutdown", nil): self = .shutdown
-		case ("diagnose", nil): self = .diagnose
-		case ("probe", let target?):
-			guard let target = ProbeTarget(rawValue: target) else { return nil }
-			self = .probe(target)
 		case ("prepare", let password?): self = .prepare(password: password)
 		case ("type", let password?): self = .type(password: password)
 		case (let typing, let password?) where typing.hasPrefix(Self.controlPrefix):
@@ -49,14 +38,12 @@ public enum AgentRequest: Equatable, Sendable {
 		case .type(let password, let control?): "\(Self.controlPrefix)\(control.rawValue) \(password)"
 		case .verify(let password): "verify \(password)"
 		case .install(let byteCount): "install \(byteCount)"
-		case .diagnose: "diagnose"
-		case .probe(let target): "probe \(target.rawValue)"
 		}
 	}
 
 	public var typistArguments: (mode: String, password: String)? {
 		switch self {
-		case .hello, .shutdown, .install, .diagnose, .probe: nil
+		case .hello, .shutdown, .install: nil
 		case .prepare(let password): ("prepare", password)
 		case .type(let password, let control): (control?.typistMode ?? "acknowledge", password)
 		case .verify(let password): ("verify", password)

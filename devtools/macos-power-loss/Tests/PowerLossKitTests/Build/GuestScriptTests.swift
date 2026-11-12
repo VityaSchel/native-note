@@ -7,6 +7,7 @@ import Testing
 struct GuestScriptTests {
 	private let guest = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../../guest").standardized
 	private let label = "dev.hloth.devtools.native-note-power-loss-test"
+	private let launcher = "/usr/local/libexec/native-note-power-loss/start-agent.sh"
 
 	private func run(_ script: String, _ arguments: [String], tools: URL? = nil, environment: [String: String] = [:]) throws -> (status: Int32, errors: [String]) {
 		let errors = Pipe()
@@ -22,49 +23,17 @@ struct GuestScriptTests {
 		return (process.terminationStatus, printed.split(separator: "\n").map(String.init))
 	}
 
-	private func allowAgent(_ account: String, rule: URL) throws -> Int32 {
-		try run("allow-agent.sh", [account, SSHLogin.agentLauncher, rule.path]).status
-	}
-
-	private func contents(of directory: URL) throws -> [String] {
-		try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
-	}
-
-	@Test func theSudoersRuleLetsOnlyTheSetupAccountStartOnlyTheAgent() throws {
-		let directory = try temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let rule = directory.appending(path: "native-note-power-loss")
-
-		#expect(try allowAgent("test", rule: rule) == 0)
-		#expect(try allowAgent("test", rule: rule) == 0)
-
-		#expect(try String(contentsOf: rule, encoding: .utf8) == "test ALL=(root) NOPASSWD: /usr/local/libexec/native-note-power-loss/start-agent.sh --stdio\n")
-		#expect(SSHLogin.startAgent == "sudo -n /usr/local/libexec/native-note-power-loss/start-agent.sh --stdio")
-		#expect(try FileManager.default.attributesOfItem(atPath: rule.path)[.posixPermissions] as? Int == 0o440)
-		#expect(try contents(of: directory) == ["native-note-power-loss"])
-	}
-
-	@Test func aRuleThatSudoRejectsIsNotInstalled() throws {
-		let directory = try temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let rule = directory.appending(path: "native-note-power-loss")
-		#expect(try allowAgent("test", rule: rule) == 0)
-		let installed = try Data(contentsOf: rule)
-
-		#expect(try allowAgent("not an account", rule: rule) != 0)
-
-		#expect(try Data(contentsOf: rule) == installed)
-		#expect(try contents(of: directory) == ["native-note-power-loss"])
-	}
-
-	@Test func theLaunchDaemonRunsTheLauncherAndLogsWhereSetupReads() throws {
+	@Test func theLaunchDaemonRunsTheLauncherSetupInstallsAndLogsWhereSetupPoints() throws {
 		let plist = try Data(contentsOf: guest.appending(path: "\(label).plist"))
 		let daemon = try #require(try PropertyListSerialization.propertyList(from: plist, format: nil) as? [String: Any])
 
 		#expect(daemon["Label"] as? String == label)
-		#expect(daemon["ProgramArguments"] as? [String] == ["/bin/sh", SSHLogin.agentLauncher])
-		#expect(daemon["StandardOutPath"] as? String == SSHLogin.agentLog)
-		#expect(daemon["StandardErrorPath"] as? String == SSHLogin.agentLog)
+		#expect(daemon["ProgramArguments"] as? [String] == ["/bin/sh", launcher])
+		#expect(daemon["StandardOutPath"] as? String == AgentLog.path)
+		#expect(daemon["StandardErrorPath"] as? String == AgentLog.path)
+		let setup = try String(contentsOf: guest.appending(path: "setup.sh"), encoding: .utf8)
+		#expect(setup.contains("launcher=\(launcher)\n"))
+		#expect(setup.contains("label=\(label)\n"))
 	}
 
 	@Test(arguments: [false, true]) func startingTheAgentClearsItsLogBeforeLaunchdStartsIt(alreadyLoaded: Bool) throws {
@@ -107,7 +76,7 @@ struct GuestScriptTests {
 		let attempts = directory.appending(path: "attempts")
 		let started = Date.now
 
-		let (_, errors) = try run("start-agent.sh", ["--stdio"], tools: tools, environment: ["ATTEMPTS": attempts.path, "MOUNTED": directory.appending(path: "mounted").path, "FAILURES": "\(failures)"])
+		let (_, errors) = try run("start-agent.sh", [], tools: tools, environment: ["ATTEMPTS": attempts.path, "MOUNTED": directory.appending(path: "mounted").path, "FAILURES": "\(failures)"])
 
 		#expect(try String(contentsOf: attempts, encoding: .utf8) == "\(failures + 1)\n")
 		let reports = errors.filter { $0.hasPrefix("start-agent: ") }.map { $0.dropFirst("start-agent: ".count) }

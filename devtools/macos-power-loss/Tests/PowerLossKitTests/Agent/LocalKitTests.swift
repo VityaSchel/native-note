@@ -19,7 +19,6 @@ struct LocalKitTests {
 		try Data(typist.utf8).write(to: executable)
 		try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
 		try Data("agent".utf8).write(to: kit.appending(path: "power-loss-agent"))
-		try Data("probe".utf8).write(to: kit.appending(path: "power-loss-flush-probe"))
 		return kit
 	}
 
@@ -39,7 +38,7 @@ struct LocalKitTests {
 		try LocalKit.unpack(from: guest, byteCount: byteCount ?? archive.count, into: folder)
 	}
 
-	@Test func theTypistAndTheProbeArriveWholeOnTheGuestsOwnDisk() throws {
+	@Test func theTypistArrivesWholeOnTheGuestsOwnDisk() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
 
@@ -47,7 +46,6 @@ struct LocalKitTests {
 
 		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "first")
 		#expect(FileManager.default.isExecutableFile(atPath: local.appending(path: "NativeNoteTypist").path))
-		#expect(try String(contentsOf: local.appending(path: "power-loss-flush-probe"), encoding: .utf8) == "probe")
 		#expect(!FileManager.default.fileExists(atPath: local.appending(path: "power-loss-agent").path))
 		#expect(!FileManager.default.fileExists(atPath: local.path + ".new"))
 	}
@@ -75,14 +73,14 @@ struct LocalKitTests {
 		#expect(!FileManager.default.fileExists(atPath: local.path + ".new.tar"))
 	}
 
-	@Test func aKitWithoutTheProbeIsRefusedAndTheLastOneStays() throws {
+	@Test func aKitWithoutTheTypistIsRefusedAndTheLastOneStays() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
 		try install(try LocalKit.archive(from: try kit(typist: "good")), into: local)
 		let broken = try kit(typist: "broken")
 
 		#expect(throws: LocalKit.Failure.self) {
-			try install(try LocalKit.archive(["NativeNoteTypist"], from: broken), into: local)
+			try install(try LocalKit.archive(["power-loss-agent"], from: broken), into: local)
 		}
 
 		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "good")
@@ -105,13 +103,12 @@ struct LocalKitTests {
 	@Test func packingAKitThatLacksAnItemFails() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let broken = try kit(typist: "broken")
-		try FileManager.default.removeItem(at: broken.appending(path: "power-loss-flush-probe"))
+		try FileManager.default.removeItem(at: broken.appending(path: "NativeNoteTypist"))
 
 		#expect(throws: LocalKit.Failure.self) { try LocalKit.archive(from: broken) }
 	}
 
-	@Test func theAgentRunsTheTypistAndTheProbeFromTheGuestsOwnDisk() {
+	@Test func theAgentRunsTheTypistFromTheGuestsOwnDisk() {
 		#expect(LocalKit.typist.path == "/Users/Shared/NativeNotePowerLoss/NativeNoteTypist")
-		#expect(LocalKit.probe.path == "/Users/Shared/NativeNotePowerLoss/power-loss-flush-probe")
 	}
 }

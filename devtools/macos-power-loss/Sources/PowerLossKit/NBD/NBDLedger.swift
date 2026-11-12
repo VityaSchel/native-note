@@ -1,30 +1,9 @@
 import Synchronization
 
-public struct NBDRejection: Equatable, Sendable, CustomStringConvertible {
-	public let type: UInt16
-	public let flags: UInt16
-	public let offset: UInt64
-	public let length: UInt32
-	public let error: UInt32
-	public let reason: String
-
-	public var isUnknownCommand: Bool {
-		NBD.Command(rawValue: type) == nil
-	}
-
-	public var description: String {
-		let command = NBD.Command(rawValue: type).map(\.name) ?? "unknown command \(type)"
-		return "\(command) flags \(NBD.CommandFlag.describe(flags)) offset \(offset) length \(length): \(reason), answered \(NBD.Failure(rawValue: error)?.name ?? "error \(error)")"
-	}
-}
-
 final class NBDLedger: Sendable {
-	static let keptRejections = 256
-
 	private struct State {
 		var activity = DiskActivity()
 		var dropped = DiskActivity()
-		var rejections: [NBDRejection] = []
 	}
 
 	private let state = Mutex(State())
@@ -37,10 +16,6 @@ final class NBDLedger: Sendable {
 		state.withLock { $0.dropped }
 	}
 
-	var rejections: [NBDRejection] {
-		state.withLock { $0.rejections }
-	}
-
 	func served(_ command: NBD.Command, flags: UInt16) {
 		state.withLock { Self.count(command, flags: flags, in: &$0.activity) }
 	}
@@ -49,15 +24,12 @@ final class NBDLedger: Sendable {
 		state.withLock { Self.count(command, flags: flags, in: &$0.dropped) }
 	}
 
-	func refused(_ rejection: NBDRejection) {
+	func refused(_ command: NBD.Command?) {
 		state.withLock { state in
-			if rejection.isUnknownCommand {
+			if command == nil {
 				state.activity.unknown += 1
 			} else {
 				state.activity.rejected += 1
-			}
-			if state.rejections.count < Self.keptRejections {
-				state.rejections.append(rejection)
 			}
 		}
 	}

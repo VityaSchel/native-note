@@ -4,13 +4,14 @@ import Testing
 struct BuildScriptTests {
 	private let buildScript = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../../build.sh").standardized
 
-	@Test func theBuildScriptPrintsOnlyTheHarnessPath() throws {
+	@Test func theBuildScriptPrintsOnlyTheHarnessPathAndStagesExactlyTheGuestKit() throws {
 		let directory = try temporaryDirectory()
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let tools = directory.appending(path: "tools")
 		let products = directory.appending(path: "products")
-		try FileManager.default.createDirectory(at: products, withIntermediateDirectories: true)
-		for product in ["power-loss", "power-loss-agent", "power-loss-flush-probe", "NativeNoteTypist"] {
+		try FileManager.default.createDirectory(at: products.appending(path: "guest"), withIntermediateDirectories: true)
+		try Data().write(to: products.appending(path: "guest/left-from-an-older-build"))
+		for product in ["power-loss", "power-loss-agent", "NativeNoteTypist"] {
 			try Data().write(to: products.appending(path: product))
 		}
 		try stub("swift", in: tools, #"case " $* " in *" --show-bin-path "*) echo "$PRODUCTS" ;; *) echo "Building for production..."; echo "Build complete!" ;; esac"#)
@@ -29,8 +30,7 @@ struct BuildScriptTests {
 
 		#expect(process.terminationStatus == 0)
 		#expect(printed == products.appending(path: "power-loss").path + "\n")
-		for item in ["power-loss-agent", "power-loss-flush-probe", "NativeNoteTypist", "setup.sh", "allow-agent.sh", "install-agent.sh", "start-agent.sh", "dev.hloth.devtools.native-note-power-loss-test.plist"] {
-			#expect(FileManager.default.fileExists(atPath: products.appending(path: "guest/\(item)").path), "\(item)")
-		}
+		let staged = try FileManager.default.contentsOfDirectory(atPath: products.appending(path: "guest").path).sorted()
+		#expect(staged == ["NativeNoteTypist", "dev.hloth.devtools.native-note-power-loss-test.plist", "install-agent.sh", "power-loss-agent", "setup.sh", "start-agent.sh"])
 	}
 }

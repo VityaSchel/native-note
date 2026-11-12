@@ -207,9 +207,10 @@ struct NBDSession {
 	}
 
 	private func refuse(_ request: Request, _ refusal: Refusal) throws {
-		let rejection = NBDRejection(type: request.type, flags: request.flags, offset: request.offset, length: request.length, error: refusal.failure.rawValue, reason: refusal.reason)
-		ledger.refused(rejection)
-		log("nbd: rejected \(rejection)")
+		let command = NBD.Command(rawValue: request.type)
+		ledger.refused(command)
+		let name = command.map(\.name) ?? "unknown command \(request.type)"
+		log("nbd: rejected \(name) flags \(NBD.CommandFlag.describe(request.flags)) offset \(request.offset) length \(request.length): \(refusal.reason), answered \(refusal.failure.name)")
 		try reply(to: request, refusal.failure)
 	}
 

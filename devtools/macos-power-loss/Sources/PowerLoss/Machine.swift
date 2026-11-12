@@ -5,15 +5,15 @@ final class Machine: NSObject, VZVirtualMachineDelegate {
 	let virtualMachine: VZVirtualMachine
 	private(set) var stopReason: String?
 
-	init(_ configuration: VZVirtualMachineConfiguration) {
+	init(_ configuration: VZVirtualMachineConfiguration) throws {
+		try configuration.validate()
 		virtualMachine = VZVirtualMachine(configuration: configuration)
 		super.init()
 		virtualMachine.delegate = self
 	}
 
 	static func running<T>(_ configuration: VZVirtualMachineConfiguration, _ body: (Machine) async throws -> T) async throws -> T {
-		try configuration.validate()
-		let machine = Machine(configuration)
+		let machine = try Machine(configuration)
 		try await machine.virtualMachine.start()
 		do {
 			let result = try await body(machine)

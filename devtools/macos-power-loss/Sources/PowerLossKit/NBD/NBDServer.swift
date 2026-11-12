@@ -3,11 +3,6 @@ import Foundation
 import Synchronization
 
 public final class NBDServer: Sendable {
-	public enum Endpoint: Hashable, Sendable {
-		case unixSocket(path: String)
-		case loopback(port: UInt16)
-	}
-
 	public enum Failure: Error, Equatable {
 		case alreadyStarted
 		case socketPathTooLong(String)
@@ -41,18 +36,15 @@ public final class NBDServer: Sendable {
 		ledger.activity
 	}
 
-	public var rejections: [NBDRejection] {
-		ledger.rejections
-	}
-
 	public var cut: CutReport {
 		CutReport(torn: disk.tornWrite, dropped: ledger.dropped)
 	}
 
 	@discardableResult
-	public func start(_ endpoint: Endpoint) throws -> URL {
+	public func start(socketPath: String) throws -> URL {
 		guard registry.withLock({ $0.listener < 0 && !$0.isStopping }) else { throw Failure.alreadyStarted }
-		let (listener, url) = try listen(on: endpoint)
+		let listener = try bindUnixSocket(at: socketPath)
+		let url = Self.url(socketPath: socketPath, export: export)
 		var wake: [Int32] = [-1, -1]
 		guard pipe(&wake) == 0 else {
 			let failure = Failure.system(call: "pipe", errno: errno)
@@ -66,9 +58,7 @@ public final class NBDServer: Sendable {
 		registry.withLock { registry in
 			registry.listener = listener
 			registry.wake = (wakeRead, wakeWrite)
-			if case .unixSocket(let path) = endpoint {
-				registry.socketPath = path
-			}
+			registry.socketPath = socketPath
 		}
 		running.enter()
 		Thread { [self] in
@@ -87,7 +77,7 @@ public final class NBDServer: Sendable {
 	public func restorePower(within timeout: Duration = .seconds(10)) throws {
 		let deadline = ContinuousClock.now + timeout
 		while sessionCount > 0, ContinuousClock.now < deadline {
-			disconnectSessions()
+			disconnect()
 			usleep(1_000)
 		}
 		guard sessionCount == 0 else { throw Failure.sessionsOutliveTheCut(sessionCount) }
@@ -103,7 +93,7 @@ public final class NBDServer: Sendable {
 			var byte: UInt8 = 1
 			_ = write(wake, &byte, 1)
 		}
-		disconnectSessions()
+		disconnect()
 		if running.wait(timeout: .now() + .seconds(10)) == .timedOut {
 			log("nbd: sessions still running after stop")
 		}
@@ -123,7 +113,6 @@ public final class NBDServer: Sendable {
 		_ = fcntl(connection, F_SETFD, FD_CLOEXEC)
 		var enabled: Int32 = 1
 		setsockopt(connection, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
-		setsockopt(connection, IPPROTO_TCP, TCP_NODELAY, &enabled, socklen_t(MemoryLayout<Int32>.size))
 		let admitted = registry.withLock { registry in
 			guard !registry.isStopping else { return false }
 			registry.sessions.insert(connection)
@@ -149,10 +138,6 @@ public final class NBDServer: Sendable {
 	}
 
 	public func disconnect() {
-		disconnectSessions()
-	}
-
-	private func disconnectSessions() {
 		registry.withLock { registry in
 			for session in registry.sessions {
 				shutdown(session, SHUT_RDWR)
@@ -181,30 +166,13 @@ public final class NBDServer: Sendable {
 		}
 	}
 
-	public static func url(for endpoint: Endpoint, export: NBDExport = NBDExport()) -> URL {
+	private static func url(socketPath: String, export: NBDExport) -> URL {
 		var components = URLComponents()
+		components.scheme = "nbd+unix"
+		components.host = ""
 		components.path = "/" + export.name
-		switch endpoint {
-		case .unixSocket(let path):
-			components.scheme = "nbd+unix"
-			components.host = ""
-			components.queryItems = [URLQueryItem(name: "socket", value: path)]
-		case .loopback(let port):
-			components.scheme = "nbd"
-			components.host = "127.0.0.1"
-			components.port = Int(port)
-		}
+		components.queryItems = [URLQueryItem(name: "socket", value: socketPath)]
 		return components.url!
-	}
-
-	private func listen(on endpoint: Endpoint) throws -> (Int32, URL) {
-		switch endpoint {
-		case .unixSocket(let path):
-			return (try bindUnixSocket(at: path), Self.url(for: endpoint, export: export))
-		case .loopback(let port):
-			let (listener, bound) = try bindLoopback(port: port)
-			return (listener, Self.url(for: .loopback(port: bound), export: export))
-		}
 	}
 
 	private func bindUnixSocket(at path: String) throws -> Int32 {
@@ -219,7 +187,7 @@ public final class NBDServer: Sendable {
 		address.sun_family = sa_family_t(AF_UNIX)
 		address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
 		withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: pathBytes) }
-		let listener = try socketDescriptor(domain: AF_UNIX)
+		let listener = try unixSocketDescriptor()
 		do {
 			try withUnsafePointer(to: &address) { pointer in
 				try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
@@ -234,37 +202,8 @@ public final class NBDServer: Sendable {
 		return listener
 	}
 
-	private func bindLoopback(port: UInt16) throws -> (Int32, UInt16) {
-		var address = sockaddr_in()
-		address.sin_family = sa_family_t(AF_INET)
-		address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-		address.sin_port = port.bigEndian
-		address.sin_addr.s_addr = INADDR_LOOPBACK.bigEndian
-		let listener = try socketDescriptor(domain: AF_INET)
-		do {
-			var enabled: Int32 = 1
-			try check("setsockopt", setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &enabled, socklen_t(MemoryLayout<Int32>.size)))
-			try withUnsafePointer(to: &address) { pointer in
-				try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-					try check("bind", Darwin.bind(listener, $0, socklen_t(MemoryLayout<sockaddr_in>.size)))
-				}
-			}
-			try check("listen", Darwin.listen(listener, 8))
-			var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-			try withUnsafeMutablePointer(to: &address) { pointer in
-				try pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-					try check("getsockname", getsockname(listener, $0, &length))
-				}
-			}
-		} catch {
-			close(listener)
-			throw error
-		}
-		return (listener, UInt16(bigEndian: address.sin_port))
-	}
-
-	private func socketDescriptor(domain: Int32) throws -> Int32 {
-		let descriptor = socket(domain, SOCK_STREAM, 0)
+	private func unixSocketDescriptor() throws -> Int32 {
+		let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
 		guard descriptor >= 0 else { throw Failure.system(call: "socket", errno: errno) }
 		_ = fcntl(descriptor, F_SETFD, FD_CLOEXEC)
 		return descriptor
