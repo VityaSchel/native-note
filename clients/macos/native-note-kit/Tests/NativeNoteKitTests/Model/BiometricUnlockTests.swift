@@ -17,14 +17,14 @@ private final class Hook {
 	}
 }
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct BiometricUnlockTests {
 	private let alarm = Alarm()
 	private let shaking = Alarm()
 	private let duringSearch = Hook()
 
-	private func library(_ keys: FakeKeyStore, _ bodies: [String] = ["Shopping", "Trip"]) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm, shaking, duringSearch] directory in
+	private var library: Workspace {
+		Workspace(holding: ["Shopping", "Trip"]) { [alarm, shaking, duringSearch] directory, keys in
 			AppModel(
 				directory: directory,
 				scheduler: SaveScheduler(sleep: alarm.sleep),
@@ -36,22 +36,11 @@ struct BiometricUnlockTests {
 				shakeTimer: shaking.sleep
 			)
 		}
-		try await fill(model, with: bodies)
-		return (model, directory)
-	}
-
-	private func lockedWithTouchID(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
-		let (model, directory) = try await library(keys)
-		try await turnOnTouchID(model)
-		await model.lock()
-		keys.forgetReads()
-		return (model, directory)
 	}
 
 	@Test func touchIDUnlocksOnceItIsTurnedOn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(keys)
 		let bodies = Set(model.notes.map(\.body))
 
 		try await turnOnTouchID(model)
@@ -70,8 +59,7 @@ struct BiometricUnlockTests {
 
 	@Test func nothingListensUntilTouchIDIsTurnedOn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(keys)
 		model.appBecameActive()
 
 		await model.lock()
@@ -83,8 +71,7 @@ struct BiometricUnlockTests {
 
 	@Test func nothingListensOnAMacWithoutTouchID() async throws {
 		let keys = FakeKeyStore()
-		let (_, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (_, directory) = try await library.lockedWithTouchID(keys)
 		keys.becomes(.unavailable)
 
 		let relaunched = AppModel(directory: directory, keyStore: keys)
@@ -96,8 +83,7 @@ struct BiometricUnlockTests {
 
 	@Test func aLibraryThatStartsLockedListensOnceTheAppIsInFront() async throws {
 		let keys = FakeKeyStore()
-		let (_, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (_, directory) = try await library.lockedWithTouchID(keys)
 
 		let relaunched = AppModel(directory: directory, keyStore: keys)
 		relaunched.start()
@@ -122,8 +108,7 @@ struct BiometricUnlockTests {
 
 	@Test func lockingByHandListensRightAway() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(keys)
 		try await turnOnTouchID(model)
 
 		await model.lock()
@@ -133,8 +118,7 @@ struct BiometricUnlockTests {
 
 	@Test func anotherAppInFrontStopsListeningAndReturningStartsAFreshAttempt() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let first = try #require(model.touchID.listeningContext)
 
 		model.appResignedActive()
@@ -150,8 +134,7 @@ struct BiometricUnlockTests {
 
 	@Test func becomingActiveAgainKeepsTheAttemptThatIsListening() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
 		model.appBecameActive()
@@ -162,8 +145,7 @@ struct BiometricUnlockTests {
 
 	@Test func anAttemptStoppedByLeavingTheAppChangesNothingWhenItAnswers() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.whileLoading { @MainActor in
 			model.appResignedActive()
 			model.appBecameActive()
@@ -179,15 +161,14 @@ struct BiometricUnlockTests {
 		#expect(model.phase == .unlocked)
 	}
 
-	private func endShake(of model: AppModel) async {
-		await ring(shaking)
-		await settle { !model.shake.isRunning }
+	private func endShake(of model: AppModel) async throws {
+		try await ring(shaking)
+		try await settle { !model.shake.isRunning }
 	}
 
 	@Test func aWrongFingerShakesTheFieldAndAFreshAttemptListensOnceTheShakeEnds() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 
 		#expect(await touch(model))
@@ -199,7 +180,7 @@ struct BiometricUnlockTests {
 		#expect(await !touch(model))
 		#expect(keys.contexts.count == 1)
 
-		await endShake(of: model)
+		try await endShake(of: model)
 
 		#expect(await shaking.requested == [.milliseconds(400)])
 		let again = try #require(model.touchID.listeningContext)
@@ -214,8 +195,7 @@ struct BiometricUnlockTests {
 
 	@Test func nothingListensWhileTheFieldShakes() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 		await touch(model)
 		var seen: [AppModel.TouchID] = []
@@ -232,19 +212,18 @@ struct BiometricUnlockTests {
 		#expect(seen.allSatisfy { $0 == .paused(.shaking) })
 		#expect(await !touch(model))
 		#expect(keys.contexts.count == 1)
-		await endShake(of: model)
+		try await endShake(of: model)
 		#expect(model.touchID.listeningContext != nil)
 	}
 
 	@Test func aShakeThatEndsWhileAnotherAppIsInFrontListensOnReturn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 		await touch(model)
 		model.appResignedActive()
 
-		await endShake(of: model)
+		try await endShake(of: model)
 
 		#expect(model.touchID == .paused(.inBackground))
 		model.appBecameActive()
@@ -254,14 +233,13 @@ struct BiometricUnlockTests {
 
 	@Test func eachWrongFingerShakesOnceAndListensAgainUntilMacOSLocksTouchID() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 
 		for miss in 1 ... 4 {
 			#expect(await touch(model))
 			#expect(model.shake == AppModel.Shake(count: miss, isRunning: true))
-			await endShake(of: model)
+			try await endShake(of: model)
 		}
 		keys.reply(with: .lockout)
 		keys.whileLoading { keys.becomes(.lockedOut) }
@@ -280,8 +258,7 @@ struct BiometricUnlockTests {
 
 	@Test func aWrongFingerThatLocksTouchIDOutShakesOnceAndSaysSo() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 		keys.whileLoading { keys.becomes(.lockedOut) }
 
@@ -289,7 +266,7 @@ struct BiometricUnlockTests {
 
 		#expect(model.shake == AppModel.Shake(count: 1, isRunning: true))
 		#expect(model.touchID == .lockedOut)
-		await endShake(of: model)
+		try await endShake(of: model)
 		#expect(model.touchID == .lockedOut)
 		#expect(model.shake.count == 1)
 		#expect(keys.contexts.count == 1)
@@ -298,8 +275,7 @@ struct BiometricUnlockTests {
 
 	@Test func aWrongPasswordShakesAndTouchIDListensAgainOnlyWhenTheShakeEnds() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let first = try #require(model.touchID.listeningContext)
 
 		await model.submit(password: "a guess")
@@ -309,7 +285,7 @@ struct BiometricUnlockTests {
 		#expect(model.touchID == .paused(.shaking))
 		#expect(isInvalidated(first))
 		#expect(await !touch(model))
-		await endShake(of: model)
+		try await endShake(of: model)
 		#expect(await shaking.requested == [.milliseconds(400)])
 		let second = try #require(model.touchID.listeningContext)
 		#expect(second !== first)
@@ -318,13 +294,12 @@ struct BiometricUnlockTests {
 
 	@Test func eachWrongPasswordShakesOnce() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 
 		for attempt in 1 ... 3 {
 			await model.submit(password: "a guess")
 			#expect(model.shake == AppModel.Shake(count: attempt, isRunning: true))
-			await endShake(of: model)
+			try await endShake(of: model)
 		}
 
 		#expect(model.shake == AppModel.Shake(count: 3, isRunning: false))
@@ -333,8 +308,7 @@ struct BiometricUnlockTests {
 
 	@Test func aPasswordCheckThatFailsForAnotherReasonDoesNotShake() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.lockedWithTouchID(keys)
 		try FileManager.default.removeItem(at: AppLock.databaseFile(in: directory))
 
 		await model.submit(password: workspacePassword)
@@ -347,8 +321,7 @@ struct BiometricUnlockTests {
 
 	@Test func aShakeAskedForWhileOneRunsIsIgnored() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 		await touch(model)
 		try #require(model.shake == AppModel.Shake(count: 1, isRunning: true))
@@ -359,9 +332,9 @@ struct BiometricUnlockTests {
 		#expect(model.failure == .wrongPassword)
 		#expect(model.shake == AppModel.Shake(count: 1, isRunning: true))
 		#expect(model.touchID == .paused(.shaking))
-		await settle { await shaking.sleeping == 1 }
+		try await settle { await shaking.sleeping == 1 }
 		#expect(await shaking.started == 1)
-		await endShake(of: model)
+		try await endShake(of: model)
 		#expect(model.touchID.listeningContext != nil)
 		await model.submit(password: "a third guess")
 		#expect(model.shake == AppModel.Shake(count: 2, isRunning: true))
@@ -369,8 +342,7 @@ struct BiometricUnlockTests {
 
 	@Test func aShakeThatEndsWhileAPasswordIsCheckedWaitsForTheCheck() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 		await touch(model)
 		let gate = Gate()
@@ -379,13 +351,13 @@ struct BiometricUnlockTests {
 		try await gate.untilHolding()
 		try #require(gate.isHolding)
 		let checking = Task { await model.submit(password: workspacePassword) }
-		await settle { model.touchID == .paused(.checkingPassword) }
+		try await settle { model.touchID == .paused(.checkingPassword) }
 
-		await endShake(of: model)
+		try await endShake(of: model)
 
 		#expect(model.touchID == .paused(.checkingPassword))
 		gate.open()
-		await checking.value
+		_ = await checking.value
 		try await holding.value
 		#expect(model.phase == .unlocked)
 		#expect(keys.contexts.count == 1)
@@ -393,8 +365,7 @@ struct BiometricUnlockTests {
 
 	@Test func aClickWhileAnotherAppIsInFrontListensOnceTheAppIsBack() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .failure)
 		keys.failWrites()
 		await touch(model)
@@ -410,8 +381,7 @@ struct BiometricUnlockTests {
 
 	@Test func aClickOnlyRestartsTouchIDAfterItStopped() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
 		model.tryTouchIDAgain()
@@ -425,8 +395,7 @@ struct BiometricUnlockTests {
 
 	@Test func aLockoutSaysSoUntilTouchIDRecovers() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .lockout)
 		keys.whileLoading { keys.becomes(.lockedOut) }
 
@@ -440,6 +409,7 @@ struct BiometricUnlockTests {
 		model.appBecameActive()
 		#expect(model.touchID == .lockedOut)
 
+		keys.whileLoading {}
 		keys.becomes(.available)
 		keys.reply(with: .key)
 		model.appResignedActive()
@@ -451,8 +421,7 @@ struct BiometricUnlockTests {
 
 	@Test func aMacLockedOutBeforeLaunchSaysSoRightAway() async throws {
 		let keys = FakeKeyStore()
-		let (_, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (_, directory) = try await library.lockedWithTouchID(keys)
 		keys.becomes(.lockedOut)
 
 		let relaunched = AppModel(directory: directory, keyStore: keys)
@@ -466,8 +435,7 @@ struct BiometricUnlockTests {
 
 	@Test func aCancelledAttemptWaitsForAClickAndKeepsTheKey() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .cancel)
 
 		#expect(await touch(model))
@@ -482,8 +450,7 @@ struct BiometricUnlockTests {
 
 	@Test func anAttemptCancelledOnTheWayToAnotherAppListensAgainOnReturn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .cancel)
 		await touch(model)
 
@@ -496,8 +463,7 @@ struct BiometricUnlockTests {
 
 	@Test func touchIDThatGoesAwayHidesUntilTheAppIsReturnedTo() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .unavailable)
 
 		#expect(await touch(model))
@@ -512,8 +478,7 @@ struct BiometricUnlockTests {
 
 	@Test func aKeyTouchIDCannotReadIsForgottenWithAnExplanation() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .failure)
 
 		#expect(await touch(model))
@@ -526,8 +491,7 @@ struct BiometricUnlockTests {
 
 	@Test func aKeyTouchIDCannotReadOrForgetWaitsForAClickAndEndsTheAttempt() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .failure)
 		keys.failWrites()
 
@@ -542,8 +506,7 @@ struct BiometricUnlockTests {
 
 	@Test func aStoredKeyThatNoLongerOpensTheNotesAndCannotBeForgottenWaitsForAClick() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 		keys.failWrites()
 
@@ -557,8 +520,7 @@ struct BiometricUnlockTests {
 
 	@Test func aStoredKeyThatNoLongerOpensTheNotesIsForgotten() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 
 		#expect(await touch(model))
@@ -573,8 +535,7 @@ struct BiometricUnlockTests {
 
 	@Test func touchIDThatCannotFindTheDatabaseKeepsTheKeyAndWaitsForAClick() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.lockedWithTouchID(keys)
 		try FileManager.default.removeItem(at: AppLock.databaseFile(in: directory))
 
 		#expect(await touch(model))
@@ -589,8 +550,7 @@ struct BiometricUnlockTests {
 
 	@Test func whileTouchIDOpensTheNotesItShowsWorkAndNothingElseRuns() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys, ["bank pin 4711", "Trip"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(keys, holding: ["bank pin 4711", "Trip"])
 		try await turnOnTouchID(model)
 		model.search = "bank pin"
 		await model.runSearch()
@@ -613,8 +573,7 @@ struct BiometricUnlockTests {
 
 	@Test func typingThePasswordPausesTouchIDUntilItIsChecked() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let first = try #require(model.touchID.listeningContext)
 		let gate = Gate()
 		defer { gate.open() }
@@ -623,16 +582,16 @@ struct BiometricUnlockTests {
 		try #require(gate.isHolding)
 
 		let checking = Task { await model.submit(password: "a guess") }
-		await settle { model.touchID != .listening(first) }
+		try await settle { model.touchID != .listening(first) }
 		#expect(model.touchID == .paused(.checkingPassword))
 		#expect(isInvalidated(first))
 		gate.open()
-		await checking.value
+		_ = await checking.value
 		try await holding.value
 
 		#expect(model.failure == .wrongPassword)
 		#expect(model.touchID == .paused(.shaking))
-		await endShake(of: model)
+		try await endShake(of: model)
 		let second = try #require(model.touchID.listeningContext)
 		#expect(second !== first)
 		#expect(keys.contexts.isEmpty)
@@ -640,20 +599,19 @@ struct BiometricUnlockTests {
 
 	@Test func aWrongPasswordCheckedAfterLeavingTheAppListensOnReturn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let gate = Gate()
 		defer { gate.open() }
 		let holding = Task.detached { try await BlockingWork.run { gate.hold() } }
 		try await gate.untilHolding()
 		let checking = Task { await model.submit(password: "a guess") }
-		await settle { model.touchID == .paused(.checkingPassword) }
+		try await settle { model.touchID == .paused(.checkingPassword) }
 
 		model.appResignedActive()
 		gate.open()
-		await checking.value
+		_ = await checking.value
 		try await holding.value
-		await endShake(of: model)
+		try await endShake(of: model)
 
 		#expect(model.touchID == .paused(.inBackground))
 		model.appBecameActive()
@@ -662,8 +620,7 @@ struct BiometricUnlockTests {
 
 	@Test func theRightPasswordUnlocksWithoutAskingTouchID() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
 		await model.submit(password: workspacePassword)
@@ -676,8 +633,7 @@ struct BiometricUnlockTests {
 
 	@Test func aWrongPasswordAfterAnAttemptTheOSEndedShakesAndStillWaits() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .cancel)
 		await touch(model)
 
@@ -686,15 +642,14 @@ struct BiometricUnlockTests {
 		#expect(model.failure == .wrongPassword)
 		#expect(model.shake.count == 1)
 		#expect(model.touchID == .needsClick(after: .cancel))
-		await endShake(of: model)
+		try await endShake(of: model)
 		#expect(model.touchID == .needsClick(after: .cancel))
 		#expect(keys.contexts.count == 1)
 	}
 
 	@Test func checkingAPasswordAfterTouchIDStopsKeepsTouchIDStopped() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .cancel)
 		await touch(model)
 		try #require(model.touchID == .needsClick(after: .cancel))
@@ -711,7 +666,7 @@ struct BiometricUnlockTests {
 			seen.append(model.touchID)
 		}
 		gate.open()
-		await checking.value
+		_ = await checking.value
 		try await holding.value
 
 		#expect(model.failure == .wrongPassword)
@@ -722,8 +677,7 @@ struct BiometricUnlockTests {
 
 	@Test func aNewLockScreenListensEvenAfterTouchIDStoppedOnTheLastOne() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .cancel)
 		await touch(model)
 		await model.submit(password: workspacePassword)
@@ -736,8 +690,7 @@ struct BiometricUnlockTests {
 
 	@Test func aNewLockScreenSaysTouchIDIsLockedWhileTheMacKeepsItLocked() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .lockout)
 		keys.whileLoading { keys.becomes(.lockedOut) }
 		await touch(model)
@@ -751,8 +704,7 @@ struct BiometricUnlockTests {
 
 	@Test func aNewLockScreenWithAnotherAppInFrontListensOnlyOnReturn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .cancel)
 		await touch(model)
 		await model.submit(password: workspacePassword)
@@ -768,8 +720,7 @@ struct BiometricUnlockTests {
 
 	@Test func aPasswordUnlockDuringTheTouchLeavesTheLibraryAlone() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.whileLoading { @MainActor in
 			await model.submit(password: workspacePassword)
 			if let id = model.notes.first?.id { model.edit(id, "typed after the password unlock") }
@@ -784,8 +735,7 @@ struct BiometricUnlockTests {
 
 	@Test func turningTouchIDOffOnTheLockScreenStopsListening() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
 		model.disableBiometricUnlock()
@@ -797,8 +747,7 @@ struct BiometricUnlockTests {
 
 	@Test func turningTouchIDOffForgetsTheKey() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(keys)
 		try await turnOnTouchID(model)
 
 		model.disableBiometricUnlock()
@@ -813,7 +762,6 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
 		model.start()
 		model.appBecameActive()
@@ -832,7 +780,6 @@ struct BiometricUnlockTests {
 	@Test func aSetUpThatFindsAnotherLibraryKeepsItsKey() async throws {
 		let keys = FakeKeyStore()
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
 		model.start()
 		let other = try await Unlock.setUp(password: "other instance", in: directory, makeParameters: { .fast })
@@ -848,8 +795,7 @@ struct BiometricUnlockTests {
 
 	@Test func aLibraryThatFailsToLoadKeepsNeitherTheDatabaseNorTheKey() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(keys)
 		await model.lock()
 		try await connection(to: directory).execute("ALTER TABLE note RENAME TO kept; CREATE TABLE note (uuid BLOB PRIMARY KEY)")
 
@@ -863,8 +809,7 @@ struct BiometricUnlockTests {
 
 	@Test func theKeyStoreReadsOnlyThroughTheContextOfAGlyphInTheWindow() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		keys.reply(with: .miss)
 		var glyphs: [PairedGlyph] = []
 
@@ -872,7 +817,7 @@ struct BiometricUnlockTests {
 			let glyph = try #require(PairedGlyph(listeningFor: model))
 			glyphs.append(glyph)
 			await model.listen(through: glyph.view)
-			await endShake(of: model)
+			try await endShake(of: model)
 		}
 
 		#expect(keys.contexts.count == 3)
@@ -885,8 +830,7 @@ struct BiometricUnlockTests {
 
 	@Test func aGlyphPairedWithAnotherContextStartsNothing() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
 		await model.listen(through: PairedGlyph(LAContext()).view)
@@ -898,8 +842,7 @@ struct BiometricUnlockTests {
 
 	@Test func aGlyphOutsideAWindowStartsNothing() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
 		await model.listen(through: PairedGlyph(listening, inWindow: false).view)
@@ -910,8 +853,7 @@ struct BiometricUnlockTests {
 
 	@Test func aGlyphForAnAttemptThatEndedStartsNothing() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let stale = try #require(PairedGlyph(listeningFor: model))
 		model.appResignedActive()
 		model.appBecameActive()
@@ -925,8 +867,7 @@ struct BiometricUnlockTests {
 
 	@Test func aGlyphStartsOneReadAtATime() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let glyph = try #require(PairedGlyph(listeningFor: model))
 		keys.whileLoading { @MainActor in
 			keys.whileLoading {}

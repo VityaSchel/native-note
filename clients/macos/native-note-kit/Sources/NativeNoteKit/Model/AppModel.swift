@@ -1,7 +1,5 @@
-import AppKit
 import CryptoKit
 import Foundation
-import LocalAuthentication
 import LocalAuthenticationEmbeddedUI
 import Observation
 
@@ -18,24 +16,29 @@ import Observation
 		let reason: String
 	}
 
-	public private(set) var phase: Phase = .loading
+	public private(set) var phase: Phase = .loading {
+		didSet { biometricUnlock.libraryIsLocked = phase == .locked }
+	}
+
 	public private(set) var isOnboarding = false
 	var notes: [Note] = []
 	public private(set) var failure: Failure?
 	public private(set) var isImporting = false
-	public private(set) var isBiometricUnlockEnabled = false
-	public private(set) var touchID = TouchID.hidden
-	public private(set) var shake = Shake()
-	public internal(set) var syncStatus = SyncStatus()
 	public var selection: UUID? {
 		didSet {
 			guard let previous = oldValue, previous != selection else { return }
-			if createdThisSession.remove(previous) != nil, let left = notes.first(where: { $0.id == previous }), left.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-				notes.removeAll { $0.id == previous }
-				Task { await discard(previous) }
+			let leftEmpty = emptyNewNote(previous)
+			createdThisSession.remove(previous)
+			guard let leftEmpty else {
+				Task { await scheduler.flush(previous) }
 				return
 			}
-			Task { await scheduler.flush(previous) }
+			notes.removeAll { $0.id == previous }
+			guard let store else { return }
+			discards[previous] = Task {
+				await discard(leftEmpty, from: store)
+				discards[previous] = nil
+			}
 		}
 	}
 	public private(set) var focusesEditor: UUID?
@@ -70,40 +73,26 @@ import Observation
 		notes.count
 	}
 
-	private let directory: URL
+	let sync: LibrarySync
+	let biometricUnlock: BiometricUnlock
 	let scheduler: SaveScheduler
-	let makeTransport: @Sendable (URL) -> any SyncTransport
-	let syncDelay: Duration
+	private let directory: URL
 	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private let calibrate: @Sendable () throws -> Argon2.Parameters
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
 	private let exportParameters: Argon2.Parameters
 	private let keyStore: any UnlockKeyStore
-	private let shakeTimer: SaveScheduler.Sleep
 	private var unlockParameters: UnlockParameters?
-	private var passwordChangesInFlight = 0
-	var store: NoteStore?
-	var engine: SyncEngine?
-	var idleSync: Task<Void, Never>?
-	var syncLoop: Task<Void, Never>?
-	var serverChange: Task<Result<SyncSetupStart, SyncSetupFailure>, Never>?
+	private var passwordChange: Task<Failure?, Never>?
+	private(set) var store: NoteStore?
 	private var awayEvents = 0
-	var syncRequests = 0
-	var syncedThrough = 0
-	var recovery: RecoverySession?
 	private var retiring: NoteStore?
 	private var failingSaves: [UUID: FailingSave] = [:]
 	private var searchFailing = false
 	private var matches: [UUID]?
 	private var keptForUndo: [UUID: Note] = [:]
 	private var createdThisSession: Set<UUID> = []
-	private var biometrics = BiometricAvailability.unavailable
-	private var isActive = false
-	private(set) var isCheckingPassword = false
-	private var isOpeningWithTouchID = false
-	private var touchIDStop: TouchID.Stop?
-	private var evaluating: LAContext?
-	private var confirmation: CheckedContinuation<StoredKeyRead, Error>?
+	private var discards: [UUID: Task<Void, Never>] = [:]
 
 	public convenience init() {
 		self.init(directory: AppLock.directory)
@@ -131,16 +120,16 @@ import Observation
 		self.calibrate = calibrate
 		self.searchNotes = searchNotes
 		self.exportParameters = exportParameters
-		self.keyStore = keyStore ?? KeychainUnlockKeyStore(directory: directory)
-		self.shakeTimer = shakeTimer
-		self.makeTransport = makeTransport
-		self.syncDelay = syncDelay
+		let keyStore = keyStore ?? KeychainUnlockKeyStore(directory: directory)
+		self.keyStore = keyStore
+		biometricUnlock = BiometricUnlock(keyStore: keyStore, shakeTimer: shakeTimer)
+		sync = LibrarySync(scheduler: scheduler, makeTransport: makeTransport, syncDelay: syncDelay)
+		sync.library = self
 	}
 
 	public func start() {
 		phase = AppLock.parameterFiles(in: directory).isEmpty ? .needsSetup : .locked
-		touchIDStop = nil
-		refreshBiometricUnlock()
+		biometricUnlock.reset()
 	}
 
 	func setUp(password: String) async {
@@ -156,29 +145,30 @@ import Observation
 	}
 
 	func unlock(password: String) async {
-		guard !isOpeningWithTouchID else { return }
-		isCheckingPassword = true
-		settleTouchID()
+		guard !biometricUnlock.isOpening else { return }
+		biometricUnlock.checkingPassword(true)
 		let error = await openLibrary { try await Unlock.open(password: password, in: self.directory) }
-		if let error, Failure(error) == .wrongPassword { startShake() }
-		isCheckingPassword = false
-		settleTouchID()
+		if let error, Failure(error) == .wrongPassword { biometricUnlock.startShake() }
+		biometricUnlock.checkingPassword(false)
 	}
 
-	public func submit(password: String) async {
+	@discardableResult
+	public func submit(password: String) async -> Failure? {
 		if phase == .needsSetup {
 			await setUp(password: password)
 		} else {
 			await unlock(password: password)
 		}
+		return failure
 	}
 
 	public func lock() async {
 		let closing = store
+		let changingPassword = passwordChange
+		changingPassword?.cancel()
 		cancelTurningOnTouchID()
-		let syncing = stopSync()
+		let syncing = sync.stop()
 		phase = .locked
-		touchIDStop = nil
 		selection = nil
 		notes = []
 		keptForUndo = [:]
@@ -190,9 +180,11 @@ import Observation
 		failingSaves = [:]
 		searchFailing = false
 		unlockParameters = nil
-		refreshBiometricUnlock()
+		biometricUnlock.reset()
 		await scheduler.flushAll()
 		await syncing?.value
+		_ = await changingPassword?.value
+		await finishDiscards()
 		guard let closing else { return }
 		if unsavedReason == nil { await closing.close() } else { retiring = closing }
 	}
@@ -203,10 +195,15 @@ import Observation
 	}
 
 	public func close() async {
+		let changingPassword = passwordChange
+		changingPassword?.cancel()
 		cancelTurningOnTouchID()
-		let syncing = stopSync()
+		let syncing = sync.stop()
+		if let selection, emptyNewNote(selection) != nil { self.selection = nil }
 		await scheduler.flushAll()
 		await syncing?.value
+		_ = await changingPassword?.value
+		await finishDiscards()
 		let open = [store, retiring].compactMap(\.self)
 		store = nil
 		retiring = nil
@@ -228,9 +225,24 @@ import Observation
 		focusesEditor = nil
 	}
 
-	private func discard(_ id: UUID) async {
-		await scheduler.discard(id)
-		_ = await write("The empty note could not be removed.") { try await $0.discardUnsynced(id: id, at: Date().epochMilliseconds) }
+	private func emptyNewNote(_ id: UUID) -> Note? {
+		guard createdThisSession.contains(id), let note = notes.first(where: { $0.id == id }) else { return nil }
+		return note.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? note : nil
+	}
+
+	private func discard(_ note: Note, from store: NoteStore) async {
+		await scheduler.discard(note.id)
+		do {
+			try await store.discardUnsynced(id: note.id, shownAt: note.v, at: Date().epochMilliseconds)
+		} catch {
+			if store === self.store { report(error, as: "The empty note could not be removed.") }
+		}
+	}
+
+	private func finishDiscards() async {
+		while let discarding = discards.values.first {
+			await discarding.value
+		}
 	}
 
 	public func edit(_ id: UUID, _ body: String) {
@@ -243,7 +255,7 @@ import Observation
 
 		guard let store else { return }
 		scheduleSave(edited, to: store)
-		syncSoon()
+		sync.soon()
 	}
 
 	public func deleteSelected() async {
@@ -251,7 +263,8 @@ import Observation
 		await delete(id)
 	}
 
-	public func delete(_ id: UUID) async {
+	@discardableResult
+	public func delete(_ id: UUID) async -> Bool {
 		let order = groups.flatMap(\.notes).map(\.id)
 		if selection == id, let index = order.firstIndex(of: id) {
 			selection = order.indices.contains(index + 1) ? order[index + 1] : index > 0 ? order[index - 1] : nil
@@ -262,11 +275,12 @@ import Observation
 		guard await write("The note could not be deleted.", { try await $0.markDeleted(id: id, at: Date().epochMilliseconds) }) else {
 			keptForUndo[id] = nil
 			if let shown, store != nil, !notes.contains(where: { $0.id == id }) { notes.append(shown) }
-			return
+			return false
 		}
 		await scheduler.discard(id)
 		notes.removeAll { $0.id == id }
-		syncSoon()
+		sync.soon()
+		return true
 	}
 
 	public func keepForUndo(_ id: UUID) -> UUID? {
@@ -278,7 +292,7 @@ import Observation
 	@discardableResult
 	public func restore(_ kept: UUID) -> UUID? {
 		guard let store, !notes.contains(where: { $0.id == kept }), let deleted = keptForUndo.removeValue(forKey: kept) else { return nil }
-		let note = Note(id: UUID(), body: deleted.body, createdAt: deleted.createdAt, updatedAt: deleted.updatedAt, dirty: true)
+		let note = deleted.unsyncedCopy()
 		notes.append(note)
 		selection = note.id
 		scheduleSave(note, to: store)
@@ -290,7 +304,7 @@ import Observation
 				await runSearch()
 			}
 		}
-		syncSoon()
+		sync.soon()
 		return note.id
 	}
 
@@ -320,7 +334,8 @@ import Observation
 	}
 
 	public func eraseLibrary() async {
-		guard phase == .locked, !isOpeningWithTouchID else { return }
+		guard phase == .locked, !biometricUnlock.isOpening else { return }
+		_ = await passwordChange?.value
 		let retired = retiring
 		retiring = nil
 		await retired?.close()
@@ -342,6 +357,18 @@ import Observation
 		keyStore.isAvailable
 	}
 
+	public var isBiometricUnlockEnabled: Bool {
+		biometricUnlock.isEnabled
+	}
+
+	public var touchID: TouchID {
+		biometricUnlock.state
+	}
+
+	public var shake: Shake {
+		biometricUnlock.shake
+	}
+
 	public static var hasSecureEnclave: Bool {
 		MachineKey.isAvailable
 	}
@@ -351,231 +378,74 @@ import Observation
 			return .unexpected("Unlock Native Note to turn on Touch ID unlock.")
 		}
 		guard keyStore.isAvailable else { return .unexpected("Touch ID is not available on this Mac.") }
-		defer { refreshBiometricUnlock() }
-		let isStillCurrent = { self.store === store && self.unlockParameters == unlockParameters && self.passwordChangesInFlight == 0 }
-		let key: SymmetricKey
+		defer { biometricUnlock.refresh() }
 		do {
-			key = try await Unlock.provenKey(password: password, parameters: unlockParameters, in: directory)
+			let key = try await Unlock.provenKey(password: password, parameters: unlockParameters, in: directory)
+			return await biometricUnlock.turnOn(with: key) {
+				self.store === store && self.unlockParameters == unlockParameters && self.passwordChange == nil
+			}
 		} catch {
 			return Failure(error)
-		}
-		guard isStillCurrent() else {
-			try? keyStore.delete()
-			return nil
-		}
-		do {
-			try keyStore.save(key)
-			let read = try await touchToConfirm()
-			guard case let .key(confirmed) = read else {
-				try? keyStore.delete()
-				switch read {
-				case .lockedOut: return .unexpected("Touch ID unlock could not be turned on. Touch ID is locked.")
-				case .unavailable: return .unexpected("Touch ID unlock could not be turned on. Touch ID is not available.")
-				case .key, .missed, .cancelled: return nil
-				}
-			}
-			guard isStillCurrent() else {
-				try? keyStore.delete()
-				return nil
-			}
-			guard confirmed == key else {
-				try? keyStore.delete()
-				return .unexpected("Touch ID unlock could not be turned on. Try again.")
-			}
-			return nil
-		} catch {
-			try? keyStore.delete()
-			return .unexpected("Touch ID unlock could not be turned on. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
 		}
 	}
 
 	public func disableBiometricUnlock() {
-		do {
-			try keyStore.delete()
-		} catch {
-			failure = .unexpected("Touch ID unlock could not be turned off. \((error as? KeychainFailure)?.message ?? error.localizedDescription)")
-		}
-		refreshBiometricUnlock()
+		if let failure = biometricUnlock.turnOff() { self.failure = failure }
 	}
 
 	public func changePassword(from current: String, to new: String) async -> Failure? {
 		guard phase == .unlocked, let store, let unlockParameters else {
 			return .unexpected("Unlock Native Note to change the password.")
 		}
-		passwordChangesInFlight += 1
-		defer {
-			passwordChangesInFlight -= 1
-			refreshBiometricUnlock()
+		guard passwordChange == nil else { return .unexpected("The password is already being changed.") }
+		let change = Task { () -> Failure? in
+			defer {
+				passwordChange = nil
+				biometricUnlock.refresh()
+			}
+			do {
+				let changed = try await Unlock.changePassword(
+					from: current,
+					to: new,
+					parameters: unlockParameters,
+					store: store,
+					in: directory,
+					storedKey: keyStore,
+					calibrate: calibrate
+				)
+				if self.store === store { self.unlockParameters = changed.parameters }
+				return nil
+			} catch {
+				return Failure(error)
+			}
 		}
-		do {
-			let changed = try await Unlock.changePassword(
-				from: current,
-				to: new,
-				parameters: unlockParameters,
-				store: store,
-				in: directory,
-				storedKey: keyStore,
-				calibrate: calibrate
-			)
-			if self.store === store { self.unlockParameters = changed.parameters }
-			return nil
-		} catch {
-			return Failure(error)
-		}
+		passwordChange = change
+		return await change.value
 	}
 
 	public func appBecameActive() {
-		isActive = true
-		refreshBiometricUnlock()
+		biometricUnlock.appBecameActive()
 		Task { await syncNow() }
 	}
 
 	public func appResignedActive() {
-		isActive = false
 		Task { await syncNow() }
-		if touchIDStop == .cancel { touchIDStop = nil }
-		settleTouchID()
+		biometricUnlock.appResignedActive()
 	}
 
 	public func tryTouchIDAgain() {
-		guard case .needsClick = touchID else { return }
-		touchIDStop = nil
-		settleTouchID()
+		biometricUnlock.tryAgain()
 	}
 
 	public func cancelTurningOnTouchID() {
-		guard confirmation != nil else { return }
-		try? keyStore.delete()
-		finishConfirmation(.success(.cancelled))
+		biometricUnlock.cancelTurningOn()
 	}
 
 	public func listen(through glyph: LAAuthenticationView) async {
-		guard case let .listening(context) = touchID, glyph.context === context, glyph.window != nil, evaluating !== context else { return }
-		evaluating = context
-		let confirming = confirmation != nil
-		let read: Result<StoredKeyRead, Error>
-		do {
-			read = .success(try await keyStore.read(through: context, reason: confirming ? "turn on Touch ID unlock" : "unlock your notes"))
-		} catch {
-			read = .failure(error)
+		let failure = await biometricUnlock.listen(through: glyph) { key in
+			await self.openLibrary { try await Unlock.open(key: key, in: self.directory) }
 		}
-		if evaluating === context { evaluating = nil }
-		guard touchID == .listening(context) else { return }
-		if confirming {
-			confirm(with: read)
-		} else {
-			await unlock(with: read)
-		}
-	}
-
-	private func unlock(with read: Result<StoredKeyRead, Error>) async {
-		switch read {
-		case let .success(.key(key)):
-			isOpeningWithTouchID = true
-			settleTouchID()
-			let error = await openLibrary { try await Unlock.open(key: key, in: self.directory) }
-			isOpeningWithTouchID = false
-			guard let error else {
-				settleTouchID()
-				return
-			}
-			if case Unlock.Failure.storedKeyRejected = error {
-				forgetStoredKey(explaining: Failure.reason(for: error))
-			} else {
-				waitForClick(after: .failure)
-			}
-		case .success(.missed):
-			if keyStore.availability == .lockedOut { biometrics = .lockedOut }
-			startShake()
-		case .success(.cancelled):
-			waitForClick(after: .cancel)
-		case .success(.lockedOut):
-			biometrics = .lockedOut
-			touchIDStop = nil
-			settleTouchID()
-		case .success(.unavailable):
-			biometrics = .unavailable
-			settleTouchID()
-		case .failure:
-			forgetStoredKey(explaining: "Touch ID could not read the unlock key. Unlock with your password.")
-		}
-	}
-
-	private func confirm(with read: Result<StoredKeyRead, Error>) {
-		switch read {
-		case .success(.missed):
-			waitForClick(after: .miss)
-		case .success(.cancelled):
-			waitForClick(after: .cancel)
-		default:
-			finishConfirmation(read)
-		}
-	}
-
-	private func touchToConfirm() async throws -> StoredKeyRead {
-		guard confirmation == nil else { return .cancelled }
-		return try await withCheckedThrowingContinuation { continuation in
-			confirmation = continuation
-			touchIDStop = nil
-			settleTouchID()
-		}
-	}
-
-	private func finishConfirmation(_ read: Result<StoredKeyRead, Error>) {
-		guard let confirmation else { return }
-		self.confirmation = nil
-		touchIDStop = nil
-		settleTouchID()
-		confirmation.resume(with: read)
-	}
-
-	private func startShake() {
-		guard !shake.isRunning else { return }
-		shake.count += 1
-		shake.isRunning = true
-		settleTouchID()
-		Task { [shakeTimer] in
-			try? await shakeTimer(Shake.duration)
-			shake.isRunning = false
-			settleTouchID()
-		}
-	}
-
-	private func waitForClick(after stop: TouchID.Stop) {
-		touchIDStop = stop
-		settleTouchID()
-	}
-
-	private func forgetStoredKey(explaining message: String) {
-		if (try? keyStore.delete()) == nil { touchIDStop = .failure }
-		refreshBiometricUnlock()
-		failure = .unexpected(message)
-	}
-
-	private func refreshBiometricUnlock() {
-		isBiometricUnlockEnabled = confirmation == nil && keyStore.hasKey()
-		biometrics = keyStore.availability
-		settleTouchID()
-	}
-
-	private func settleTouchID() {
-		let next = nextTouchID()
-		guard next != touchID else { return }
-		if case let .listening(context) = touchID { context.invalidate() }
-		touchID = next
-	}
-
-	private func nextTouchID() -> TouchID {
-		let confirming = confirmation != nil
-		guard confirming || (phase == .locked && isBiometricUnlockEnabled && biometrics != .unavailable) else { return .hidden }
-		if isOpeningWithTouchID { return .working }
-		if !confirming, biometrics == .lockedOut { return .lockedOut }
-		if let touchIDStop { return .needsClick(after: touchIDStop) }
-		if isCheckingPassword { return .paused(.checkingPassword) }
-		if !confirming, shake.isRunning { return .paused(.shaking) }
-		if !isActive { return .paused(.inBackground) }
-		if case .listening = touchID { return touchID }
-		return .listening(LAContext())
+		if let failure { self.failure = failure }
 	}
 
 	public static func isEncryptedExport(at url: URL) -> Bool {
@@ -585,6 +455,7 @@ import Observation
 
 	@discardableResult
 	public func exportLibrary(to url: URL, passphrase: String?) async -> Bool {
+		guard phase == .unlocked, store != nil else { return false }
 		let notes = notes
 		let parameters = exportParameters
 		do {
@@ -619,30 +490,27 @@ import Observation
 			return nil
 		}
 
-		var summary = ImportSummary()
-		func stopped(at index: Int) -> ImportSummary {
-			summary.notImported = incoming.count - index
-			return summary
+		guard store === self.store else { return ImportSummary(notImported: incoming.count) }
+		let added: [Note]
+		do {
+			added = try await store.insertMissing(incoming.map(Self.atVersionZero))
+		} catch {
+			guard store === self.store else { return ImportSummary(notImported: incoming.count) }
+			report(error, as: "The file could not be imported.")
+			return nil
 		}
-		for (index, var note) in incoming.enumerated() {
-			guard store === self.store else { return stopped(at: index) }
-			do {
-				if try await store.note(id: note.id) != nil {
-					summary.skipped += 1
-					continue
-				}
-				note.v = 0
-				try await store.save(note)
-			} catch {
-				guard store === self.store else { return stopped(at: index) }
-				report(error, as: "The file could not be imported.")
-				return nil
-			}
-			summary.added += 1
-			if store === self.store { notes.append(note) }
+		if store === self.store {
+			let shown = Set(notes.map(\.id))
+			notes += added.filter { !shown.contains($0.id) }
+			sync.soon()
 		}
-		syncSoon()
-		return summary
+		return ImportSummary(added: added.count, skipped: incoming.count - added.count)
+	}
+
+	nonisolated private static func atVersionZero(_ imported: Note) -> Note {
+		var note = imported
+		note.v = 0
+		return note
 	}
 
 	nonisolated private static func search(_ store: NoteStore, for text: String) async throws -> [Note] {
@@ -696,6 +564,7 @@ import Observation
 	private func openLibrary(onboarding: Bool = false, _ open: @escaping () async throws -> Unlock.Unlocked) async -> Error? {
 		failure = nil
 		let away = awayEvents
+		_ = await passwordChange?.value
 		do {
 			let unlocked = try await open()
 			let opened = unlocked.store
@@ -722,8 +591,8 @@ import Observation
 			selection = groups.first?.notes.first?.id
 			isOnboarding = onboarding
 			phase = .unlocked
-			refreshBiometricUnlock()
-			await startSync(opened)
+			biometricUnlock.refresh()
+			await sync.start(opened)
 			return nil
 		} catch {
 			if case Unlock.Failure.alreadySetUp = error { phase = .locked }

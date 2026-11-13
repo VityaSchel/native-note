@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct AppModelJoinTests {
 	@Test func aJoinOpensTheServersBlobAndSyncsEveryNoteBothWays() async throws {
 		let server = try SyncServer()

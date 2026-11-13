@@ -21,7 +21,6 @@ private enum AtRest {
 extension LibraryEndToEndTests {
 	@Test func aLockedLibraryIsIndistinguishableFromRandomOnDisk() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery")
-		defer { try? FileManager.default.removeItem(at: directory) }
 		#expect(try !AtRest.sidecars(in: directory).isEmpty)
 
 		await model.lock()
@@ -43,7 +42,6 @@ extension LibraryEndToEndTests {
 
 	@Test func quittingClosesTheDatabaseLikeLocking() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery", filled: false)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: Array(corpus.prefix(50)))
 		model.edit(try #require(model.selection), "typed just before quitting")
 
@@ -57,10 +55,8 @@ extension LibraryEndToEndTests {
 
 	@Test func aCrashLeavesTheSidecarsUntilTheNextLock() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery", filled: false)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: Array(corpus.prefix(50)))
 		let crashed = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: crashed) }
 		try FileManager.default.copyItem(at: directory, to: crashed)
 		await model.lock()
 		#expect(try !AtRest.sidecars(in: crashed).isEmpty)

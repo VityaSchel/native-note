@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Testing
 
 @MainActor
 final class OffscreenWindow<Content: View> {
@@ -36,12 +37,14 @@ final class OffscreenWindow<Content: View> {
 		RunLoop.current.run(until: Date().addingTimeInterval(interval))
 	}
 
-	func pump(turns: Int = 400, until done: () async throws -> Bool) async rethrows {
+	func pump(turns: Int = 2_000, sourceLocation: SourceLocation = #_sourceLocation, until done: () async throws -> Bool) async rethrows {
 		for _ in 0 ..< turns {
 			if try await done() { return }
 			pump()
 			await Task.yield()
 		}
+		if try await done() { return }
+		Issue.record("The window did not reach the awaited state in \(turns) turns.", sourceLocation: sourceLocation)
 	}
 
 	func views<View: NSView>(of type: View.Type) -> [View] {

@@ -26,25 +26,36 @@ nonisolated final class SQLiteStatement {
 
 	deinit { sqlite3_finalize(handle) }
 
-	func bind(_ index: Int32, _ value: Data) {
-		value.withUnsafeBytes { bind(index, $0) }
+	func bind(_ index: Int32, _ value: Data) throws {
+		try value.withUnsafeBytes { try bind(index, $0) }
 	}
 
-	func bind(_ index: Int32, _ bytes: UnsafeRawBufferPointer) {
-		sqlite3_bind_blob(handle, index, bytes.baseAddress, Int32(bytes.count), transientBinding)
+	func bind(_ index: Int32, _ bytes: UnsafeRawBufferPointer) throws {
+		guard let start = bytes.baseAddress, !bytes.isEmpty else {
+			return try confirm(sqlite3_bind_zeroblob(handle, index, 0))
+		}
+		try confirm(sqlite3_bind_blob(handle, index, start, Int32(bytes.count), transientBinding))
 	}
 
-	func bind(_ index: Int32, _ value: String) {
+	func bind(_ index: Int32, _ value: String) throws {
 		let utf8 = Array(value.utf8)
-		sqlite3_bind_text(handle, index, utf8, Int32(utf8.count), transientBinding)
+		try confirm(sqlite3_bind_text(handle, index, utf8, Int32(utf8.count), transientBinding))
 	}
 
-	func bind(_ index: Int32, _ value: Int64) {
-		sqlite3_bind_int64(handle, index, value)
+	func bind(_ index: Int32, _ value: Int64) throws {
+		try confirm(sqlite3_bind_int64(handle, index, value))
 	}
 
-	func bindNull(_ index: Int32) {
-		sqlite3_bind_null(handle, index)
+	func reset() {
+		sqlite3_reset(handle)
+	}
+
+	private func confirm(_ code: Int32) throws {
+		guard code == SQLITE_OK else { throw failure(code) }
+	}
+
+	private func failure(_ code: Int32) -> SQLiteError {
+		.cannotExecute(code: code, message: String(cString: sqlite3_errmsg(database)), sql: sql)
 	}
 
 	@discardableResult
@@ -53,12 +64,7 @@ nonisolated final class SQLiteStatement {
 		switch code {
 		case SQLITE_ROW: return true
 		case SQLITE_DONE: return false
-		default:
-			throw SQLiteError.cannotExecute(
-				code: code,
-				message: String(cString: sqlite3_errmsg(database)),
-				sql: sql
-			)
+		default: throw failure(code)
 		}
 	}
 
@@ -80,9 +86,5 @@ nonisolated final class SQLiteStatement {
 
 	func int(_ column: Int32) -> Int64 {
 		sqlite3_column_int64(handle, column)
-	}
-
-	func isNull(_ column: Int32) -> Bool {
-		sqlite3_column_type(handle, column) == SQLITE_NULL
 	}
 }

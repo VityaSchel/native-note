@@ -22,6 +22,16 @@ extension AppModel.Failure {
 	}
 }
 
+extension AppModel.Failure {
+	func inlineMessage(wrongPassword: String) -> String? {
+		switch self {
+		case .wrongPassword: wrongPassword
+		case let .unexpected(reason), let .unsaved(reason), let .failed(reason, _): reason
+		case .wrongExportPassphrase: nil
+		}
+	}
+}
+
 private struct FailureAlert: ViewModifier {
 	let failure: AppModel.Failure?
 	let dismiss: () -> Void

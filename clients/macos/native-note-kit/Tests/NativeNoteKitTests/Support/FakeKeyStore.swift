@@ -16,17 +16,25 @@ final class FakeKeyStore: UnlockKeyStore {
 		case failure
 	}
 
+	static let keyMissing = KeychainFailure(status: errSecItemNotFound)
+	static let readFailed = KeychainFailure(status: errSecInteractionNotAllowed)
+
+	private struct Asked: @unchecked Sendable {
+		let context: LAContext
+	}
+
 	private struct State {
 		var key: SymmetricKey?
 		var reply = Reply.key
 		var failsWrites = false
 		var reasons: [String] = []
+		var asked: [Asked] = []
 		var whileLoading: (@Sendable () async -> Void)?
+		var whileDeleting: (@Sendable () -> Void)?
 		var availability: BiometricAvailability
 	}
 
 	private let state: Mutex<State>
-	nonisolated(unsafe) private var askedThrough: [LAContext] = []
 
 	init(available: Bool = true) {
 		state = Mutex(State(availability: available ? .available : .unavailable))
@@ -36,10 +44,14 @@ final class FakeKeyStore: UnlockKeyStore {
 
 	var reasons: [String] { state.withLock { $0.reasons } }
 
-	@MainActor var contexts: [LAContext] { askedThrough }
+	var contexts: [LAContext] { state.withLock { $0.asked }.map(\.context) }
 
 	func whileLoading(_ body: @escaping @Sendable () async -> Void) {
 		state.withLock { $0.whileLoading = body }
+	}
+
+	func whileDeleting(_ body: @escaping @Sendable () -> Void) {
+		state.withLock { $0.whileDeleting = body }
 	}
 
 	func reply(with reply: Reply) {
@@ -50,9 +62,11 @@ final class FakeKeyStore: UnlockKeyStore {
 		state.withLock { $0.availability = availability }
 	}
 
-	@MainActor func forgetReads() {
-		askedThrough = []
-		state.withLock { $0.reasons = [] }
+	func forgetReads() {
+		state.withLock {
+			$0.asked = []
+			$0.reasons = []
+		}
 	}
 
 	func failWrites() {
@@ -75,27 +89,38 @@ final class FakeKeyStore: UnlockKeyStore {
 	}
 
 	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead {
-		askedThrough.append(context)
-		let hook = state.withLock {
+		let asked = Asked(context: context)
+		let (refusal, hook) = state.withLock {
+			$0.asked.append(asked)
 			$0.reasons.append(reason)
-			return $0.whileLoading
+			return (Self.refusal(when: $0.availability), $0.whileLoading)
 		}
+		if let refusal { return refusal }
 		await hook?()
-		let (key, reply) = state.withLock { ($0.key, $0.reply) }
+		let (key, reply, availability) = state.withLock { ($0.key, $0.reply, $0.availability) }
 		switch reply {
-		case .key:
-			guard let key else { throw KeychainFailure(status: errSecItemNotFound) }
-			return .key(key)
-		case .otherKey: return .key(SymmetricKey(data: Data(repeating: 0xEE, count: 32)))
+		case .key, .otherKey:
+			if let refusal = Self.refusal(when: availability) { return refusal }
+			guard let key else { throw Self.keyMissing }
+			return .key(reply == .key ? key : SymmetricKey(data: Data(repeating: 0xEE, count: 32)))
 		case .miss: return .missed
 		case .cancel: return .cancelled
 		case .lockout: return .lockedOut
 		case .unavailable: return .unavailable
-		case .failure: throw KeychainFailure(status: errSecItemNotFound)
+		case .failure: throw Self.readFailed
+		}
+	}
+
+	private static func refusal(when availability: BiometricAvailability) -> StoredKeyRead? {
+		switch availability {
+		case .available: nil
+		case .lockedOut: .lockedOut
+		case .unavailable: .unavailable
 		}
 	}
 
 	func delete() throws {
+		state.withLock { $0.whileDeleting }?()
 		try state.withLock {
 			guard !$0.failsWrites else { throw KeychainFailure(status: errSecNotAvailable) }
 			$0.key = nil

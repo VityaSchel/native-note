@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch)
 struct HTTPStatusTests {
 	private struct Answering: SyncTransport {
 		let status: Int
@@ -38,7 +38,7 @@ struct HTTPStatusTests {
 		let model = try await model(answering: status)
 		let store = try #require(model.store)
 		try await store.enableSync(SyncSettings(server: URL(string: "http://notes.example")!, apiKey: .init(size: .bits256), contentKey: .init(size: .bits256)), pin: 1)
-		await model.startSync(store)
+		await model.sync.start(store)
 		await model.syncNow()
 
 		guard case let .failed(message) = model.syncStatus.phase else {

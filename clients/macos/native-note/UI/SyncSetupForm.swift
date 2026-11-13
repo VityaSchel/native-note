@@ -25,6 +25,7 @@ struct SyncSetupForm {
 	var currentEntry = PhraseEntry()
 	private(set) var working = false
 	private(set) var message: String?
+	private(set) var wordsRevealed = false
 
 	init(mode: Mode, server: String = "") {
 		self.mode = mode
@@ -77,7 +78,12 @@ struct SyncSetupForm {
 			return
 		}
 		answers = ["", "", ""]
+		wordsRevealed = false
 		step = .words(phrase)
+	}
+
+	mutating func revealWords() {
+		wordsRevealed = true
 	}
 
 	mutating func prepared(_ result: Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure>) {

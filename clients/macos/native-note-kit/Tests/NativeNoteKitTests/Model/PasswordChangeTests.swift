@@ -10,19 +10,14 @@ private extension Gate {
 	}
 }
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct PasswordChangeTests {
 	private let alarm = Alarm()
 
-	private func library(
-		_ keys: FakeKeyStore = FakeKeyStore(),
-		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { UnlockParameters.fast.argon }
-	) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm] directory in
+	private func library(calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { UnlockParameters.fast.argon }) -> Workspace {
+		Workspace(holding: ["Shopping", "Trip"]) { [alarm] directory, keys in
 			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), calibrate: calibrate, keyStore: keys)
 		}
-		try await fill(model, with: ["Shopping", "Trip"])
-		return (model, directory)
 	}
 
 	private func relaunch(_ directory: URL, password: String) async -> AppModel {
@@ -33,8 +28,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func theNewPasswordUnlocksAndTheOldOneNoLonger() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library().unlocked(FakeKeyStore())
 		let bodies = Set(model.notes.map(\.body))
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
@@ -49,8 +43,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func aWrongCurrentPasswordChangesNothing() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library().unlocked(FakeKeyStore())
 		let parameters = try Data(contentsOf: AppLock.currentFile(in: directory))
 
 		#expect(await model.changePassword(from: "a guess", to: "a new password") == .wrongPassword)
@@ -63,8 +56,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func aLockedLibraryKeepsItsPassword() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library().unlocked(FakeKeyStore())
 		let parameters = try Data(contentsOf: AppLock.currentFile(in: directory))
 		await model.lock()
 
@@ -74,8 +66,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func aSecondChangeStartsFromTheFirst() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library().unlocked(FakeKeyStore())
 
 		#expect(await model.changePassword(from: workspacePassword, to: "second password") == nil)
 		#expect(await model.changePassword(from: "second password", to: "third password") == nil)
@@ -85,8 +76,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func anEditWaitingToSaveLandsUnderTheNewPassword() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library().unlocked(FakeKeyStore())
 		model.edit(try #require(model.selection), "typed before the change")
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
@@ -98,8 +88,7 @@ struct PasswordChangeTests {
 
 	@Test func changingThePasswordTurnsTouchIDOffUntilItIsTurnedOnAgain() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library().unlocked(keys)
 		try await turnOnTouchID(model)
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
@@ -117,24 +106,126 @@ struct PasswordChangeTests {
 	@Test func lockingDuringTheChangeKeepsTheOldPassword() async throws {
 		let gate = Gate()
 		defer { gate.open() }
-		let (model, directory) = try await library(calibrate: gate.holdCalibration)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library(calibrate: gate.holdCalibration).unlocked(FakeKeyStore())
 
 		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
 		try await gate.untilHolding()
 		try #require(gate.isHolding)
-		await model.lock()
+		let locking = Task { await model.lock() }
+		try await settle { model.phase == .locked }
 		gate.open()
+		await locking.value
 
 		#expect(await change.value != nil)
 		#expect(await relaunch(directory, password: workspacePassword).phase == .unlocked)
 		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 	}
 
+	@Test func aSecondChangeWhileOneRunsIsRefused() async throws {
+		let gate = Gate()
+		defer { gate.open() }
+		let (model, directory) = try await library(calibrate: { gate.isHolding ? UnlockParameters.fast.argon : gate.holdCalibration() }).unlocked(FakeKeyStore())
+
+		let first = Task { await model.changePassword(from: workspacePassword, to: "second password") }
+		try await gate.untilHolding()
+		#expect(await model.changePassword(from: workspacePassword, to: "third password") != nil)
+		gate.open()
+
+		#expect(await first.value == nil)
+		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		await model.lock()
+		#expect(await relaunch(directory, password: "second password").phase == .unlocked)
+	}
+
+	@Test func lockingAndUnlockingWaitForAChangePastItsRekey() async throws {
+		let gate = Gate()
+		defer { gate.open() }
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library().unlocked(keys)
+		keys.whileDeleting { gate.hold() }
+		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
+		try await gate.untilHolding()
+		try #require(AppLock.parameterFiles(in: directory).count == 2)
+
+		let locked = Flag()
+		let locking = Task {
+			await model.lock()
+			locked.raise()
+		}
+		try await settle { model.phase == .locked }
+		let answered = Flag()
+		let unlocking = Task {
+			await model.unlock(password: workspacePassword)
+			answered.raise()
+		}
+		try await Task.sleep(for: .milliseconds(200))
+		#expect(!locked.isRaised)
+		#expect(!answered.isRaised)
+		#expect(AppLock.parameterFiles(in: directory).count == 2)
+		keys.whileDeleting {}
+		gate.open()
+
+		#expect(await change.value == nil)
+		await locking.value
+		await unlocking.value
+		#expect(model.failure == .wrongPassword)
+		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
+	}
+
+	@Test func quittingWaitsForAChangePastItsRekey() async throws {
+		let gate = Gate()
+		defer { gate.open() }
+		let keys = FakeKeyStore()
+		let (model, directory) = try await library().unlocked(keys)
+		keys.whileDeleting { gate.hold() }
+		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
+		try await gate.untilHolding()
+
+		let closed = Flag()
+		let closing = Task {
+			await model.close()
+			closed.raise()
+		}
+		try await Task.sleep(for: .milliseconds(200))
+		#expect(!closed.isRaised)
+		keys.whileDeleting {}
+		gate.open()
+
+		#expect(await change.value == nil)
+		await closing.value
+		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
+	}
+
+	@Test func aPendingFileLostDuringTheRekeyStillLeavesTheNewPasswordInCharge() async throws {
+		let directory = temporaryDirectory()
+		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		let store = try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey())
+		try await store.save(sampleNote(body: "kept"))
+		let keys = FakeKeyStore()
+		keys.whileDeleting { try? FileManager.default.removeItem(at: AppLock.pendingRekeyFile(in: directory)) }
+
+		let changed = try await Unlock.changePassword(
+			from: workspacePassword,
+			to: "a new password",
+			parameters: .fast,
+			store: store,
+			in: directory,
+			storedKey: keys,
+			calibrate: { UnlockParameters.fast.argon }
+		)
+		await store.close()
+
+		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)) == changed.parameters)
+		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		let reopened = try await Unlock.open(password: "a new password", in: directory)
+		#expect(try await reopened.store.liveNotes().map(\.body) == ["kept"])
+	}
+
 	@Test func aPasswordChangeDuringTheTouchIDCheckLeavesNoStaleKey() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library().unlocked(keys)
 		let staleKey = try await workspaceKey()
 		keys.whileLoading {
 			#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
@@ -153,8 +244,7 @@ struct PasswordChangeTests {
 		let gate = Gate()
 		defer { gate.open() }
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys, calibrate: gate.holdCalibration)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library(calibrate: gate.holdCalibration).unlocked(keys)
 		let promptIsUp = AsyncStream<Void>.makeStream()
 		let change = Task {
 			for await _ in promptIsUp.stream { break }

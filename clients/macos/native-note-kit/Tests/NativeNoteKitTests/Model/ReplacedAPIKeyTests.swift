@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct ReplacedAPIKeyTests {
 	private func syncingLibrary(_ server: SyncServer) async throws -> (AppModel, URL, TestTransport) {
 		let transport = TestTransport(server)
@@ -40,7 +40,6 @@ struct ReplacedAPIKeyTests {
 	@Test func aMacTakesTheServersNewKeyThroughChangeServerAndKeepsItAcrossARelaunch() async throws {
 		let server = try SyncServer()
 		let (model, directory, transport) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let replacement = try replaceKey(of: server)
 		model.edit(try #require(model.selection), "typed while shut out")
 		await model.syncNow()
@@ -67,8 +66,7 @@ struct ReplacedAPIKeyTests {
 
 	@Test func aKeyTheServerRefusesLeavesTheOldOneSyncing() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingLibrary(server)
 		let held = try await storedKey(model)
 
 		#expect(await changeServer(model, server, key: String(repeating: "ab", count: 32)) == .failure(.refused))
@@ -82,8 +80,7 @@ struct ReplacedAPIKeyTests {
 
 	@Test func aServerThatLostTheLibraryOffersToMoveItThereAndKeepsTheOldKeyMeanwhile() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingLibrary(server)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server) {
 			for file in try serverFiles(server) { try FileManager.default.removeItem(at: file) }
@@ -100,14 +97,12 @@ struct ReplacedAPIKeyTests {
 
 	@Test func aServerHoldingAnotherLibraryKeepsTheOldKey() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingLibrary(server)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server) {
 			for file in try serverFiles(server) { try FileManager.default.removeItem(at: file) }
 		}
-		let (other, otherDirectory) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in TestTransport(server) }, syncDelay: .seconds(3600)) }
-		defer { try? FileManager.default.removeItem(at: otherDirectory) }
+		let (other, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in TestTransport(server) }, syncDelay: .seconds(3600)) }
 		_ = try await setUpSync(other, server)
 		try await fill(other, with: ["another library", "and its second note"])
 		await other.syncNow()
@@ -120,10 +115,8 @@ struct ReplacedAPIKeyTests {
 
 	@Test func aServerRestoredFromBeforeThePhraseChangedKeepsTheOldKey() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingLibrary(server)
 		let backup = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: backup) }
 		try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
 		server.kill()
 		for file in try serverFiles(server) { try FileManager.default.copyItem(at: file, to: backup.appending(path: file.lastPathComponent)) }
@@ -145,10 +138,8 @@ struct ReplacedAPIKeyTests {
 
 	@Test func aServerRestoredFromBeforeTheLastPullKeepsTheOldKey() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingLibrary(server)
 		let backup = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: backup) }
 		try FileManager.default.createDirectory(at: backup, withIntermediateDirectories: true)
 		server.kill()
 		for file in try serverFiles(server) { try FileManager.default.copyItem(at: file, to: backup.appending(path: file.lastPathComponent)) }
@@ -170,8 +161,7 @@ struct ReplacedAPIKeyTests {
 
 	@Test func aWriteForgedWithTheLeakedKeyAtTheLastSeqDoesNotBlockTheNewKey() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingLibrary(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingLibrary(server)
 		let leaked = SyncConnection(apiKey: try server.apiKey, transport: HTTPTransport(url: server.url))
 		let junk = Write(blindedId: Data(repeating: 9, count: 16), v: 1, writeId: Data(count: 16), payload: Data(repeating: 7, count: Content.block + 28))
 		guard case let .sync(results, _, _, _) = try await leaked.send(.sync(since: 0, writes: [junk])), results.first?.status == .accepted else {
@@ -190,21 +180,20 @@ struct ReplacedAPIKeyTests {
 	@Test func lockingCancelsAServerChangeInFlightAndKeepsTheOldKey() async throws {
 		let server = try SyncServer()
 		let stalling = Stalling(TestTransport(server))
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in stalling }, syncDelay: .seconds(3600)) }
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in stalling }, syncDelay: .seconds(3600)) }
 		_ = try await setUpSync(model, server)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server)
 		stalling.stalls = true
 
 		let changing = Task { await changeServer(model, server, key: replacement) }
-		await settle { stalling.stalled > 0 }
+		try await settle { stalling.stalled > 0 }
 		try #require(stalling.stalled > 0)
 		let started = ContinuousClock.now
 		await model.lock()
 
 		#expect(ContinuousClock.now - started < .seconds(10))
-		#expect(model.serverChange == nil)
+		#expect(model.sync.serverChange == nil)
 		#expect(await changing.value != .success(.reattached))
 		stalling.stalls = false
 		await model.unlock(password: workspacePassword)
@@ -214,20 +203,19 @@ struct ReplacedAPIKeyTests {
 	@Test func cancellingAServerChangeInFlightKeepsTheOldKey() async throws {
 		let server = try SyncServer()
 		let stalling = Stalling(TestTransport(server))
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in stalling }, syncDelay: .seconds(3600)) }
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in stalling }, syncDelay: .seconds(3600)) }
 		_ = try await setUpSync(model, server)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server)
 		stalling.stalls = true
 
 		let changing = Task { await changeServer(model, server, key: replacement) }
-		await settle { stalling.stalled > 0 }
+		try await settle { stalling.stalled > 0 }
 		try #require(stalling.stalled > 0)
 		changing.cancel()
 
 		#expect(await changing.value != .success(.reattached))
-		#expect(model.serverChange == nil)
+		#expect(model.sync.serverChange == nil)
 		stalling.stalls = false
 		#expect(try await storedKey(model) == held)
 		await model.lock()

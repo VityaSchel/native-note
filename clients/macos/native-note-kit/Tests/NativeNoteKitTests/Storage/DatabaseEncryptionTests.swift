@@ -4,10 +4,10 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct DatabaseEncryptionTests {
 	@Test func refusesTheWrongKey() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		_ = try await openStore(at: url)
 
 		await #expect(throws: SQLiteError.wrongKey) {
@@ -17,7 +17,6 @@ struct DatabaseEncryptionTests {
 
 	@Test func leavesNoPlaintextOnDisk() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let canary = "sphinx of black quartz judge my vow"
 
 		let notes = try await openStore(at: url)
@@ -38,7 +37,6 @@ struct DatabaseEncryptionTests {
 
 	@Test func refusesAKeyThatIsNotThirtyTwoBytes() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 
 		for count in [0, 16, 31, 33, 64] {
@@ -50,7 +48,6 @@ struct DatabaseEncryptionTests {
 
 	@Test func keepsTheKeyOutOfThrownErrors() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 		try Data("not a database at all, but long enough to look like one".utf8).write(to: url)
 		let hex = databaseKey.withUnsafeBytes { $0.map { String(format: "%02x", $0) }.joined() }
@@ -69,7 +66,6 @@ struct DatabaseEncryptionTests {
 
 	@Test func rekeyReplacesTheKeyAndRetiresTheOldOne() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let replacement = SymmetricKey(data: Data(repeating: 0x43, count: 32))
 		let note = sampleNote(body: "survives a password change")
 
@@ -88,7 +84,6 @@ struct DatabaseEncryptionTests {
 
 	@Test func rekeyRefusesAKeyThatIsNotThirtyTwoBytes() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 
 		await #expect(throws: SQLiteError.keyMustBe32Bytes(count: 16)) {
@@ -99,7 +94,6 @@ struct DatabaseEncryptionTests {
 
 	@Test func appliesTheDurabilityPragmas() throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 
 		let connection = try SQLiteConnection(url: url, rawKey: databaseKey)

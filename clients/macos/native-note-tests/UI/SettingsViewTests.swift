@@ -8,29 +8,24 @@ import Testing
 
 @MainActor
 private final class Requests {
-	var presented: [SecuritySettings.Sheet] = []
 	var turnedOff = 0
 	var turnOns: [String] = []
 	var changes: [[String]] = []
 	var done = 0
 }
 
-@MainActor
+@MainActor @Suite(.takesFocus, .scratch)
 struct SettingsViewTests {
 	private let alarm = Alarm()
 
-	private func form(_ requests: Requests, touchIDEnabled: Bool) -> OffscreenWindow<SecurityForm> {
-		OffscreenWindow(
-			SecurityForm(touchIDAvailable: true, touchIDEnabled: touchIDEnabled, turnOffTouchID: { requests.turnedOff += 1 }) { requests.presented.append($0) },
-			width: 440,
-			height: 300
-		)
+	private func form(_ requests: Requests, touchIDEnabled: Bool) -> OffscreenWindow<SecuritySettings> {
+		OffscreenWindow(settings(requests, touchIDEnabled: touchIDEnabled), width: 440, height: 300, catchesSheets: true)
 	}
 
-	private func settings(_ requests: Requests) -> SecuritySettings {
+	private func settings(_ requests: Requests, touchIDAvailable: Bool = true, touchIDEnabled: Bool = false) -> SecuritySettings {
 		SecuritySettings(
-			touchIDAvailable: true,
-			touchIDEnabled: false,
+			touchIDAvailable: touchIDAvailable,
+			touchIDEnabled: touchIDEnabled,
 			turnOnTouchID: { password in
 				requests.turnOns.append(password)
 				return nil
@@ -41,22 +36,6 @@ struct SettingsViewTests {
 				return nil
 			}
 		)
-	}
-
-	private func library(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm] directory in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
-		}
-		model.appBecameActive()
-		return (model, directory)
-	}
-
-	private func type<Content: View>(_ text: String, into placeholder: String, of offscreen: OffscreenWindow<Content>) throws -> NSSecureTextField {
-		let field = try #require(offscreen.secureField(placeholder))
-		try #require(offscreen.window.makeFirstResponder(field))
-		try #require(field.currentEditor()).insertText(text)
-		offscreen.pump()
-		return field
 	}
 
 	private func submitPasswordInSheet(_ text: String, of offscreen: OffscreenWindow<SettingsView>) throws {
@@ -91,6 +70,27 @@ struct SettingsViewTests {
 		#expect(SettingsView(model: .previewing([])).isAvailable)
 	}
 
+	@Test func aLibraryStillBeingSetUpShowsNoSettings() async throws {
+		let directory = temporaryDirectory()
+		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		model.start()
+		await model.submit(password: workspacePassword)
+		try #require(model.phase == .unlocked && model.isOnboarding)
+		let settings = SettingsView(model: model)
+		let offscreen = OffscreenWindow(settings, width: 440, height: 300)
+		defer { offscreen.close() }
+
+		#expect(!settings.isAvailable)
+		#expect(offscreen.accessibilityElements().contains { $0.label == SettingsView.setupMessage || $0.value == SettingsView.setupMessage })
+		#expect(offscreen.accessibilityElements(.button).isEmpty)
+
+		model.finishOnboarding()
+		await offscreen.pump { !offscreen.accessibilityElements(.button).isEmpty }
+
+		#expect(SettingsView(model: model).isAvailable)
+		#expect(offscreen.accessibilityElements(.button).contains { $0.label == "Change Password…" })
+	}
+
 	@Test func switchingTouchIDOnAsksForThePasswordFirst() async throws {
 		let requests = Requests()
 		let offscreen = form(requests, touchIDEnabled: false)
@@ -99,10 +99,12 @@ struct SettingsViewTests {
 		#expect(toggle.state == .off)
 
 		toggle.performClick(nil)
-		await offscreen.pump { !requests.presented.isEmpty }
+		await offscreen.pump { offscreen.sheet != nil }
 		offscreen.pump(for: 0.05)
 
-		#expect(requests.presented == [.turnOnTouchID])
+		#expect(offscreen.sheetAccessibilityElements(NSAccessibility.Role(rawValue: "AXHeading")).map { $0.value.isEmpty ? $0.label : $0.value } == ["Turn On Touch ID Unlock"])
+		#expect(offscreen.sheetViews(of: NSSecureTextField.self).count == 1)
+		#expect(requests.turnOns.isEmpty)
 		#expect(requests.turnedOff == 0)
 		#expect(toggle.state == .off)
 	}
@@ -118,16 +120,12 @@ struct SettingsViewTests {
 		await offscreen.pump { requests.turnedOff > 0 }
 
 		#expect(requests.turnedOff == 1)
-		#expect(requests.presented.isEmpty)
+		#expect(offscreen.sheet == nil)
 	}
 
 	@Test func theUnlockSectionHoldsThePasswordThenTouchIDInTheOnboardingWords() {
 		for touchIDAvailable in [true, false] {
-			let offscreen = OffscreenWindow(
-				SecurityForm(touchIDAvailable: touchIDAvailable, touchIDEnabled: false, turnOffTouchID: {}, present: { _ in }),
-				width: 440,
-				height: 300
-			)
+			let offscreen = OffscreenWindow(settings(Requests(), touchIDAvailable: touchIDAvailable), width: 440, height: 300)
 			defer { offscreen.close() }
 
 			let lines = offscreen.accessibilityElements()
@@ -143,11 +141,7 @@ struct SettingsViewTests {
 	}
 
 	@Test func withoutTouchIDThereIsNoSwitch() {
-		let offscreen = OffscreenWindow(
-			SecurityForm(touchIDAvailable: false, touchIDEnabled: false, turnOffTouchID: {}, present: { _ in }),
-			width: 440,
-			height: 300
-		)
+		let offscreen = OffscreenWindow(settings(Requests(), touchIDAvailable: false), width: 440, height: 300)
 		defer { offscreen.close() }
 
 		#expect(offscreen.views(of: NSSwitch.self).isEmpty)
@@ -159,7 +153,7 @@ struct SettingsViewTests {
 		defer { offscreen.close() }
 		#expect(offscreen.views(of: NSSecureTextField.self).count == 1)
 
-		try #require(try type("correct horse", into: "Password:", of: offscreen).currentEditor()).insertNewline(nil)
+		try #require(try offscreen.type("correct horse", into: "Password:").currentEditor()).insertNewline(nil)
 		await offscreen.pump { requests.done > 0 }
 
 		#expect(requests.turnOns == ["correct horse"])
@@ -173,9 +167,9 @@ struct SettingsViewTests {
 		defer { offscreen.close() }
 		#expect(offscreen.views(of: NSSecureTextField.self).count == 3)
 
-		_ = try type("old password", into: "Current Password:", of: offscreen)
-		_ = try type("new password", into: "New Password:", of: offscreen)
-		try #require(try type("new password", into: "Verify:", of: offscreen).currentEditor()).insertNewline(nil)
+		_ = try offscreen.type("old password", into: "Current Password:")
+		_ = try offscreen.type("new password", into: "New Password:")
+		try #require(try offscreen.type("new password", into: "Verify:").currentEditor()).insertNewline(nil)
 		await offscreen.pump { requests.done > 0 }
 
 		#expect(requests.changes == [["old password", "new password"]])
@@ -185,8 +179,8 @@ struct SettingsViewTests {
 
 	@Test func switchingTouchIDOnInSettingsAsksForThePasswordInASheet() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300, catchesSheets: true)
 		defer { offscreen.close() }
 
@@ -221,8 +215,8 @@ struct SettingsViewTests {
 
 	@Test func lockingWhileTurningOnTouchIDClosesTheSheetAndLeavesItOff() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300, catchesSheets: true)
 		defer { offscreen.close() }
 		let sensor = Sensor()
@@ -250,8 +244,8 @@ struct SettingsViewTests {
 
 	@Test func switchingTouchIDOffInSettingsTurnsItOffForTheLibrary() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		try await turnOnTouchID(model)
 		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300, catchesSheets: true)
 		defer { offscreen.close() }
@@ -321,8 +315,8 @@ struct SettingsViewTests {
 
 	@Test func theSettingsWindowSizesToTheFormAndToTheLockedMessageAndCannotBeResizedAway() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let (controller, window) = sized(model)
 		defer { window.contentViewController = nil }
 		await settle(window) { controller.preferredContentSize.height > 0 && !scrollViews(in: controller.view).isEmpty }
@@ -376,8 +370,8 @@ struct SettingsViewTests {
 
 	@Test func lockingTakesTheSettingsAway() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300)
 		defer { offscreen.close() }
 		try #require(!offscreen.views(of: NSSwitch.self).isEmpty)

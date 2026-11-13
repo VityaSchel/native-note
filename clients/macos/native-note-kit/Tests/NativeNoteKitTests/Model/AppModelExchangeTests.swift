@@ -3,16 +3,14 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
-struct LibraryExchangeTests {
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
+struct AppModelExchangeTests {
 	private let alarm = Alarm()
 
-	private func library(_ bodies: [String]) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm] directory in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), exportParameters: .init(m: 1024, t: 1, p: 1))
+	private var library: Workspace {
+		Workspace { [alarm] directory, keys in
+			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), exportParameters: .init(m: 1024, t: 1, p: 1), keyStore: keys)
 		}
-		try await fill(model, with: bodies)
-		return (model, directory)
 	}
 
 	private func exportFile(in directory: URL) -> URL {
@@ -20,10 +18,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anExportRestoresEveryNoteIntoAnEmptyLibrary() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping\nbread", "Trip\nferry at 07:20", ""])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping\nbread", "Trip\nferry at 07:20", ""])
+		let (target, targetDirectory) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
@@ -41,10 +37,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anEncryptedExportOpensOnlyWithItsPassphrase() async throws {
-		let (source, sourceDirectory) = try await library(["Secret\nplans"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Secret\nplans"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 
 		#expect(await source.exportLibrary(to: file, passphrase: "correct staple"))
@@ -60,8 +54,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func aPlainExportIsNotReportedAsEncrypted() async throws {
-		let (source, directory) = try await library(["Plain"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (source, directory) = try await library.unlocked(holding: ["Plain"])
 		let file = exportFile(in: directory)
 
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
@@ -70,8 +63,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func aNoteChangedSinceTheExportKeepsItsTextHere() async throws {
-		let (model, directory) = try await library(["Shopping\nbread"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: ["Shopping\nbread"])
 		let file = exportFile(in: directory)
 		#expect(await model.exportLibrary(to: file, passphrase: nil))
 		let id = try #require(model.notes.first?.id)
@@ -88,10 +80,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anImportAddsOnlyNotesTheLibraryHasNeverHeld() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping\nbread", "Trip\nferry at 07:20"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping\nbread", "Trip\nferry at 07:20"])
+		let (target, targetDirectory) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
 		#expect(await target.importLibrary(from: file, passphrase: nil) == ImportSummary(added: 2))
@@ -118,8 +108,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anImportedNoteStartsAtVersionZero() async throws {
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: [])
 		let file = exportFile(in: directory)
 		var synced = sampleNote(body: "Synced elsewhere")
 		synced.v = 12
@@ -133,10 +122,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func twoImportsAtOnceAddEachNoteOnce() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping", "Trip", "Plans"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping", "Trip", "Plans"])
+		let (model, _) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
 
@@ -150,19 +137,18 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func lockingDuringAnImportReportsWhatWasLeft() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (model, _) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
 		let started = DispatchSemaphore(value: 0)
 		let gate = DispatchSemaphore(value: 0)
+		defer { gate.signal() }
 		let blocker = Task.detached { try await BlockingWork.run { started.signal(); gate.wait() } }
 		await Task.detached { hold(started) }.value
 
 		let importing = Task { await model.importLibrary(from: file, passphrase: nil) }
-		await settle { model.isImporting }
+		try await settle { model.isImporting }
 		await model.lock()
 		gate.signal()
 		try await blocker.value
@@ -172,9 +158,30 @@ struct LibraryExchangeTests {
 		#expect(model.notes.isEmpty)
 	}
 
+	@Test func aLockedLibraryExportsNothing() async throws {
+		let (model, directory) = try await library.unlocked(holding: ["Shopping"])
+		let file = exportFile(in: directory)
+		await model.lock()
+
+		#expect(await !model.exportLibrary(to: file, passphrase: nil))
+
+		#expect(!FileManager.default.fileExists(atPath: file.path))
+	}
+
+	@Test func anImportedNoteAlreadyShownIsListedOnce() async throws {
+		let (model, directory) = try await library.unlocked(holding: [])
+		let file = exportFile(in: directory)
+		let arriving = sampleNote(body: "Shown before its save landed")
+		try LibraryArchive.archive([arriving]).write(to: file)
+		model.notes.append(arriving)
+
+		#expect(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(added: 1))
+
+		#expect(model.notes.map(\.id) == [arriving.id])
+	}
+
 	@Test func anEncryptedExportCarriesTheModelsParameters() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: ["Shopping"])
 		let file = exportFile(in: directory)
 
 		#expect(await model.exportLibrary(to: file, passphrase: "correct staple"))
@@ -185,7 +192,6 @@ struct LibraryExchangeTests {
 
 	@Test func exportsUseTheArgon2FloorByDefault() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = exportFile(in: directory)
 
 		#expect(await model.exportLibrary(to: file, passphrase: "correct staple"))
@@ -195,10 +201,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anImportThatCannotReadTheLibraryStopsAndSaysSo() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (model, directory) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
 		try await connection(to: directory).execute("DROP TABLE note")
@@ -212,8 +216,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func aFileTooLargeToBeAnExportIsRefusedUnread() async throws {
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: [])
 		let file = exportFile(in: directory)
 		FileManager.default.createFile(atPath: file.path, contents: nil)
 		let handle = try FileHandle(forWritingTo: file)
@@ -225,10 +228,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func theExportCarriesEditsNotYetSaved() async throws {
-		let (source, sourceDirectory) = try await library(["Draft"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Draft"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = exportFile(in: sourceDirectory)
 		source.edit(try #require(source.notes.first?.id), "Draft\ntyped a moment ago")
 
@@ -239,8 +240,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func aFileThatIsNotAnExportSaysSo() async throws {
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: [])
 		let file = exportFile(in: directory)
 		try Data("hello".utf8).write(to: file)
 

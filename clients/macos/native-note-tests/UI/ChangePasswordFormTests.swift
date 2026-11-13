@@ -25,6 +25,25 @@ struct ChangePasswordFormTests {
 		#expect(form.working)
 	}
 
+	@Test func aChangeThatSucceededForgetsEveryPassword() {
+		var form = filled()
+		_ = form.submit()
+
+		form.finish(nil)
+
+		#expect(form.current.isEmpty && form.password.isEmpty && form.confirmation.isEmpty)
+		#expect(!form.working && form.inlineMessage == nil)
+	}
+
+	@Test func aChangeThatFailedKeepsTheNewPasswordToTryAgain() {
+		var form = filled()
+		_ = form.submit()
+
+		form.finish(.unexpected("disk I/O error"))
+
+		#expect(form.current == "old password" && form.password == "new password" && form.confirmation == "new password")
+	}
+
 	@Test func everyPasswordIsNeeded() {
 		#expect(!filled(current: "").canSubmit)
 		#expect(!filled(password: "").canSubmit)

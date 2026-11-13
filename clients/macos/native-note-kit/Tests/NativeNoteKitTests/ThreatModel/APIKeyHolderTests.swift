@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(2)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(2)))
 struct APIKeyHolderTests {
 	private func attacker(_ server: SyncServer) throws -> SyncConnection {
 		SyncConnection(apiKey: try server.apiKey, transport: HTTPTransport(url: server.url))
@@ -23,7 +23,7 @@ struct APIKeyHolderTests {
 		let key = try apiKeyText(server)
 		#expect(await newMac.joinSync(server: server.url.absoluteString, apiKey: key, phrase: entry(phrase.words)) == .phraseDoesNotOpen)
 		#expect(try await newMac.store?.syncSettings() == nil)
-		#expect(await owner.adoptCurrentPhrase(phrase.words.joined(separator: " ")) == .phraseDoesNotOpen)
+		#expect(await owner.adoptCurrentPhrase(entry(phrase.words)) == .phraseDoesNotOpen)
 		let next = try #require(await owner.prepareRotation())
 		#expect(await owner.finishRotation(answers: answers(next)) == .rotatedElsewhere)
 		#expect(try await owner.store?.syncSettings()?.contentKey == held.contentKey)

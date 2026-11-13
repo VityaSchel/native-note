@@ -10,7 +10,7 @@ private final class Deletions {
 	var ids: [UUID] = []
 }
 
-@MainActor
+@MainActor @Suite(.takesFocus)
 struct NoteListViewTests {
 	private func offscreen(selection: UUID?, _ deletions: Deletions) -> OffscreenWindow<NavigationStack<NavigationPath, NoteListView>> {
 		OffscreenWindow(

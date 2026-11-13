@@ -6,9 +6,11 @@ struct NoteListView: View {
 	let now: Date
 	@Binding var selection: UUID?
 	@Binding var search: String
+	var focusesSearch = Binding.constant(false)
 	let delete: (UUID) -> Void
 
 	@FocusState private var focused: Bool
+	@FocusState private var searching: Bool
 
 	enum EmptyState {
 		case noNotes
@@ -61,6 +63,12 @@ struct NoteListView: View {
 			}
 		}
 		.searchable(text: $search, placement: .automatic, prompt: "Search")
+		.searchFocused($searching)
+		.onChange(of: focusesSearch.wrappedValue, initial: true) { _, wanted in
+			guard wanted else { return }
+			focusesSearch.wrappedValue = false
+			Task { searching = true }
+		}
 		.overlay {
 			switch emptyState {
 			case .noNotes: ContentUnavailableView("No Notes", systemImage: "note.text")

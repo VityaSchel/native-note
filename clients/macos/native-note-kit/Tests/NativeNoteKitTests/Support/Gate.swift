@@ -1,5 +1,6 @@
 import Foundation
 import Synchronization
+import Testing
 
 final class Gate: Sendable {
 	private let entered = Mutex(false)
@@ -16,9 +17,7 @@ final class Gate: Sendable {
 		release.signal()
 	}
 
-	func untilHolding() async throws {
-		for _ in 0 ..< 2_000 where !isHolding {
-			try await Task.sleep(for: .milliseconds(5))
-		}
+	func untilHolding(sourceLocation: SourceLocation = #_sourceLocation) async throws {
+		try await settle(sourceLocation: sourceLocation) { isHolding }
 	}
 }

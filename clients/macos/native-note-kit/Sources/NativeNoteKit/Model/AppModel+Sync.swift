@@ -1,7 +1,6 @@
-import CryptoKit
 import Foundation
 
-extension AppModel {
+extension AppModel: SyncedLibrary {
 	public struct SyncStatus: Equatable {
 		public enum Phase: Equatable {
 			case off
@@ -74,232 +73,53 @@ extension AppModel {
 		}
 	}
 
-	struct RecoverySession {
-		let settings: SyncSettings
-		let recoveryKey: SymmetricKey
-		let phrase: RecoveryPhrase
-		var movesToEmptyServer = false
+	public var syncStatus: SyncStatus {
+		sync.status
 	}
 
 	public func syncNow() async {
-		syncRequests += 1
-		let wanted = syncRequests
-		if syncLoop == nil {
-			syncLoop = Task {
-				while syncedThrough < syncRequests, !Task.isCancelled {
-					let covered = syncRequests
-					await syncOnce()
-					syncedThrough = covered
-				}
-				syncLoop = nil
-			}
-		}
-		while syncedThrough < wanted, let syncLoop {
-			await syncLoop.value
-		}
-	}
-
-	private func syncOnce() async {
-		guard let engine, let store else { return }
-		idleSync?.cancel()
-		syncStatus.phase = .syncing
-		await scheduler.flushAll()
-		do {
-			let applied = try await engine.sync { try await self.commit($0, to: store) }
-			guard store === self.store else { return }
-			syncStatus.problems = applied.problems.map(Self.describe)
-			syncStatus.lastSynced = Date()
-			syncStatus.phase = .idle
-		} catch {
-			guard store === self.store else { return }
-			syncStatus.phase = .failed(Self.describe(error))
-		}
-	}
-
-	func syncSoon() {
-		guard engine != nil else { return }
-		idleSync?.cancel()
-		idleSync = Task { [syncDelay] in
-			try? await Task.sleep(for: syncDelay)
-			guard !Task.isCancelled else { return }
-			idleSync = nil
-			await syncNow()
-		}
-	}
-
-	func startSync(_ store: NoteStore) async {
-		guard let settings = try? await store.syncSettings(), store === self.store else { return }
-		engine = SyncEngine(store: store, settings: settings, transport: makeTransport(settings.server))
-		syncStatus = SyncStatus(phase: .idle, server: settings.server.absoluteString)
-		Task { await syncNow() }
-	}
-
-	@discardableResult
-	func stopSync() -> Task<Void, Never>? {
-		let loop = syncLoop
-		let change = serverChange
-		loop?.cancel()
-		change?.cancel()
-		serverChange = nil
-		idleSync?.cancel()
-		idleSync = nil
-		engine = nil
-		recovery = nil
-		syncStatus = SyncStatus()
-		guard loop != nil || change != nil else { return nil }
-		return Task {
-			await loop?.value
-			_ = await change?.value
-		}
+		await sync.now()
 	}
 
 	public func prepareSync(server: String, apiKey: String) async -> Result<SyncSetupStart, SyncSetupFailure> {
-		do {
-			let endpoint = try Self.endpoint(server: server, apiKey: apiKey)
-			if let store, let kept = try await store.keptLibrary() {
-				return await changeServer(kept, to: endpoint.server, apiKey: endpoint.apiKey, in: store)
-			}
-			let settings = SyncSettings(server: endpoint.server, apiKey: endpoint.apiKey, contentKey: SymmetricKey(size: .bits256))
-			guard try await flow(settings).storedVersion() == 0 else { return .success(.existingLibrary) }
-			return newPhrase(for: settings).map { .success(.newLibrary($0)) } ?? .failure(.wordlistMissing)
-		} catch {
-			return .failure(Self.setupFailure(error))
-		}
+		await sync.prepare(server: server, apiKey: apiKey)
 	}
 
 	public func joinSync(server: String, apiKey: String, phrase: PhraseEntry) async -> SyncSetupFailure? {
-		guard let store, engine == nil else { return .alreadySetUp }
-		guard let recoveryKey = phrase.key else { return .phraseDoesNotOpen }
-		do {
-			let endpoint = try Self.endpoint(server: server, apiKey: apiKey)
-			guard let joined = try await flow(endpoint.server, endpoint.apiKey).join(under: recoveryKey) else { return .phraseDoesNotOpen }
-			try Task.checkCancellation()
-			try await store.enableSync(SyncSettings(server: endpoint.server, apiKey: endpoint.apiKey, contentKey: joined.contentKey), pin: joined.pin)
-		} catch {
-			return Self.setupFailure(error)
-		}
-		recovery = nil
-		await startSync(store)
-		return nil
+		await sync.join(server: server, apiKey: apiKey, phrase: phrase)
 	}
 
 	public func finishSync(answers: [String]) async -> SyncSetupFailure? {
-		guard let store, let session = recovery, engine == nil || session.movesToEmptyServer else { return .failed("Start setting up sync again.") }
-		guard Self.matches(answers, session.phrase) else { return .wordsDoNotMatch }
-		do {
-			let pin = try await flow(session.settings).put(session.settings.contentKey, under: session.recoveryKey, pin: 0)
-			if session.movesToEmptyServer {
-				await stopSync()?.value
-				try await store.moveSync(to: session.settings, pin: pin)
-			} else {
-				try await store.enableSync(session.settings, pin: pin)
-			}
-		} catch RecoveryFlow.Failure.rotatedElsewhere {
-			return .serverHasLibrary
-		} catch {
-			return Self.setupFailure(error)
-		}
-		recovery = nil
-		await startSync(store)
-		return nil
+		await sync.finish(answers: answers)
 	}
 
 	public func prepareRotation() async -> RecoveryPhrase? {
-		guard let settings = try? await store?.syncSettings() else { return nil }
-		return newPhrase(for: settings)
+		await sync.prepareRotation()
 	}
 
 	public func finishRotation(answers: [String]) async -> SyncSetupFailure? {
-		guard let store, let session = recovery else { return .failed("Start changing the phrase again.") }
-		guard Self.matches(answers, session.phrase) else { return .wordsDoNotMatch }
-		do {
-			let pin = try await flow(session.settings).put(session.settings.contentKey, under: session.recoveryKey, pin: try await store.pin())
-			try await store.setPin(pin)
-		} catch {
-			return Self.setupFailure(error)
-		}
-		recovery = nil
-		return nil
+		await sync.finishRotation(answers: answers)
 	}
 
-	public func adoptCurrentPhrase(_ text: String) async -> SyncSetupFailure? {
-		guard let store, let settings = try? await store.syncSettings() else { return .failed("Sync is not set up.") }
-		let words = text.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
-		guard let recoveryKey = Mnemonic.key(from: words) else { return .phraseDoesNotOpen }
-		do {
-			guard let pin = try await flow(settings).pin(opening: settings.contentKey, under: recoveryKey) else { return .phraseDoesNotOpen }
-			try await store.setPin(pin)
-		} catch {
-			return Self.setupFailure(error)
-		}
-		return nil
+	public func adoptCurrentPhrase(_ phrase: PhraseEntry) async -> SyncSetupFailure? {
+		await sync.adoptCurrentPhrase(phrase)
 	}
 
 	public func cancelRecovery() {
-		recovery = nil
+		sync.cancelRecovery()
 	}
 
 	public func turnOffSync() async -> Bool {
 		guard let store else { return false }
-		await stopSync()?.value
+		await sync.stop()?.value
 		guard await write("Sync could not be turned off.", { try await $0.disconnectSync() }) else {
-			await startSync(store)
+			await sync.start(store)
 			return false
 		}
 		return true
 	}
 
-	private func changeServer(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
-		let change = Task { await self.reattachOrMove(kept, to: server, apiKey: apiKey, in: store) }
-		serverChange = change
-		let result = await withTaskCancellationHandler { await change.value } onCancel: { change.cancel() }
-		guard serverChange == change else { return result }
-		serverChange = nil
-		guard result == .success(.reattached), store === self.store else { return result }
-		await stopSync()?.value
-		await startSync(store)
-		return result
-	}
-
-	private func reattachOrMove(_ kept: NoteStore.KeptLibrary, to server: URL, apiKey: SymmetricKey, in store: NoteStore) async -> Result<SyncSetupStart, SyncSetupFailure> {
-		do {
-			let connection = SyncConnection(apiKey: apiKey, transport: makeTransport(server))
-			let stored = try await RecoveryFlow(connection: connection).storedVersion()
-			guard stored > 0 else {
-				let settings = SyncSettings(server: server, apiKey: apiKey, contentKey: kept.contentKey)
-				guard let phrase = newPhrase(for: settings) else { return .failure(.wordlistMissing) }
-				recovery?.movesToEmptyServer = true
-				return .success(.newLibrary(phrase))
-			}
-			guard stored >= kept.pin else { return .failure(.serverBehind) }
-			if let mark = kept.mark, try await !SyncEngine.holds(mark, through: connection, since: kept.since) {
-				return .failure(.serverHoldsAnotherLibrary)
-			}
-			try Task.checkCancellation()
-			try await store.reattachSync(server: server, apiKey: apiKey)
-			return .success(.reattached)
-		} catch {
-			return .failure(Self.setupFailure(error))
-		}
-	}
-
-	private func newPhrase(for settings: SyncSettings) -> RecoveryPhrase? {
-		let recoveryKey = SymmetricKey(size: .bits256)
-		guard let words = Mnemonic.words(for: recoveryKey) else { return nil }
-		let phrase = RecoveryPhrase(words: words, positionsToConfirm: Array(words.indices.shuffled().prefix(3)).sorted())
-		recovery = RecoverySession(settings: settings, recoveryKey: recoveryKey, phrase: phrase)
-		return phrase
-	}
-
-	private func flow(_ settings: SyncSettings) -> RecoveryFlow {
-		flow(settings.server, settings.apiKey)
-	}
-
-	private func flow(_ server: URL, _ apiKey: SymmetricKey) -> RecoveryFlow {
-		RecoveryFlow(connection: SyncConnection(apiKey: apiKey, transport: makeTransport(server)))
-	}
-
-	private func commit(_ commit: Commit, to store: NoteStore) async throws -> Applied {
+	func commit(_ commit: Commit, to store: NoteStore) async throws -> Applied {
 		scheduler.hold()
 		defer { scheduler.release() }
 		await scheduler.flushAll()
@@ -310,6 +130,7 @@ extension AppModel {
 
 	func reconcile(_ applied: Applied, in store: NoteStore) async {
 		guard store === self.store else { return }
+		let copies = Set(applied.copies.values)
 		for (id, row) in applied.changed {
 			if scheduler.isPending(id), applied.pulled.contains(id) {
 				moveEdit(of: id, to: applied.copies[id] ?? UUID(), in: store)
@@ -317,6 +138,8 @@ extension AppModel {
 				notes[index].v = row.v
 				continue
 			}
+			let onlyAcknowledged = !applied.pulled.contains(id) && !copies.contains(id)
+			if onlyAcknowledged, !notes.contains(where: { $0.id == id }) { continue }
 			show(row)
 		}
 		for (original, copy) in applied.copies where selection == original {
@@ -329,17 +152,18 @@ extension AppModel {
 		if notes.contains(where: { $0.id == note.id }) {
 			moveEdit(of: note.id, to: copy, in: store)
 		} else {
-			show(Note(id: copy, body: note.body, createdAt: note.createdAt, updatedAt: note.updatedAt, dirty: true))
+			show(note.unsyncedCopy(id: copy))
 		}
-		if let original = try? await store.note(id: note.id) { show(original) }
+		do {
+			if let original = try await store.note(id: note.id) { show(original) }
+		} catch {
+			if store === self.store { report(error, as: "The note could not be read.") }
+		}
 	}
 
 	private func moveEdit(of id: UUID, to copyID: UUID, in store: NoteStore) {
-		guard var edit = notes.first(where: { $0.id == id }) else { return }
+		guard let edit = notes.first(where: { $0.id == id })?.unsyncedCopy(id: copyID) else { return }
 		scheduler.cancel(id)
-		edit.id = copyID
-		edit.v = 0
-		edit.dirty = true
 		show(edit)
 		scheduleSave(edit, to: store)
 		if selection == id { selection = copyID }
@@ -355,60 +179,12 @@ extension AppModel {
 		}
 	}
 
-	private static func matches(_ answers: [String], _ phrase: RecoveryPhrase) -> Bool {
-		answers.count == phrase.positionsToConfirm.count
-			&& zip(answers, phrase.positionsToConfirm).allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == phrase.words[$1] }
-	}
-
-	private static func endpoint(server: String, apiKey: String) throws(SyncSetupFailure) -> (server: URL, apiKey: SymmetricKey) {
-		guard let url = URL(string: server.trimmingCharacters(in: .whitespacesAndNewlines)),
-			["http", "https"].contains(url.scheme?.lowercased()), url.host() != nil
-		else { throw .invalidServer }
-		guard let apiKey = EnvelopeKey.apiKey(fromHex: apiKey) else { throw .invalidAPIKey }
-		return (url, apiKey)
-	}
-
-	private static func setupFailure(_ error: Error) -> SyncSetupFailure {
-		switch error {
-		case let failure as SyncSetupFailure: failure
-		case is NoteStore.SyncAlreadySetUp: .alreadySetUp
-		case SyncError.refused(400), SyncError.unopenable: .refused
-		case let SyncError.refused(status): .answered(status: status)
-		case RecoveryFlow.Failure.noLibrary: .serverHasNoLibrary
-		case RecoveryFlow.Failure.serverHasLibrary: .serverHasLibrary
-		case RecoveryFlow.Failure.rotatedElsewhere: .rotatedElsewhere
-		case RecoveryFlow.Failure.serverBehind: .serverBehind
-		case RecoveryFlow.Failure.outcomeUnknown: .outcomeUnknown
-		case let error as URLError: .unreachable(error.localizedDescription)
-		default: .failed(describe(error))
-		}
-	}
-
-	private static func describe(_ problem: SyncProblem) -> String {
-		switch problem {
-		case .serverBehind: "The server holds less than this Mac has seen. It may have been restored from a backup."
-		case .unverifiableChange: "A change on the server could not be read with this library's key, so it was skipped."
-		case .tooLarge: "A note is larger than 1 MB, so it stays on this Mac until it is shorter."
-		}
-	}
-
 	nonisolated static func statusMessage(_ status: Int) -> String {
 		switch status {
 		case 413: "The server or a proxy in front of it refused a request this large. A proxy must accept request bodies of at least 2 MiB + 28 B, such as 3 MiB."
 		case 500 ... 599: "The server, or a proxy in front of it, could not answer (HTTP \(status))."
 		case 300 ... 399: "The server address answers with a redirect (HTTP \(status)), which Native Note does not follow. Use the address the server itself answers on, or remove the redirect."
 		default: "Invalid response from the server: HTTP \(status)."
-		}
-	}
-
-	private static func describe(_ error: Error) -> String {
-		switch error {
-		case SyncError.refused(400), SyncError.unopenable: "The server did not accept this Mac's API key, or a proxy in front of it changed the request."
-		case let SyncError.refused(status): statusMessage(status)
-		case SyncError.serverFault: "The server could not store the changes. Its disk may be full."
-		case SyncError.protocolViolation: "The server sent a reply Native Note does not understand."
-		case let error as URLError: "The server could not be reached. \(error.localizedDescription)"
-		default: Failure.reason(for: error)
 		}
 	}
 }

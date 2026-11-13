@@ -3,27 +3,31 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct LibrarySearchTests {
 	private let alarm = Alarm()
 	private let held = Alarm()
 
-	private func library(_ bodies: [String], holdingSearches: Bool = false) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm, held] directory in
-			let scheduler = SaveScheduler(sleep: alarm.sleep)
-			guard holdingSearches else { return AppModel(directory: directory, scheduler: scheduler) }
-			return AppModel(directory: directory, scheduler: scheduler, searchNotes: { store, text in
-				try await held.sleep(for: .zero)
-				return try await store.search(text)
-			})
+	private var library: Workspace {
+		Workspace(alarm: alarm)
+	}
+
+	private var libraryHoldingSearches: Workspace {
+		Workspace { [alarm, held] directory, keys in
+			AppModel(
+				directory: directory,
+				scheduler: SaveScheduler(sleep: alarm.sleep),
+				searchNotes: { store, text in
+					try await held.sleep(for: .zero)
+					return try await store.search(text)
+				},
+				keyStore: keys
+			)
 		}
-		try await fill(model, with: bodies)
-		return (model, directory)
 	}
 
 	@Test func searchFiltersTheGroupsAndClearingItRestoresThem() async throws {
-		let (model, directory) = try await library(["Shopping\nquartz and bread", "Standup\nshipped storage"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["Shopping\nquartz and bread", "Standup\nshipped storage"])
 
 		model.search = "quartz"
 		await model.runSearch()
@@ -39,8 +43,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func clearingASearchWithoutMatchesShowsEveryNoteAtOnce() async throws {
-		let (model, directory) = try await library(["Shopping\nquartz and bread", "Standup\nshipped storage"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["Shopping\nquartz and bread", "Standup\nshipped storage"])
 		model.search = "kayak"
 		await model.runSearch()
 		try #require(model.groups.isEmpty)
@@ -51,8 +54,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func aPrefixOfTheLastWordMatchesWhileTyping() async throws {
-		let (model, directory) = try await library(["kayak trip", "canoe"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["kayak trip", "canoe"])
 
 		model.search = "kay"
 		await model.runSearch()
@@ -61,8 +63,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func aSingleLetterMatchesOnlyAWholeWord() async throws {
-		let (model, directory) = try await library(["kayak trip", "k is for kayak"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["kayak trip", "k is for kayak"])
 
 		model.search = "k"
 		await model.runSearch()
@@ -71,8 +72,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func resultsAreOrderedByRelevanceNotDate() async throws {
-		let (model, directory) = try await library(["kayak kayak kayak", "kayak rental prices and opening hours"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["kayak kayak kayak", "kayak rental prices and opening hours"])
 
 		model.search = "kayak"
 		await model.runSearch()
@@ -82,12 +82,11 @@ struct LibrarySearchTests {
 	}
 
 	@Test func clearingTheSearchWhileOneRunsShowsEveryNote() async throws {
-		let (model, directory) = try await library(["kayak", "canoe"], holdingSearches: true)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await libraryHoldingSearches.unlocked(holding: ["kayak", "canoe"])
 
 		model.search = "kayak"
 		let typing = Task { await model.runSearch() }
-		await settle { await held.sleeping == 1 }
+		try await settle { await held.sleeping == 1 }
 		model.search = ""
 		await model.runSearch()
 		await held.ring()
@@ -97,13 +96,12 @@ struct LibrarySearchTests {
 	}
 
 	@Test func clearingTheSearchWhileAFailingOneRunsReportsNothing() async throws {
-		let (model, directory) = try await library(["kayak", "canoe"], holdingSearches: true)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await libraryHoldingSearches.unlocked(holding: ["kayak", "canoe"])
 		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		model.search = "kayak"
 		let typing = Task { await model.runSearch() }
-		await settle { await held.sleeping == 1 }
+		try await settle { await held.sleeping == 1 }
 		model.search = ""
 		await model.runSearch()
 		await held.ring()
@@ -114,8 +112,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func searchingWhileLockedDoesNothing() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.lock()
 
 		model.search = "kayak"
@@ -126,8 +123,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func lockingKeepsTheSearchAndRefreshesItsResults() async throws {
-		let (model, directory) = try await library(["kayak", "canoe"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["kayak", "canoe"])
 		model.search = "kayak"
 		await model.runSearch()
 		let canoe = try #require(model.notes.first { $0.body == "canoe" }?.id)
@@ -141,8 +137,7 @@ struct LibrarySearchTests {
 	}
 
 	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
-		let (model, directory) = try await library(["kayak"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: ["kayak"])
 		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		model.search = "kayak"
@@ -154,7 +149,6 @@ struct LibrarySearchTests {
 
 	@Test func aFailingSearchIsReportedOnceWhileTheUserTypes() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		var reports = 0
@@ -174,13 +168,12 @@ struct LibrarySearchTests {
 	}
 
 	@Test func aSearchThatFailsAfterLockIsNotReported() async throws {
-		let (model, directory) = try await library(["kayak"], holdingSearches: true)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await libraryHoldingSearches.unlocked(holding: ["kayak"])
 		try await connection(to: directory).execute("DROP TABLE note_fts")
 
 		model.search = "kayak"
 		let searching = Task { await model.runSearch() }
-		await settle { await held.sleeping == 1 }
+		try await settle { await held.sleeping == 1 }
 		await model.lock()
 		await held.ring()
 		await searching.value
@@ -190,7 +183,6 @@ struct LibrarySearchTests {
 
 	@Test func lockingClearsALibraryFailure() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await connection(to: directory).execute("DROP TABLE note_fts")
 		model.search = "kayak"
 		await model.runSearch()

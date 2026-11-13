@@ -21,6 +21,9 @@ import UniformTypeIdentifiers
 	static let window = "library"
 	@ObservationIgnored var showWindow: (() -> Void)?
 	@ObservationIgnored var presentPanel: @MainActor (NSSavePanel, @escaping (URL) -> Void) -> Void = LibraryExchange.presentAttachedToWindow
+	@ObservationIgnored var closePanel: @MainActor (NSSavePanel) -> Void = LibraryExchange.cancelIfShown
+	@ObservationIgnored private weak var shownPanel: NSSavePanel?
+	var focusesSearch = false
 	private(set) var pendingImport: URL?
 	private(set) var isImporting = false
 	var lastImport: ImportSummary?
@@ -87,7 +90,7 @@ import UniformTypeIdentifiers
 
 	func searchNotes() {
 		showWindow?()
-		Task { focusSearch() }
+		focusesSearch = true
 	}
 
 	func startExport() {
@@ -95,8 +98,13 @@ import UniformTypeIdentifiers
 		isExporting = true
 	}
 
-	func focusSearch(in window: NSWindow? = NSApp.mainWindow) {
-		window?.toolbar?.items.lazy.compactMap { $0 as? NSSearchToolbarItem }.first?.beginSearchInteraction()
+	func lock() {
+		if let shownPanel { closePanel(shownPanel) }
+		shownPanel = nil
+		isExporting = false
+		chosenExport = nil
+		pendingImport = nil
+		focusesSearch = false
 	}
 
 	static let encryptedExport = UTType(filenameExtension: "nnexport", conformingTo: .data) ?? .data
@@ -114,7 +122,7 @@ import UniformTypeIdentifiers
 		let panel = NSSavePanel()
 		panel.nameFieldStringValue = passphrase == nil ? "Native Note.zip" : "Native Note.nnexport"
 		panel.allowedContentTypes = [passphrase == nil ? .zip : Self.encryptedExport]
-		presentPanel(panel) { [model] url in Task { await model.exportLibrary(to: url, passphrase: passphrase) } }
+		present(panel) { [model] url in Task { await model.exportLibrary(to: url, passphrase: passphrase) } }
 	}
 
 	func chooseImport() {
@@ -122,7 +130,17 @@ import UniformTypeIdentifiers
 		let panel = NSOpenPanel()
 		panel.canChooseDirectories = false
 		panel.allowedContentTypes = [.zip, Self.encryptedExport]
-		presentPanel(panel) { url in Task { await self.receive(url) } }
+		present(panel) { url in Task { await self.receive(url) } }
+	}
+
+	private func present(_ panel: NSSavePanel, chosen: @escaping (URL) -> Void) {
+		shownPanel = panel
+		presentPanel(panel, chosen)
+	}
+
+	private static func cancelIfShown(_ panel: NSSavePanel) {
+		guard panel.isVisible || panel.sheetParent != nil else { return }
+		panel.cancel(nil)
 	}
 
 	private static func presentAttachedToWindow(_ panel: NSSavePanel, chosen: @escaping (URL) -> Void) {

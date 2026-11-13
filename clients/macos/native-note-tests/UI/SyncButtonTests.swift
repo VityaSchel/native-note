@@ -4,7 +4,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch)
 struct SyncButtonTests {
 	private let server = "http://notes.example:8080/"
 
@@ -23,28 +23,26 @@ struct SyncButtonTests {
 	}
 
 	@Test func theToolbarHasSyncNowOnlyWhileSyncIsSetUp() async throws {
-		let (model, directory) = try await unlockedModel(alarm: Alarm())
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: Alarm())
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
 		defer { offscreen.close() }
 		offscreen.pump()
 		#expect(!(offscreen.window.toolbar?.items.contains { $0.label == "Sync Now" } ?? false))
 
-		model.syncStatus = AppModel.SyncStatus(phase: .idle, server: server)
+		model.sync.status = AppModel.SyncStatus(phase: .idle, server: server)
 		await offscreen.pump { offscreen.window.toolbar?.items.contains { $0.label == "Sync Now" } ?? false }
 
 		#expect(offscreen.window.toolbar?.items.contains { $0.label == "Sync Now" } ?? false)
 	}
 
 	@Test func syncNowWaitsForSetupAndForARunningSync() async throws {
-		let (model, directory) = try await unlockedModel(alarm: Alarm())
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: Alarm())
 		let exchange = LibraryExchange(model: model)
 		#expect(!exchange.canSync)
 
-		model.syncStatus = AppModel.SyncStatus(phase: .idle, server: server)
+		model.sync.status = AppModel.SyncStatus(phase: .idle, server: server)
 		#expect(exchange.canSync)
-		model.syncStatus.phase = .syncing
+		model.sync.status.phase = .syncing
 		#expect(!exchange.canSync)
 	}
 }

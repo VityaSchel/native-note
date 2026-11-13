@@ -20,7 +20,7 @@ final class RecordingTransport: SyncTransport, @unchecked Sendable {
 	}
 }
 
-@MainActor @Suite(.timeLimit(.minutes(2)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(2)))
 struct ServerViewTests {
 	private struct Library {
 		let model: AppModel

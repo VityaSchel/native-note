@@ -10,7 +10,7 @@ private final class Calls {
 	var done = 0
 }
 
-@MainActor
+@MainActor @Suite(.takesFocus)
 struct ChangePasswordViewTests {
 	private func offscreen(_ calls: Calls, replying failure: AppModel.Failure? = nil) -> OffscreenWindow<ChangePasswordView> {
 		OffscreenWindow(
@@ -21,26 +21,14 @@ struct ChangePasswordViewTests {
 		)
 	}
 
-	private func field(_ placeholder: String, in offscreen: OffscreenWindow<ChangePasswordView>) throws -> NSSecureTextField {
-		try #require(offscreen.secureField(placeholder))
-	}
-
-	private func type(_ text: String, into placeholder: String, of offscreen: OffscreenWindow<ChangePasswordView>) throws -> NSSecureTextField {
-		let field = try field(placeholder, in: offscreen)
-		try #require(offscreen.window.makeFirstResponder(field))
-		try #require(field.currentEditor()).insertText(text)
-		offscreen.pump()
-		return field
-	}
-
 	@Test func returnChangesThePasswordOnceAndCloses() async throws {
 		let calls = Calls()
 		let offscreen = offscreen(calls)
 		defer { offscreen.close() }
 
-		_ = try type("old password", into: "Current Password:", of: offscreen)
-		_ = try type("new password", into: "New Password:", of: offscreen)
-		let confirmation = try type("new password", into: "Verify:", of: offscreen)
+		_ = try offscreen.type("old password", into: "Current Password:")
+		_ = try offscreen.type("new password", into: "New Password:")
+		let confirmation = try offscreen.type("new password", into: "Verify:")
 		confirmation.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { calls.done > 0 }
 
@@ -67,9 +55,9 @@ struct ChangePasswordViewTests {
 		)
 		defer { offscreen.close() }
 
-		_ = try type("old password", into: "Current Password:", of: offscreen)
-		_ = try type("new password", into: "New Password:", of: offscreen)
-		try type("new password", into: "Verify:", of: offscreen).currentEditor()?.insertNewline(nil)
+		_ = try offscreen.type("old password", into: "Current Password:")
+		_ = try offscreen.type("new password", into: "New Password:")
+		try offscreen.type("new password", into: "Verify:").currentEditor()?.insertNewline(nil)
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(calls.changes == [["old password", "new password"]])
@@ -85,9 +73,9 @@ struct ChangePasswordViewTests {
 		)
 		defer { offscreen.close() }
 
-		_ = try type("old password", into: "Current Password:", of: offscreen)
-		_ = try type("new password", into: "New Password:", of: offscreen)
-		try type("new password", into: "Verify:", of: offscreen).currentEditor()?.insertNewline(nil)
+		_ = try offscreen.type("old password", into: "Current Password:")
+		_ = try offscreen.type("new password", into: "New Password:")
+		try offscreen.type("new password", into: "Verify:").currentEditor()?.insertNewline(nil)
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(offered.isEmpty)
@@ -99,9 +87,9 @@ struct ChangePasswordViewTests {
 		let offscreen = offscreen(calls, replying: .wrongPassword)
 		defer { offscreen.close() }
 
-		let current = try type("a guess", into: "Current Password:", of: offscreen)
-		_ = try type("new password", into: "New Password:", of: offscreen)
-		let confirmation = try type("new password", into: "Verify:", of: offscreen)
+		let current = try offscreen.type("a guess", into: "Current Password:")
+		_ = try offscreen.type("new password", into: "New Password:")
+		let confirmation = try offscreen.type("new password", into: "Verify:")
 		confirmation.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { !calls.changes.isEmpty && current.stringValue.isEmpty }
 

@@ -7,7 +7,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(5)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
 struct SessionEndToEndTests {
 	private let password = "correct horse battery"
 	private let typed = [
@@ -16,26 +16,15 @@ struct SessionEndToEndTests {
 		"🎉 Party 👨‍👩‍👧‍👦\r\nbring the kettle",
 	]
 
-	private func field(_ placeholder: String, in window: OffscreenWindow<some View>) throws -> NSSecureTextField {
-		try #require(window.secureField(placeholder))
-	}
-
-	private func type(_ text: String, into field: NSTextField, of window: OffscreenWindow<some View>) throws {
-		try #require(window.window.makeFirstResponder(field))
-		let editor = try #require(field.currentEditor())
-		editor.insertText(text)
-		window.pump()
-	}
-
 	private func submit(_ password: String, in window: OffscreenWindow<ContentView>, confirming: Bool) throws {
 		if confirming {
 			try #require(window.accessibilityElements(.button).first { $0.label == "Next" }).press()
 			window.pump()
 		}
-		let first = try field("Password", in: window)
-		try type(password, into: first, of: window)
+		let first = try window.field("Password")
+		try window.type(password, into: first)
 		if confirming {
-			try type(password, into: try field("Confirm Password", in: window), of: window)
+			try window.type(password, into: try window.field("Confirm Password"))
 		}
 		first.currentEditor()?.insertNewline(nil) ?? window.window.firstResponder?.insertNewline(nil)
 	}
@@ -46,7 +35,6 @@ struct SessionEndToEndTests {
 
 	@Test func aWholeSessionThroughTheViews() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory)
 		let exchange = LibraryExchange(model: model)
 		let window = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560)
@@ -76,7 +64,7 @@ struct SessionEndToEndTests {
 		await window.pump { model.groups.flatMap(\.notes).count == 3 }
 
 		await model.lock()
-		await window.pump { (try? field("Password", in: window)) != nil }
+		await window.pump { (try? window.field("Password")) != nil }
 		try submit(password, in: window, confirming: false)
 		await window.pump(turns: 20_000) { model.phase == .unlocked }
 		#expect(Set(model.notes.map(\.body)) == Set(typed))
@@ -91,7 +79,7 @@ struct SessionEndToEndTests {
 
 		let saved = Set(model.notes.map(\.body))
 		window.close()
-		await settle { await model.flushPendingSaves() }
+		try await settle { await model.flushPendingSaves() }
 		let relaunched = AppModel(directory: directory)
 		relaunched.start()
 		await relaunched.submit(password: password)
@@ -100,7 +88,6 @@ struct SessionEndToEndTests {
 
 	@Test func changingThePasswordThroughItsForm() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory)
 		model.start()
 		await model.submit(password: password)
@@ -113,10 +100,10 @@ struct SessionEndToEndTests {
 		let form = OffscreenWindow(ChangePasswordView(turnsTouchIDOff: false, change: model.changePassword(from:to:)) { closed = true })
 		defer { form.close() }
 
-		try type(password, into: try field("Current Password:", in: form), of: form)
-		try type("staple battery horse", into: try field("New Password:", in: form), of: form)
-		let confirmation = try field("Verify:", in: form)
-		try type("staple battery horse", into: confirmation, of: form)
+		try form.type(password, into: try form.field("Current Password:"))
+		try form.type("staple battery horse", into: try form.field("New Password:"))
+		let confirmation = try form.field("Verify:")
+		try form.type("staple battery horse", into: confirmation)
 		confirmation.currentEditor()?.insertNewline(nil)
 		await form.pump(turns: 20_000) { closed }
 		try #require(closed)
@@ -131,13 +118,8 @@ struct SessionEndToEndTests {
 		#expect(relaunched.failure == .wrongPassword)
 	}
 
-	private func tryTouchIDAgain(in window: OffscreenWindow<some View>) -> NSButton? {
-		(window.views(of: NSButton.self) + window.sheetViews(of: NSButton.self)).first { $0.title == TryTouchIDAgainButton.title }
-	}
-
 	@Test func touchIDThroughTheViewsFromTurningItOnToARelaunch() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let keys = FakeKeyStore()
 		let sensor = Sensor()
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
@@ -158,6 +140,10 @@ struct SessionEndToEndTests {
 		}
 		#expect(await model.flushPendingSaves())
 
+		try #require(model.isOnboarding)
+		settings.pump()
+		#expect(settings.views(of: NSSwitch.self).isEmpty)
+		model.finishOnboarding()
 		await settings.pump { !settings.views(of: NSSwitch.self).isEmpty }
 		let toggle = try #require(settings.views(of: NSSwitch.self).first)
 		toggle.performClick(nil)
@@ -180,10 +166,10 @@ struct SessionEndToEndTests {
 		await settings.pump(turns: 20_000) { sensor.isWaiting }
 		#expect(settings.sheetViews(of: LAAuthenticationView.self).first?.context === model.touchID.listeningContext)
 		sensor.touch()
-		await settings.pump { tryTouchIDAgain(in: settings) != nil }
+		await settings.pump { settings.tryAgainButton != nil }
 		#expect(!model.isBiometricUnlockEnabled)
 		keys.reply(with: .key)
-		try #require(tryTouchIDAgain(in: settings)).performClick(nil)
+		try #require(settings.tryAgainButton).press()
 		await settings.pump { sensor.isWaiting }
 		sensor.touch()
 		await settings.pump { settings.sheet == nil && toggle.state == .on }
@@ -217,10 +203,10 @@ struct SessionEndToEndTests {
 			let freshGlyph = library.views(of: LAAuthenticationView.self).contains { glyph in !keys.contexts.contains { $0 === glyph.context } }
 			if freshGlyph || keys.contexts.count != contexts || model.touchID.listeningContext != nil { listenedWhileShaking = true }
 		}
-		let lockField = try field("Password", in: library)
+		let lockField = try library.field("Password")
 		await library.pump { lockField.currentEditor() != nil }
 		#expect(library.window.firstResponder === lockField.currentEditor())
-		try type("staple battery horse", into: lockField, of: library)
+		try library.type("staple battery horse", into: lockField)
 		lockField.currentEditor()?.insertNewline(nil)
 		await library.pump(turns: 20_000) {
 			watchTheShake(listenedBefore: listened)
@@ -241,7 +227,7 @@ struct SessionEndToEndTests {
 		}
 		#expect(!listenedWhileShaking)
 		#expect(model.shake == AppModel.Shake(count: 2, isRunning: false))
-		#expect(tryTouchIDAgain(in: library) == nil)
+		#expect(library.tryAgainButton == nil)
 		#expect(library.accessibilityElements(.staticText).contains { $0.value == UnlockView.touchIDLine })
 		#expect(library.views(of: LAAuthenticationView.self).first?.context === keys.contexts.last)
 		#expect(library.accessibilityElements(.staticText).contains { $0.value == UnlockView.touchIDLine })

@@ -55,6 +55,8 @@ extension AppModel {
 				message
 			case let SQLiteError.keyMustBe32Bytes(count):
 				"The unlock key was \(count) bytes rather than 32."
+			case is NoteStore.ServerAddressUnreadable:
+				"The saved server address cannot be read. Enter the server again in Settings."
 			case let error as CocoaError:
 				error.localizedDescription
 			default:

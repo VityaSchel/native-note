@@ -3,13 +3,12 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct SavePathTests {
 	private let alarm = Alarm()
 
 	@Test func lockingRightAfterTypingKeepsTheEdit() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.createNote()
 		let id = try #require(model.selection)
 
@@ -22,7 +21,6 @@ struct SavePathTests {
 
 	@Test func lockingClosesTheDatabase() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		model.edit(try #require(model.selection), "typed then locked")
 
@@ -33,7 +31,6 @@ struct SavePathTests {
 
 	@Test func lockingWithEditsInTwoNotesSavesBoth() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let first = try #require(model.selection)
 		model.edit(first, "first draft")
@@ -54,7 +51,6 @@ struct SavePathTests {
 
 	@Test func lockingWhileASaveIsInFlightKeepsTheNewerText() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
 
@@ -71,7 +67,6 @@ struct SavePathTests {
 
 	@Test func leavingANoteSavesItAtOnce() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let first = try #require(model.selection)
@@ -93,7 +88,6 @@ struct SavePathTests {
 
 	@Test func continuousTypingSavesWithoutAPause() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -104,7 +98,7 @@ struct SavePathTests {
 			model.edit(id, typed)
 			await Task.yield()
 		}
-		await settle { await alarm.started >= 1 }
+		try await settle { await alarm.started >= 1 }
 		await alarm.ring(number: 1)
 		for _ in 0 ..< 25 {
 			typed += "b"
@@ -121,7 +115,6 @@ struct SavePathTests {
 
 	@Test func typingDuringASaveIsNeverReverted() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -138,8 +131,7 @@ struct SavePathTests {
 	}
 
 	@Test func creatingANoteKeepsUnsavedTextInTheOthers() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.createNote()
 		let first = try #require(model.selection)
 
@@ -152,8 +144,7 @@ struct SavePathTests {
 	}
 
 	@Test func editsLandInTheNoteTheEditorShows() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.createNote()
 		let shown = try #require(model.selection)
 		model.edit(shown, "on screen")
@@ -168,8 +159,7 @@ struct SavePathTests {
 	}
 
 	@Test func editingWithTheSameTextSchedulesNothing() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.createNote()
 		let id = try #require(model.selection)
 		model.edit(id, "same")
@@ -183,12 +173,11 @@ struct SavePathTests {
 		#expect(await alarm.started == 1)
 	}
 
-	@Test func editingANoteFromDiskMarksItDirtyWithoutBumpingVersionOrSeq() async throws {
+	@Test func editingANoteFromDiskMarksItDirtyWithoutBumpingVersion() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		let created: Int64 = 1_760_000_000_000
-		let seeded = Note(id: UUID(), body: "from sync", createdAt: created, updatedAt: created, v: 3, seq: 7)
+		let seeded = Note(id: UUID(), body: "from sync", createdAt: created, updatedAt: created, v: 3)
 		let seeding = try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: try await workspaceKey())
 		try await seeding.save(seeded)
 		await seeding.close()
@@ -205,12 +194,10 @@ struct SavePathTests {
 		#expect(stored.updatedAt > created)
 		#expect(stored.createdAt == created)
 		#expect(stored.v == 3)
-		#expect(stored.seq == 7)
 	}
 
 	@Test func deletingWithASavePendingLeavesAnEmptyTombstone() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)

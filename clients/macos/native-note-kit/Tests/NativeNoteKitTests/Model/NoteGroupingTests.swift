@@ -42,6 +42,16 @@ struct NoteGroupingTests {
 		#expect(NoteGrouping.dateLabel(for: daysAgo(400), now: now, calendar: calendar) == "2025.07.10")
 	}
 
+	@Test func speaksAnOlderDateInWordsAndARecentOneAsShown() {
+		var british = calendar
+		british.locale = Locale(identifier: "en_GB")
+
+		#expect(NoteGrouping.spokenDateLabel(for: daysAgo(1), now: now, calendar: british) == "Yesterday")
+		#expect(NoteGrouping.spokenDateLabel(for: daysAgo(3), now: now, calendar: british) == "Tuesday")
+		#expect(NoteGrouping.spokenDateLabel(for: daysAgo(8), now: now, calendar: british) == "6 August 2026")
+		#expect(NoteGrouping.spokenDateLabel(for: daysAgo(400), now: now, calendar: british) == "10 July 2025")
+	}
+
 	@Test func datesTodaysNotesByTheClockInTheCalendarsLocale() {
 		var british = calendar
 		british.locale = Locale(identifier: "en_GB")

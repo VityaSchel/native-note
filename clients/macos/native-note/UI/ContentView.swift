@@ -16,22 +16,35 @@ struct ContentView: View {
 	}
 
 	private func delete(_ id: UUID) {
-		if let kept = model.keepForUndo(id) { offerUndo(of: kept) }
-		Task { await model.delete(id) }
+		let kept = model.keepForUndo(id)
+		Task {
+			guard await model.delete(id), let kept, let undoManager, model.phase == .unlocked else { return }
+			undoManager.beginUndoGrouping()
+			offerUndo(of: UndoableDelete(kept))
+			undoManager.endUndoGrouping()
+		}
 	}
 
-	private func offerUndo(of kept: UUID) {
-		guard let undoManager else { return }
-		undoManager.registerUndo(withTarget: model) { [weak undoManager] model in
+	private func deleteAgain(_ id: UUID) {
+		let undo = model.keepForUndo(id).map(UndoableDelete.init)
+		undo.map(offerUndo)
+		Task {
+			guard await !model.delete(id), let undo else { return }
+			undoManager?.removeAllActions(withTarget: undo)
+		}
+	}
+
+	private func offerUndo(of deleted: UndoableDelete) {
+		undoManager?.registerUndo(withTarget: deleted) { [weak undoManager, model] _ in
 			MainActor.assumeIsolated {
-				guard let restored = model.restore(kept) else { return }
+				guard let restored = model.restore(deleted.kept) else { return }
 				undoManager?.registerUndo(withTarget: model) { _ in
-					MainActor.assumeIsolated { delete(restored) }
+					MainActor.assumeIsolated { deleteAgain(restored) }
 				}
 				undoManager?.setActionName("Delete Note")
 			}
 		}
-		undoManager.setActionName("Delete Note")
+		undoManager?.setActionName("Delete Note")
 	}
 
 	var body: some View {
@@ -42,7 +55,6 @@ struct ContentView: View {
 			.onChange(of: model.phase) { _, phase in
 				guard phase != .unlocked else { return }
 				undoManager?.removeAllActions()
-				clipboard.clear()
 			}
 	}
 
@@ -57,10 +69,7 @@ struct ContentView: View {
 				case .needsSetup, .locked:
 					UnlockView(
 						failure: model.failure,
-						submit: { password in
-							await model.submit(password: password)
-							return model.failure
-						},
+						submit: model.submit(password:),
 						dismissFailure: model.dismissFailure,
 						touchID: TouchIDControls(model),
 						shake: model.shake,
@@ -75,10 +84,7 @@ struct ContentView: View {
 	private var onboarding: some View {
 		OnboardingView(
 			libraryExists: model.phase == .unlocked,
-			createLibrary: { password in
-				await model.submit(password: password)
-				return model.failure
-			},
+			createLibrary: model.submit(password:),
 			failure: model.failure,
 			dismissFailure: model.dismissFailure,
 			hasSecureEnclave: AppModel.hasSecureEnclave,
@@ -92,7 +98,7 @@ struct ContentView: View {
 	}
 
 	static func noteCount(_ count: Int) -> String {
-		count == 1 ? "1 note" : "\(count) notes"
+		String(AttributedString(localized: "^[\(count) note](inflect: true)").characters)
 	}
 
 	private static let allNotes = "all"
@@ -147,7 +153,7 @@ struct ContentView: View {
 			.navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
 		} content: {
 			TimelineView(.everyMinute) { timeline in
-				NoteListView(groups: model.groups, now: timeline.date, selection: $model.selection, search: $model.search) { id in
+				NoteListView(groups: model.groups, now: timeline.date, selection: $model.selection, search: $model.search, focusesSearch: $exchange.focusesSearch) { id in
 					delete(id)
 				}
 			}
@@ -175,6 +181,14 @@ struct ContentView: View {
 				}
 			}
 		}
+	}
+}
+
+private final class UndoableDelete {
+	let kept: UUID
+
+	init(_ kept: UUID) {
+		self.kept = kept
 	}
 }
 

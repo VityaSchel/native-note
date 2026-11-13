@@ -9,17 +9,6 @@ import Testing
 
 @MainActor @Suite(.takesFocus)
 struct UnlockViewTests {
-	private func type(_ text: String, into field: NSTextField, of offscreen: OffscreenWindow<some View>) throws {
-		try #require(offscreen.window.makeFirstResponder(field))
-		let editor = try #require(field.currentEditor())
-		editor.insertText(text)
-		offscreen.pump()
-	}
-
-	private func field(_ placeholder: String, in offscreen: OffscreenWindow<some View>) throws -> NSSecureTextField {
-		try #require(offscreen.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
-	}
-
 	private func unlockView(
 		_ state: AppModel.TouchID = .hidden,
 		enabled: Bool = false,
@@ -70,7 +59,7 @@ struct UnlockViewTests {
 	}
 
 	private func isTyping(in offscreen: OffscreenWindow<some View>) throws -> Bool {
-		let editor = try field("Password", in: offscreen).currentEditor()
+		let editor = try offscreen.field("Password").currentEditor()
 		return editor != nil && offscreen.window.firstResponder === editor
 	}
 
@@ -89,14 +78,6 @@ struct UnlockViewTests {
 
 	private func arrows(in offscreen: OffscreenWindow<some View>) -> [AccessibilityElement] {
 		offscreen.accessibilityElements(.button).filter { $0.label == UnlockView.arrowLabel }
-	}
-
-	private func texts(in offscreen: OffscreenWindow<some View>) -> [String] {
-		offscreen.accessibilityElements(.staticText).map(\.value)
-	}
-
-	private func tryAgainButton(in offscreen: OffscreenWindow<UnlockView>) -> NSButton? {
-		offscreen.views(of: NSButton.self).first { $0.title == TryTouchIDAgainButton.title }
 	}
 
 	private func snapshot(of offscreen: OffscreenWindow<some View>) throws -> NSBitmapImageRep {
@@ -131,9 +112,9 @@ struct UnlockViewTests {
 		var submitted: [String] = []
 		let offscreen = lockScreen(submit: { submitted.append($0); return nil })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 
-		try type("correct horse", into: password, of: offscreen)
+		try offscreen.type("correct horse", into: password)
 		password.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { !submitted.isEmpty && password.stringValue.isEmpty }
 
@@ -145,8 +126,8 @@ struct UnlockViewTests {
 		var submitted: [String] = []
 		let offscreen = lockScreen(submit: { submitted.append($0); return nil })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("correct horse", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("correct horse", into: password)
 
 		let arrow = try #require(arrows(in: offscreen).first)
 		#expect(arrow.press())
@@ -159,7 +140,7 @@ struct UnlockViewTests {
 	@Test func theLockScreenIsOnePlainPasswordField() throws {
 		let offscreen = lockScreen()
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 
 		#expect(offscreen.views(of: NSSecureTextField.self).count == 1)
 		#expect(password.font?.pointSize == 15)
@@ -174,7 +155,7 @@ struct UnlockViewTests {
 		defer { offscreen.close() }
 		offscreen.pump(for: 0.1)
 		let rep = try snapshot(of: offscreen)
-		let password = inHost(try field("Password", in: offscreen), of: offscreen)
+		let password = inHost(try offscreen.field("Password"), of: offscreen)
 		let column = password.maxX + 10
 		let fill = try #require(pixel(at: NSPoint(x: column, y: password.midY), of: rep, in: offscreen))
 		#expect(fill.alphaComponent > 0.99)
@@ -192,10 +173,10 @@ struct UnlockViewTests {
 	@Test func theArrowAppearsInsideTheFieldOnlyWhileItHasText() throws {
 		let offscreen = lockScreen()
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 		#expect(arrows(in: offscreen).isEmpty)
 
-		try type("c", into: password, of: offscreen)
+		try offscreen.type("c", into: password)
 
 		let arrow = try #require(arrows(in: offscreen).first)
 		let text = offscreen.onScreen(password)
@@ -220,7 +201,7 @@ struct UnlockViewTests {
 		defer { offscreen.close() }
 		offscreen.pump(for: 0.1)
 		let rep = try snapshot(of: offscreen)
-		let password = inHost(try field("Password", in: offscreen), of: offscreen)
+		let password = inHost(try offscreen.field("Password"), of: offscreen)
 		let middle = offscreen.host.bounds.midX
 		let radius = UnlockView.fieldHeight / 2
 		let fill = try #require(pixel(at: NSPoint(x: password.maxX + 10, y: password.midY), of: rep, in: offscreen))
@@ -245,7 +226,7 @@ struct UnlockViewTests {
 	@Test func theTextStartsFourteenPointsAndTheArrowEndsSevenPointsInsideTheCapsule() throws {
 		let offscreen = lockScreen()
 		defer { offscreen.close() }
-		try type("c", into: try field("Password", in: offscreen), of: offscreen)
+		try offscreen.type("c", into: try offscreen.field("Password"))
 		let middle = offscreen.onScreen(offscreen.host).midX
 		let text = try #require(offscreen.accessibilityElements(.textField).first).frame
 		let arrow = try #require(arrows(in: offscreen).first).frame
@@ -257,7 +238,7 @@ struct UnlockViewTests {
 	@Test func theArrowIsTheAccentColor() throws {
 		let offscreen = lockScreen()
 		defer { offscreen.close() }
-		try type("c", into: try field("Password", in: offscreen), of: offscreen)
+		try offscreen.type("c", into: try offscreen.field("Password"))
 		offscreen.pump(for: 0.1)
 		let rep = try snapshot(of: offscreen)
 		let arrow = inHost(try #require(arrows(in: offscreen).first).frame, of: offscreen)
@@ -274,7 +255,7 @@ struct UnlockViewTests {
 	@Test func unlockingHasOnlyTheArrowAndForgotPassword() throws {
 		let unlock = lockScreen()
 		defer { unlock.close() }
-		try type("correct horse", into: try field("Password", in: unlock), of: unlock)
+		try unlock.type("correct horse", into: try unlock.field("Password"))
 		let unlockButtons = unlock.accessibilityElements(.button)
 
 		#expect(unlockButtons.map(\.label) == [UnlockView.arrowLabel])
@@ -283,20 +264,7 @@ struct UnlockViewTests {
 		#expect(unlock.views(of: NSSecureTextField.self).map(\.placeholderString) == ["Password"])
 	}
 
-	@Test func eachTouchIDStateSaysWhetherTouchIDCanStillBeUsed() {
-		let usable: [AppModel.TouchID] = [.listening(LAContext()), .paused(.inBackground), .paused(.checkingPassword), .paused(.shaking), .working]
-		let stopped: [AppModel.TouchID] = [.needsClick(after: .miss), .needsClick(after: .cancel), .needsClick(after: .failure), .lockedOut]
-
-		for state in usable {
-			#expect(UnlockView.line(for: state) == "Touch ID or enter password")
-		}
-		for state in stopped {
-			#expect(UnlockView.line(for: state) == "Enter password to enable Touch ID")
-		}
-		#expect(UnlockView.line(for: .hidden) == nil)
-	}
-
-	@Test func theLineUnderTheFieldIsShownForEachState() {
+	@Test func eachTouchIDStateSaysWhetherTouchIDCanStillBeUsedOnTheLineUnderTheField() {
 		let usable = "Touch ID or enter password"
 		let stopped = "Enter password to enable Touch ID"
 		let lines: [(AppModel.TouchID, String)] = [
@@ -316,8 +284,10 @@ struct UnlockViewTests {
 			defer { offscreen.close() }
 			offscreen.pump(for: 0.05)
 
-			#expect(texts(in: offscreen) == ["Native Note", line], "\(state)")
+			#expect(UnlockView.line(for: state) == line, "\(state)")
+			#expect(offscreen.staticTexts() == ["Native Note", line], "\(state)")
 		}
+		#expect(UnlockView.line(for: .hidden) == nil)
 	}
 
 	@Test func withTouchIDOffThereIsNoLineAndNothingListens() {
@@ -326,7 +296,7 @@ struct UnlockViewTests {
 		defer { offscreen.close() }
 		offscreen.pump(for: 0.1)
 
-		#expect(texts(in: offscreen) == ["Native Note"])
+		#expect(offscreen.staticTexts() == ["Native Note"])
 		#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
 		#expect(offscreen.views(of: TouchIDGlyphView.self).isEmpty)
 		#expect(offscreen.views(of: NSProgressIndicator.self).isEmpty)
@@ -338,7 +308,7 @@ struct UnlockViewTests {
 			let offscreen = lockScreen(state)
 			defer { offscreen.close() }
 			offscreen.pump(for: 0.05)
-			let text = offscreen.onScreen(try field("Password", in: offscreen))
+			let text = offscreen.onScreen(try offscreen.field("Password"))
 			let capsuleBottom = text.midY - UnlockView.fieldHeight / 2
 			let forgot = try #require(offscreen.accessibilityElements(.link).first).frame
 			guard let line = offscreen.accessibilityElements(.staticText).first(where: { $0.value == UnlockView.line(for: state) }) else {
@@ -365,7 +335,7 @@ struct UnlockViewTests {
 		await offscreen.pump { !glyphs.heard.isEmpty }
 
 		let glyph = try #require(offscreen.views(of: LAAuthenticationView.self).first)
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 		#expect(offscreen.views(of: LAAuthenticationView.self).count == 1)
 		#expect(glyph.context === context)
 		#expect(glyphs.heard.count == 1)
@@ -381,7 +351,7 @@ struct UnlockViewTests {
 		#expect(text.contains(covered))
 		#expect(abs(covered.midX - offscreen.onScreen(offscreen.host).midX) < 0.5)
 		#expect(abs(covered.midY - text.midY) < 0.5)
-		#expect(tryAgainButton(in: offscreen) == nil)
+		#expect(offscreen.tryAgainButton == nil)
 	}
 
 	@Test func theFieldsOpaqueFillCoversTheGlyph() async throws {
@@ -393,7 +363,7 @@ struct UnlockViewTests {
 		paint(glyph)
 		offscreen.pump()
 		let rep = try snapshot(of: offscreen)
-		let password = inHost(try field("Password", in: offscreen), of: offscreen)
+		let password = inHost(try offscreen.field("Password"), of: offscreen)
 		let fill = try #require(pixel(at: NSPoint(x: password.maxX + 10, y: password.midY), of: rep, in: offscreen))
 		let covered = pixels(in: inHost(glyph, of: offscreen), of: rep, in: offscreen)
 
@@ -419,7 +389,7 @@ struct UnlockViewTests {
 		defer { offscreen.close() }
 		await offscreen.pump { !glyphs.heard.isEmpty }
 		let glyph = try #require(offscreen.views(of: LAAuthenticationView.self).first)
-		try type("c", into: try field("Password", in: offscreen), of: offscreen)
+		try offscreen.type("c", into: try offscreen.field("Password"))
 
 		let elements = offscreen.accessibilityElements()
 		let fields = elements.filter { $0.role == .textField }
@@ -448,13 +418,13 @@ struct UnlockViewTests {
 		try #require(try isTyping(in: offscreen))
 
 		offscreen.host.rootView = unlockView(.working, enabled: true)
-		try await offscreen.pump { try !field("Password", in: offscreen).isEnabled }
-		#expect(!(try field("Password", in: offscreen).isEnabled))
+		try await offscreen.pump { try !offscreen.field("Password").isEnabled }
+		#expect(!(try offscreen.field("Password").isEnabled))
 		#expect(!(try isTyping(in: offscreen)))
 
 		offscreen.host.rootView = unlockView(.needsClick(after: .failure), enabled: true)
 		try await offscreen.pump { try isTyping(in: offscreen) }
-		#expect(try field("Password", in: offscreen).isEnabled)
+		#expect(try offscreen.field("Password").isEnabled)
 		#expect(try isTyping(in: offscreen))
 	}
 
@@ -462,16 +432,16 @@ struct UnlockViewTests {
 		let offscreen = OffscreenWindow(centered(unlockView(.listening(LAContext()), enabled: true)))
 		defer { offscreen.close() }
 		offscreen.pump(for: 0.05)
-		let rest = offscreen.onScreen(try field("Password", in: offscreen))
+		let rest = offscreen.onScreen(try offscreen.field("Password"))
 		let forgot = try #require(offscreen.accessibilityElements(.link).first).frame
 
 		for state in [AppModel.TouchID.hidden, .paused(.shaking), .lockedOut, .hidden, .paused(.inBackground)] {
 			offscreen.host.rootView = centered(unlockView(state, enabled: true))
 			offscreen.pump(for: 0.05)
 
-			#expect(offscreen.onScreen(try field("Password", in: offscreen)) == rest, "\(state)")
+			#expect(offscreen.onScreen(try offscreen.field("Password")) == rest, "\(state)")
 			#expect(offscreen.accessibilityElements(.link).first?.frame == forgot, "\(state)")
-			#expect(texts(in: offscreen) == ["Native Note"] + [UnlockView.line(for: state)].compactMap(\.self), "\(state)")
+			#expect(offscreen.staticTexts() == ["Native Note"] + [UnlockView.line(for: state)].compactMap(\.self), "\(state)")
 		}
 	}
 
@@ -480,7 +450,7 @@ struct UnlockViewTests {
 			let offscreen = OffscreenWindow(centered(unlockView(.hidden, enabled: enabled)))
 			defer { offscreen.close() }
 			offscreen.pump(for: 0.05)
-			let field = offscreen.onScreen(try field("Password", in: offscreen))
+			let field = offscreen.onScreen(try offscreen.field("Password"))
 			return field.midY - UnlockView.fieldHeight / 2 - (try #require(offscreen.accessibilityElements(.link).first).frame.maxY)
 		}
 
@@ -499,8 +469,8 @@ struct UnlockViewTests {
 			let spoken = Spoken()
 			let offscreen = lockScreen(.listening(LAContext()), enabled: true, spoken: spoken, submit: { _ in reply })
 			defer { offscreen.close() }
-			let password = try field("Password", in: offscreen)
-			try type("a guess", into: password, of: offscreen)
+			let password = try offscreen.field("Password")
+			try offscreen.type("a guess", into: password)
 
 			password.currentEditor()?.insertNewline(nil)
 			await offscreen.pump { !spoken.heard.isEmpty || password.stringValue.isEmpty }
@@ -537,7 +507,7 @@ struct UnlockViewTests {
 		defer { offscreen.close() }
 		await offscreen.pump { !glyphs.heard.isEmpty }
 		let glyph = try #require(offscreen.views(of: LAAuthenticationView.self).first)
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 
 		try #require(offscreen.window.makeFirstResponder(password))
 		let editor = try #require(password.currentEditor())
@@ -559,8 +529,8 @@ struct UnlockViewTests {
 		var submitted: [String] = []
 		let offscreen = shakingLockScreen(shaker, submit: { submitted.append($0); shaker.start(); return .wrongPassword })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 		let travel = Travel(of: password, in: offscreen)
 		defer { travel.stop() }
 
@@ -576,15 +546,15 @@ struct UnlockViewTests {
 		#expect(travel.offset().dx == 0)
 		#expect(travel.offset().dy == 0)
 		#expect(password.stringValue == "a guess")
-		#expect(texts(in: offscreen) == ["Native Note", UnlockView.touchIDLine])
+		#expect(offscreen.staticTexts() == ["Native Note", UnlockView.touchIDLine])
 	}
 
 	@Test func eachRenderedFrameOfTheShakeMovesTheWholeFieldRowAlongTheCurveAndNothingElse() throws {
 		let shaker = Shaker()
 		let offscreen = shakingLockScreen(shaker)
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 		offscreen.pump(for: 0.1)
 		let still = offscreen.accessibilityElements().filter { $0.role == .staticText || $0.role == .link }.map(\.frame)
 		let rest = offscreen.onScreen(password)
@@ -627,8 +597,8 @@ struct UnlockViewTests {
 		let spoken = Spoken()
 		let offscreen = shakingLockScreen(shaker, spoken: spoken, submit: { _ in shaker.start(); return .wrongPassword })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 
 		#expect(try #require(arrows(in: offscreen).first).press())
 		await offscreen.pump { !spoken.heard.isEmpty }
@@ -646,7 +616,7 @@ struct UnlockViewTests {
 		#expect(try isTyping(in: offscreen))
 		#expect(selection(of: password) == NSRange(location: 0, length: 7))
 		#expect(arrows(in: offscreen).count == 1)
-		try type("correct horse", into: password, of: offscreen)
+		try offscreen.type("correct horse", into: password)
 		#expect(password.stringValue == "correct horse")
 		#expect(spoken.heard == [UnlockView.wrongPasswordAnnouncement])
 	}
@@ -656,8 +626,8 @@ struct UnlockViewTests {
 		let spoken = Spoken()
 		let offscreen = shakingLockScreen(shaker, spoken: spoken, submit: { _ in shaker.start(); return .wrongPassword })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 
 		password.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { !spoken.heard.isEmpty }
@@ -676,8 +646,8 @@ struct UnlockViewTests {
 		let spoken = Spoken()
 		let offscreen = shakingLockScreen(shaker, spoken: spoken, submit: { _ in shaker.start(); return .wrongPassword })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 		password.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { !spoken.heard.isEmpty }
 		offscreen.window.makeFirstResponder(nil)
@@ -700,9 +670,9 @@ struct UnlockViewTests {
 		let offscreen = OffscreenWindow(view())
 		shaker.show = { [weak offscreen] in offscreen?.host.rootView = view() }
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 		let other = try #require(offscreen.views(of: NSTextField.self).first { $0.placeholderString == BesideAnotherField.placeholder })
-		try type("a guess", into: password, of: offscreen)
+		try offscreen.type("a guess", into: password)
 		#expect(try #require(arrows(in: offscreen).first).press())
 		await offscreen.pump { !spoken.heard.isEmpty }
 		elsewhere = true
@@ -725,8 +695,8 @@ struct UnlockViewTests {
 		let spoken = Spoken()
 		let offscreen = shakingLockScreen(shaker, spoken: spoken, submit: { _ in shaker.start(); return .wrongPassword })
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 		#expect(try #require(arrows(in: offscreen).first).press())
 		await offscreen.pump { !spoken.heard.isEmpty }
 
@@ -750,8 +720,8 @@ struct UnlockViewTests {
 		})
 		defer { offscreen.close() }
 		defer { checking.release() }
-		let password = try field("Password", in: offscreen)
-		try type("a guess", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
 		password.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { checking.isHolding }
 
@@ -774,8 +744,8 @@ struct UnlockViewTests {
 		let spoken = Spoken()
 		let offscreen = shakingLockScreen(shaker, spoken: spoken)
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
-		try type("corr", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("corr", into: password)
 		let travel = Travel(of: password, in: offscreen)
 		defer { travel.stop() }
 
@@ -794,7 +764,34 @@ struct UnlockViewTests {
 		#expect(try isTyping(in: offscreen))
 		#expect(selection(of: password) == NSRange(location: 4, length: 0))
 		#expect(spoken.heard.isEmpty)
-		#expect(texts(in: offscreen) == ["Native Note", UnlockView.touchIDLine])
+		#expect(offscreen.staticTexts() == ["Native Note", UnlockView.touchIDLine])
+	}
+
+	@Test func withReduceMotionAWrongPasswordLeavesTheFieldStillAndStillSelectsItWhenTheShakeEnds() async throws {
+		let shaker = Shaker()
+		let view = {
+			unlockView(shake: shaker.shake, submit: { _ in shaker.start(); return .wrongPassword })
+				.environment(\._accessibilityReduceMotion, true)
+		}
+		let offscreen = OffscreenWindow(view())
+		defer { offscreen.close() }
+		shaker.show = { [weak offscreen] in offscreen?.host.rootView = view() }
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
+		let travel = Travel(of: password, in: offscreen)
+		defer { travel.stop() }
+
+		#expect(try #require(arrows(in: offscreen).first).press())
+		await offscreen.pump { shaker.shake.isRunning }
+		let started = Date()
+		await offscreen.pump(turns: 8_000) { Date().timeIntervalSince(started) > 0.6 }
+		#expect(shaker.shake.count == 1)
+		#expect(travel.offsets.allSatisfy { $0.dx == 0 && $0.dy == 0 })
+		#expect(selection(of: password) == NSRange(location: 7, length: 0))
+
+		shaker.end()
+		await offscreen.pump { selection(of: password) == NSRange(location: 0, length: 7) }
+		#expect(selection(of: password) == NSRange(location: 0, length: 7))
 	}
 
 	@Test func aShakeCountThatDoesNotChangeDoesNotMoveTheField() async throws {
@@ -802,7 +799,7 @@ struct UnlockViewTests {
 		shaker.shake = AppModel.Shake(count: 3, isRunning: true)
 		let offscreen = shakingLockScreen(shaker)
 		defer { offscreen.close() }
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 		let travel = Travel(of: password, in: offscreen)
 		defer { travel.stop() }
 
@@ -818,8 +815,8 @@ struct UnlockViewTests {
 		for reply in [AppModel.Failure?.none, .unexpected("The notes database is closed."), .unsaved("disk I/O error")] {
 			let offscreen = lockScreen(submit: { _ in reply })
 			defer { offscreen.close() }
-			let password = try field("Password", in: offscreen)
-			try type("correct horse", into: password, of: offscreen)
+			let password = try offscreen.field("Password")
+			try offscreen.type("correct horse", into: password)
 			let travel = Travel(of: password, in: offscreen)
 			defer { travel.stop() }
 
@@ -836,17 +833,20 @@ struct UnlockViewTests {
 	}
 
 	@Test func theShakeFollowsTheMacLoginWindowCurve() {
-		func expected(_ t: Double) -> Double {
-			-14 * sin(15 * .pi * t) * (t < 0.2 ? 1 : exp(-2 * t))
-		}
 		func x(_ milliseconds: Double) -> CGFloat {
 			ShakeEffect.offset(at: milliseconds / 1000)
 		}
+		let measured: [(Double, CGFloat)] = [
+			(5, -3.268235), (12.5, -7.777983), (20, -11.326238), (33.25, -13.999892), (50, -9.899495), (62.5, -2.731265), (80, 8.228994),
+			(87.5, 11.640575), (110, 12.474091), (125, 5.357568), (140, -4.326238), (162.5, -13.730994), (185, -9.092273), (199.75, -0.164930),
+			(200.25, 0.110500), (212.5, 5.085010), (225, 8.247282), (240, 8.238972), (262.5, 1.615694), (280, -4.700476), (290, -6.984223),
+			(312.5, -6.230751), (330, -1.131947), (350, 4.915944), (362.5, 6.650258), (380, 5.296901), (395, 1.483271), (399.75, 0.074145),
+		]
 
 		#expect(ShakeEffect.duration == 0.4)
 		#expect(ShakeEffect.amplitude == 14)
-		for milliseconds in stride(from: 0.0, through: 400, by: 0.25) {
-			#expect(abs(x(milliseconds) - expected(milliseconds / 1000)) < 1e-9, "\(milliseconds) ms")
+		for (milliseconds, offset) in measured {
+			#expect(abs(x(milliseconds) - offset) < 1e-6, "\(milliseconds) ms")
 		}
 		#expect(x(0) == 0)
 		#expect(x(400) == 0)
@@ -863,6 +863,7 @@ struct UnlockViewTests {
 		let samples = stride(from: 0.0, through: 400, by: 0.25).map(x)
 		#expect(samples.allSatisfy { abs($0) <= 14 + 1e-9 })
 		#expect(zip(samples, samples.dropFirst()).count { $0 * $1 < 0 } == 5)
+		#expect(zip(samples, samples.dropFirst()).allSatisfy { abs($0 - $1) < 0.17 })
 	}
 
 	@Test func theShakeEffectOnlyMovesSidewaysAndRestsOnWholeShakes() {
@@ -883,7 +884,7 @@ struct UnlockViewTests {
 		offscreen.pump(for: 0.1)
 
 		let spinner = try #require(offscreen.views(of: NSProgressIndicator.self).first)
-		let password = try field("Password", in: offscreen)
+		let password = try offscreen.field("Password")
 		let text = offscreen.onScreen(password)
 		let slot = offscreen.onScreen(spinner)
 		#expect(offscreen.views(of: NSProgressIndicator.self).count == 1)
@@ -907,8 +908,8 @@ struct UnlockViewTests {
 		})
 		defer { offscreen.close() }
 		defer { checking.release() }
-		let password = try field("Password", in: offscreen)
-		try type("correct horse", into: password, of: offscreen)
+		let password = try offscreen.field("Password")
+		try offscreen.type("correct horse", into: password)
 
 		password.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { checking.isHolding }
@@ -934,7 +935,7 @@ struct UnlockViewTests {
 
 			#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
 			#expect(offscreen.views(of: TouchIDGlyphView.self).isEmpty)
-			#expect(tryAgainButton(in: offscreen) == nil)
+			#expect(offscreen.tryAgainButton == nil)
 			#expect(offscreen.views(of: NSProgressIndicator.self).isEmpty)
 			#expect(offscreen.views(of: NSSecureTextField.self).first?.isEnabled == true)
 			#expect(offscreen.accessibilityElements(.button).isEmpty)
@@ -951,7 +952,7 @@ struct UnlockViewTests {
 
 			#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
 			#expect(offscreen.views(of: TouchIDGlyphView.self).isEmpty)
-			#expect(tryAgainButton(in: offscreen) == nil)
+			#expect(offscreen.tryAgainButton == nil)
 			#expect(glyphs.heard.isEmpty)
 		}
 	}
@@ -1045,7 +1046,7 @@ private struct GlyphOverFill: View {
 	var body: some View {
 		ZStack {
 			Capsule().fill(Color(nsColor: .textBackgroundColor))
-			TouchIDGlyph(mode: .listening(LAContext()), label: nil, size: .mini)
+			TouchIDGlyph(mode: .listening(LAContext(), label: nil), size: .mini)
 				.frame(width: UnlockView.coveredGlyphSide, height: UnlockView.coveredGlyphSide)
 		}
 		.frame(width: 300, height: UnlockView.fieldHeight)

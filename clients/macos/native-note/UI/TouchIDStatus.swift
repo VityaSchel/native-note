@@ -28,24 +28,24 @@ struct TouchIDStatus: View {
 			case .hidden, .lockedOut, .working:
 				EmptyView()
 			case let .listening(context):
-				TouchIDGlyph(mode: .listening(context), label: glyphLabel, listen: controls.listen)
+				TouchIDGlyph(mode: .listening(context, label: glyphLabel), listen: controls.listen)
 					.frame(width: TouchIDGlyphView.side, height: TouchIDGlyphView.side)
 			case .paused:
-				TouchIDGlyph(mode: .dimmed, label: glyphLabel)
+				TouchIDGlyph(mode: .dimmed)
 					.frame(width: TouchIDGlyphView.side, height: TouchIDGlyphView.side)
 			case .needsClick:
-				TryTouchIDAgainButton(action: controls.tryAgain)
+				Button(Self.tryAgainTitle, systemImage: "touchid", action: controls.tryAgain)
+					.labelStyle(.titleAndIcon)
 			}
 
-			let line = Self.line(for: controls.state, listening: listeningLine)
-			Text(line ?? " ")
+			ReservedLine(text: Self.line(for: controls.state, listening: listeningLine))
 				.font(.callout)
 				.foregroundStyle(.secondary)
 				.multilineTextAlignment(.center)
-				.fixedSize(horizontal: false, vertical: true)
-				.accessibilityHidden(line == nil)
 		}
 	}
+
+	static let tryAgainTitle = "Try Touch ID Again"
 
 	static func line(for state: AppModel.TouchID, listening: String) -> String? {
 		switch state {

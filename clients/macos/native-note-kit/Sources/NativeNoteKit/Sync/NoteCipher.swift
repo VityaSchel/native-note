@@ -27,8 +27,7 @@ nonisolated struct NoteCipher: Sendable {
 			nonce: nonce,
 			authenticating: Self.binding(blindedId, v, writeId)
 		)
-		guard let payload = sealed.combined else { throw EnvelopeError.unopenable }
-		return Write(blindedId: blindedId, v: v, writeId: writeId, payload: payload)
+		return Write(blindedId: blindedId, v: v, writeId: writeId, payload: try sealed.framed())
 	}
 
 	func open(_ write: Write) -> Content? {

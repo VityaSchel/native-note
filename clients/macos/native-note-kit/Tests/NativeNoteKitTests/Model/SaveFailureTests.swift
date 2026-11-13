@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct SaveFailureTests {
 	private let alarm = Alarm()
 
@@ -15,7 +15,7 @@ struct SaveFailureTests {
 
 	@Test func aFailedSaveIsRetried() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -33,7 +33,7 @@ struct SaveFailureTests {
 
 	@Test func aFailingSaveIsReportedOnceWhileItRetries() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -61,7 +61,7 @@ struct SaveFailureTests {
 
 	@Test func theUnsavedAlertClearsOnceTheSaveLands() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		await model.createNote()
 		let id = try #require(model.selection)
 		let blocker = try await connection(to: directory)
@@ -78,7 +78,7 @@ struct SaveFailureTests {
 
 	@Test func aNoteSpecificFailureIsReportedWithItsReason() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		await model.createNote()
 		let id = try #require(model.selection)
 		try await poison(directory)
@@ -92,7 +92,7 @@ struct SaveFailureTests {
 
 	@Test func oneNoteLandingWhileAnotherStillFailsKeepsTheFailure() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		await model.createNote()
 		let poisoned = try #require(model.selection)
 		model.edit(poisoned, "draft")
@@ -115,7 +115,7 @@ struct SaveFailureTests {
 
 	@Test func aFailedDeleteKeepsTheLatestEdit() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -133,7 +133,7 @@ struct SaveFailureTests {
 
 	@Test func deletingANoteWhoseSaveKeepsFailingClearsTheFailure() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		await model.createNote()
 		let id = try #require(model.selection)
 		try await poison(directory)
@@ -150,7 +150,7 @@ struct SaveFailureTests {
 
 	@Test func aFailedCreateAddsNothingAndSaysWhy() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		let blocker = try await connection(to: directory)
 		try blocker.execute("BEGIN IMMEDIATE")
 
@@ -164,7 +164,7 @@ struct SaveFailureTests {
 
 	@Test func lockingWithAFailingSaveShowsItOnTheLockScreen() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -185,7 +185,7 @@ struct SaveFailureTests {
 
 	@Test func aStoreKeptOpenForAFailingSaveClosesOnceItLands() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		await model.createNote()
 		let id = try #require(model.selection)
 		var blocker: SQLiteConnection? = try await connection(to: directory)
@@ -203,7 +203,7 @@ struct SaveFailureTests {
 
 	@Test func unlockingWhileASaveStillFailsKeepsTheTypedText() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		try await model.store?.failAtOnceWhenLocked()
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -216,6 +216,7 @@ struct SaveFailureTests {
 		await model.lock()
 		model.dismissFailure()
 		await model.unlock(password: workspacePassword)
+		try await model.store?.failAtOnceWhenLocked()
 
 		#expect(model.phase == .unlocked)
 		#expect(model.notes.first { $0.id == id }?.body == "typed then locked while busy")

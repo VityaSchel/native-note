@@ -2,15 +2,15 @@
 
 ## Local DB
 
-SQLCipher in WAL mode with `synchronous=FULL`, `fullfsync` and `checkpoint_fullfsync`; on macOS `synchronous=FULL` alone does not survive power loss. A database whose `user_version` is newer than the app is refused. `PRAGMA foreign_keys = ON` from v1, so every later relation declares its `ON DELETE`.
+SQLCipher in WAL mode with `synchronous=FULL`, `fullfsync` and `checkpoint_fullfsync`; on macOS `synchronous=FULL` alone does not survive power loss. Every connection sets a 5 s busy timeout. A database whose `user_version` is newer than the app is refused. `PRAGMA foreign_keys = ON` from v1, so every later relation declares its `ON DELETE`.
 
 - A note saves at most ~300 ms after its first unsaved edit, and at once on leaving the note, lock, the app resigning active, sleep and quit.
-- A new note is marked for sync only at its first edit. A New Note left empty is discarded: removed if no server has seen it, tombstoned otherwise.
+- A new note is marked for sync only at its first edit. A New Note left empty is discarded, on lock and quit too: removed if no server has seen it, kept if a pull has written it since the list last showed it, tombstoned otherwise; one discarded during its first push is tombstoned [when that push lands](#conflicts).
 - A local save never bumps `v` and never writes to a tombstone. Undo Delete restores the text as a new note with the deleted one's timestamps, until the library locks.
 - A failed save retries with the latest text, across lock and unlock, and is reported once until no save fails. Lock does not wait for it and shows the failure on the lock screen.
 - Quit with an unsaved edit asks first.
 
-The library locks when the Mac sleeps, its screen locks or the user session switches away. Locking cancels a sync or Change Server check in flight and waits for it before closing the database; an unlock that finishes after one of these events locks again. Closing the window keeps the app running and the library unlocked.
+The library locks when the Mac sleeps, its screen locks or the user session switches away. Locking cancels a sync or Change Server check in flight and waits for it before closing the database; an unlock that finishes after one of these events locks again. Locking ends an open export or import panel and forgets an import waiting for its passphrase, and a locked library refuses an export. Closing the window keeps the app running and the library unlocked.
 
 Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`: a locked library on disk is `notes.db`, indistinguishable from random, beside the public `app-lock.plist`. The sidecars, whose headers read as SQLite, exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock.
 
@@ -45,7 +45,7 @@ END;
 CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 ```
 
-Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `seq` stays `NULL`, since a change carries no `seq`. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, and the recovery blob's pinned `v`.
+Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `seq` stays `NULL`, since a change carries no `seq`. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, the recovery blob's pinned `v`, and the IDs of notes first pushed since the last pull that left `more` clear.
 
 Search matches whole words, and the last word as a prefix from two characters, ranked by relevance. A search survives lock and reruns on unlock.
 
@@ -92,9 +92,9 @@ Without secure hardware, `machineId` is omitted, the UI warns, and Argon2id alon
 2. Write the new unlock parameters, with a fresh salt and recalibrated `argonParams`, to a pending file, keeping the current one
 3. Rekey with `sqlite3_rekey_v2`
 4. Verify a fresh open with the new key; on failure, reconnect with the old key, delete the pending file and keep the old password
-5. Replace the current parameter file with the pending one
+5. Write the new parameters over the current parameter file, then delete the pending one
 
-Unlock tries the pending file, then the current one, and keeps whichever opens the database, so a crash between steps leaves it openable. A parameter file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed, before the rekey it enables. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside, never deletes, a database left without parameter files, moving its sidecars first so an interrupted set-aside finishes on the next setup.
+One change runs at a time. Lock and quit cancel a running change only before step 2 and wait for it either way; unlock and erase wait for it too. Unlock tries the pending file, then the current one, and keeps whichever opens the database, so a crash between steps leaves it openable. A parameter file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed, before the rekey it enables. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside, never deletes, a database left without parameter files, moving its sidecars first so an interrupted set-aside finishes on the next setup.
 
 #### Forgotten password
 
@@ -131,14 +131,14 @@ Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-ke
 
 Cancel stops setup, join and Change Server while nothing is stored, and is off while a recovery-blob `put` is in flight.
 
-**Setup** is the last onboarding step, so a new or wiped Mac starts from its synced notes, and stays in Settings for later. Locking or quitting during onboarding drops its remaining offers.
+**Setup** is the last onboarding step, so a new or wiped Mac starts from its synced notes, and stays in Settings for later; Settings is unavailable until onboarding ends. Locking or quitting during onboarding drops its remaining offers.
 
 1. Take the server URL and the API key as hex, and `get` the blob. A server that already holds one routes to the join before any words are shown.
 2. Generate the Content key and the Recovery key with a CSPRNG.
-3. Show the 24 words hidden until revealed, every hidden word drawn as the same placeholder, then require three random words typed back. Copying puts the numbered list on this Mac's pasteboard only, marked concealed and transient, and clears it on cancel, lock or quit unless something else was copied over it.
+3. Show the 24 words hidden until revealed, every hidden word drawn as the same placeholder, then require three random words typed back. The revealed words cannot be selected, so they reach the pasteboard only through Copy Words, which puts the numbered list on this Mac's pasteboard only, marked concealed and transient, and clears it on cancel, lock or quit unless something else was copied over it.
 4. `put` the Content key encrypted under the Recovery key and, once that `put` has landed, store the Content key, API key, URL and pin in `meta`, and enable sync.
 
-**Turn Off Sync and Change Server:** Turn Off Sync forgets only the server address and API key; the Content key, the pin, the last pulled `seq` with its mark, and every note's version stay. Set Up Sync on such a library, or Change Server on a syncing one, checks the server: one that holds this library takes it back with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge.
+**Turn Off Sync and Change Server:** Turn Off Sync forgets only the server address and API key; the Content key, the pin, the last pulled `seq` with its mark, the first-push IDs and every note's version stay. Set Up Sync on such a library, or Change Server on a syncing one, checks the server: one that holds this library takes it back with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones and first-push IDs dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge.
 
 **A replaced API key:** Change Server with the same address takes the new key. The server holds this library when it answers under the new key with a recovery blob at or above the pin and, once this Mac has pulled, with the write its last pull ended on, by blinded ID at that `v` or later, whether or not it opens, so a write forged with a leaked key cannot block the change. A mistyped key, a server holding another library or one restored from an older backup leaves the old address, key and sync as they were; without the recovery phrase this is as close as the Mac can check.
 
@@ -153,11 +153,11 @@ Cancel stops setup, join and Change Server while nothing is stored, and is off w
 
 ## Sync
 
-A sync runs 30 s after the last edit, when the app becomes or stops being active, after unlock, and on Sync Now, one at a time; requests made during a sync share the next one. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. Saves that fall due meanwhile wait, and an edit typed on a note a pull replaced moves to that note's copy.
+A sync runs 30 s after the last edit, when the app becomes or stops being active, after unlock, and on Sync Now, one at a time; requests made during a sync share the next one. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. Saves that fall due meanwhile wait, and an edit typed on a note a pull replaced moves to that note's copy. An acknowledged push never adds a note to the list.
 
 A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text.
 
-The server URL may be plain `http`, since everything past the URL is sealed; the app allows arbitrary loads under App Transport Security. Requests carry only fixed headers, the same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
+The server URL may be plain `http`, since everything past the URL is sealed; the app allows arbitrary loads under App Transport Security. A stored address that is not an `http` or `https` URL with a host is reported as an error, and sync does not start. Requests carry only fixed headers, the same on every Mac, so nothing outside the envelope tells devices, builds or languages apart.
 
 ## Pull verification
 
@@ -173,7 +173,7 @@ A change that fails a check is reported and not applied, so only a pulled tombst
 
 Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note, with a new UUID, the unpushed `createdAt` and `updatedAt`, and dirty at `v = 0`, and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text, and the original keeps it locally and is marked clean; a dirty tombstone there is marked clean without a push.
 
-A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored after a lost response: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. Unacknowledged `writeId`s live in memory until a pull resolves each; after a relaunch, a lost response takes the copy path, where matching bodies make no copy.
+A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored after a lost response: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. An `accepted` write whose note is no longer held becomes a dirty tombstone at that `v`, pushed in the same sync. Unacknowledged `writeId`s live in memory until a pull resolves each; after a relaunch, a lost response takes the copy path, where matching bodies make no copy, and a pulled `v = 1` for a first-push ID in `meta` whose note is no longer held becomes the same tombstone.
 
 A conflicted push stays dirty until its pull arrives. A failed sync retries at the next scheduled sync. A note whose payload would exceed the [note limit](../docs/PROTOCOL.md#limits) stays dirty and unpushed, and is reported.
 
@@ -208,4 +208,4 @@ body
 
 The fields come in this order and spelling only: `id` lowercase and hyphenated; `created` and `updated` as ISO 8601 in UTC with milliseconds on the proleptic Gregorian calendar, where year `0000` is 1 BC, and, for a year outside 0000–9999, a sign and the year zero-padded to six digits; `v` as a `u32` in decimal.
 
-Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase; any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, and skips every `id` it holds, live or deleted.
+Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase; any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, in one transaction, and skips every `id` it holds, live or deleted.

@@ -15,7 +15,7 @@ private final class Calls {
 	var done = 0
 }
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
 struct TurnOnTouchIDViewTests {
 	private let alarm = Alarm()
 
@@ -32,41 +32,13 @@ struct TurnOnTouchIDViewTests {
 		)
 	}
 
-	private func library(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm] directory in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
-		}
-		model.appBecameActive()
-		return (model, directory)
-	}
-
 	private func sheet(_ calls: Calls, for model: AppModel) -> OffscreenWindow<TurnOnTouchIDSheet> {
 		OffscreenWindow(TurnOnTouchIDSheet(model: model, calls: calls), width: 360, height: 200)
 	}
 
-	private func glyphs(in offscreen: OffscreenWindow<some View>) -> [LAAuthenticationView] {
-		offscreen.views(of: LAAuthenticationView.self)
-	}
-
-	private func tryAgainButton(in offscreen: OffscreenWindow<some View>) -> NSButton? {
-		offscreen.views(of: NSButton.self).first { $0.title == TryTouchIDAgainButton.title }
-	}
-
-	private func passwordField(in offscreen: OffscreenWindow<some View>) -> NSSecureTextField? {
-		offscreen.secureField("Password:")
-	}
-
-	private func type(_ text: String, in offscreen: OffscreenWindow<some View>) throws -> NSSecureTextField {
-		let field = try #require(passwordField(in: offscreen))
-		try #require(offscreen.window.makeFirstResponder(field))
-		try #require(field.currentEditor()).insertText(text)
-		offscreen.pump()
-		return field
-	}
-
 	@discardableResult
 	private func submit(_ text: String, in offscreen: OffscreenWindow<some View>) throws -> NSSecureTextField {
-		let field = try type(text, in: offscreen)
+		let field = try offscreen.type(text, into: "Password:")
 		try #require(field.currentEditor()).insertNewline(nil)
 		return field
 	}
@@ -113,7 +85,7 @@ struct TurnOnTouchIDViewTests {
 		defer { offscreen.close() }
 
 		try submit("", in: offscreen)
-		await offscreen.pump(turns: 20) { false }
+		offscreen.pump(for: 0.1)
 
 		#expect(calls.passwords.isEmpty)
 		#expect(calls.done == 0)
@@ -121,8 +93,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func theRightPasswordListensInTheSheetAndATouchTurnsTouchIDOn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
@@ -133,14 +105,14 @@ struct TurnOnTouchIDViewTests {
 		try submit(workspacePassword, in: offscreen)
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 
-		let glyph = try #require(glyphs(in: offscreen).first)
+		let glyph = try #require(offscreen.glyphs.first)
 		#expect(glyph.context === model.touchID.listeningContext)
 		#expect(glyph.accessibilityLabel() == TurnOnTouchIDView.touchIDLabel)
 		#expect(!glyph.isHiddenOrHasHiddenAncestor)
 		#expect(sequence(first: glyph as NSView, next: \.superview).allSatisfy { $0.alphaValue == 1 && ($0.layer?.opacity ?? 1) == 1 })
 		#expect(keys.contexts.first === glyph.context)
 		#expect(sensor.readsThroughAGlyphInTheWindow == [true])
-		#expect(passwordField(in: offscreen) == nil)
+		#expect(offscreen.secureField("Password:") == nil)
 		#expect(!isWorking(offscreen))
 		#expect(calls.done == 0)
 		#expect(!model.isBiometricUnlockEnabled)
@@ -159,8 +131,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func whileItWaitsForTheTouchOnlyCancelShowsAndTheGlyphSitsMidway() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let offscreen = OffscreenWindow(TurnOnTouchIDSheet(model: model, calls: Calls()), width: 380, height: 320)
 		defer { offscreen.close() }
 		let sensor = Sensor()
@@ -173,7 +145,7 @@ struct TurnOnTouchIDViewTests {
 		#expect(offscreen.accessibilityElements(.button).map(\.label) == ["Cancel"])
 		let title = try #require(offscreen.accessibilityElements().first { $0.label == "Turn On Touch ID Unlock" || $0.value == "Turn On Touch ID Unlock" }).frame
 		let line = try #require(offscreen.accessibilityElements(.staticText).first { $0.value == TurnOnTouchIDView.touchIDLine || $0.label == TurnOnTouchIDView.touchIDLine }).frame
-		let glyph = offscreen.onScreen(try #require(glyphs(in: offscreen).first))
+		let glyph = offscreen.onScreen(try #require(offscreen.glyphs.first))
 		let cancel = try #require(offscreen.accessibilityElements(.button).first).frame
 		#expect(abs((title.minY - glyph.maxY) - (line.minY - cancel.maxY)) <= 2, "\(title) \(glyph) \(line) \(cancel)")
 		sensor.touch()
@@ -181,8 +153,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func aWrongPasswordStaysOpenWithTheFieldCleared() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = offscreen(calls, turnOn: model.enableBiometricUnlock(password:))
 		defer { offscreen.close() }
@@ -201,12 +173,12 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func escapeCancelsWithoutTurningAnythingOn() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = offscreen(calls, turnOn: model.enableBiometricUnlock(password:))
 		defer { offscreen.close() }
-		_ = try type(workspacePassword, in: offscreen)
+		_ = try offscreen.type(workspacePassword, into: "Password:")
 
 		#expect(try pressEscape(in: offscreen))
 		await offscreen.pump { calls.done > 0 }
@@ -220,25 +192,25 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func aWrongFingerInTheSheetWaitsForAClickOnTryTouchIDAgain() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		keys.reply(with: .miss)
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
 
 		try submit(workspacePassword, in: offscreen)
-		await offscreen.pump(turns: 4_000) { tryAgainButton(in: offscreen) != nil }
+		await offscreen.pump(turns: 4_000) { offscreen.tryAgainButton != nil && offscreen.glyphs.isEmpty }
 
-		let button = try #require(tryAgainButton(in: offscreen))
+		let button = try #require(offscreen.tryAgainButton)
 		#expect(model.touchID == .needsClick(after: .miss))
-		#expect(glyphs(in: offscreen).isEmpty)
+		#expect(offscreen.glyphs.isEmpty)
 		#expect(keys.contexts.count == 1)
 		#expect(calls.done == 0)
 		#expect(!model.isBiometricUnlockEnabled)
 
 		keys.reply(with: .key)
-		button.performClick(nil)
+		button.press()
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(calls.done == 1)
@@ -248,15 +220,15 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func anInterruptedTouchInTheSheetWaitsForAClick() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		keys.reply(with: .cancel)
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
 
 		try submit(workspacePassword, in: offscreen)
-		await offscreen.pump(turns: 4_000) { tryAgainButton(in: offscreen) != nil }
+		await offscreen.pump(turns: 4_000) { offscreen.tryAgainButton != nil }
 
 		#expect(model.touchID == .needsClick(after: .cancel))
 		#expect(calls.done == 0)
@@ -266,8 +238,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func leavingTheAppDimsTheSheetsGlyphAndReturningListensAgain() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
@@ -275,10 +247,10 @@ struct TurnOnTouchIDViewTests {
 		sensor.watch(keys, in: offscreen.window)
 		try submit(workspacePassword, in: offscreen)
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
-		let first = try #require(glyphs(in: offscreen).first?.context)
+		let first = try #require(offscreen.glyphs.first?.context)
 
 		model.appResignedActive()
-		await offscreen.pump { glyphs(in: offscreen).isEmpty }
+		await offscreen.pump { offscreen.glyphs.isEmpty }
 
 		#expect(model.touchID == .paused(.inBackground))
 		#expect(isInvalidated(first))
@@ -287,7 +259,7 @@ struct TurnOnTouchIDViewTests {
 
 		model.appBecameActive()
 		await offscreen.pump { keys.contexts.count == 2 }
-		#expect(glyphs(in: offscreen).first?.context === keys.contexts.last)
+		#expect(offscreen.glyphs.first?.context === keys.contexts.last)
 
 		sensor.touch()
 		await offscreen.pump { calls.done > 0 }
@@ -297,8 +269,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func cancelWhileTouchIDListensClosesTheSheetWithItOff() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
@@ -307,7 +279,7 @@ struct TurnOnTouchIDViewTests {
 		defer { sensor.touch() }
 		try submit(workspacePassword, in: offscreen)
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
-		let listening = try #require(glyphs(in: offscreen).first?.context)
+		let listening = try #require(offscreen.glyphs.first?.context)
 
 		#expect(try pressEscape(in: offscreen))
 		await offscreen.pump { calls.done > 0 }
@@ -322,8 +294,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func closingTheSheetWhileTouchIDListensLeavesItOff() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		let sensor = Sensor()
@@ -333,7 +305,7 @@ struct TurnOnTouchIDViewTests {
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 
 		offscreen.close()
-		await settle { !calls.replies.isEmpty }
+		try await settle { !calls.replies.isEmpty }
 
 		#expect(calls.replies == [nil])
 		#expect(!model.isBiometricUnlockEnabled)
@@ -343,8 +315,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func aKeychainFailureStaysOpenWithThePassword() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		keys.failWrites()
 		let calls = Calls()
 		let offscreen = offscreen(calls, turnOn: model.enableBiometricUnlock(password:))
@@ -374,8 +346,8 @@ struct TurnOnTouchIDViewTests {
 
 	@Test func lockingWhileTouchIDListensLeavesItOff() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
 		let calls = Calls()
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }

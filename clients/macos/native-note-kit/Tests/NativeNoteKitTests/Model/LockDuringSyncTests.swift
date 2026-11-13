@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct LockDuringSyncTests {
 	private final class Hanging: SyncTransport, @unchecked Sendable {
 		private let lock = NSLock()
@@ -50,7 +50,7 @@ struct LockDuringSyncTests {
 		let store = try #require(model.store)
 		transport.store = store
 		try await store.enableSync(SyncSettings(server: URL(string: "http://notes.example")!, apiKey: SymmetricKey(size: .bits256), contentKey: SymmetricKey(size: .bits256)), pin: 1)
-		await model.startSync(store)
+		await model.sync.start(store)
 		await transport.requestSent()
 
 		let started = ContinuousClock.now
@@ -58,7 +58,7 @@ struct LockDuringSyncTests {
 
 		#expect(ContinuousClock.now - started < .seconds(10))
 		#expect(transport.cancelled && transport.unwound && transport.libraryOpenWhenUnwound)
-		#expect(model.engine == nil && model.syncLoop == nil)
+		#expect(model.sync.engine == nil && model.sync.syncLoop == nil)
 		#expect(model.phase == .locked)
 	}
 }

@@ -20,8 +20,7 @@ enum PrebuiltLibrary {
 		body: "Evening crossing\npelicans over the lighthouse",
 		createdAt: moment + 2,
 		updatedAt: moment + 3,
-		v: 3,
-		seq: 41
+		v: 3
 	)
 	static let standup = Note(
 		id: UUID(uuidString: "5A1E0000-0000-4000-8000-000000000003")!,
@@ -76,6 +75,7 @@ private func bytes(_ key: SymmetricKey?) -> Data? {
 	key?.withUnsafeBytes { Data($0) }
 }
 
+@Suite(.scratch)
 struct PrebuiltLibraryTests {
 	private func copiedLibrary() throws -> URL {
 		let fixture = try #require(Bundle.module.url(forResource: "fixtures", withExtension: nil)).appending(path: "prebuilt-sqlcipher-4.17.0.db")
@@ -87,7 +87,6 @@ struct PrebuiltLibraryTests {
 
 	@Test func opensWithItsKeyAndKeepsEveryNote() async throws {
 		let url = try copiedLibrary()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
 		let store = try await NoteStore.open(url: url, key: PrebuiltLibrary.key)
 
@@ -110,7 +109,6 @@ struct PrebuiltLibraryTests {
 
 	@Test func searchesTheIndexItWasWrittenWith() async throws {
 		let url = try copiedLibrary()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
 		let store = try await NoteStore.open(url: url, key: PrebuiltLibrary.key)
 
@@ -128,7 +126,6 @@ struct PrebuiltLibraryTests {
 
 	@Test func keepsTakingEditsAndReopens() async throws {
 		let url = try copiedLibrary()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let added = sampleNote(body: "Written after the switch\nmarmalade")
 		var edited = PrebuiltLibrary.recipe
 		edited.body = "Crème brûlée\nseven yolks"
@@ -151,7 +148,6 @@ struct PrebuiltLibraryTests {
 
 	@Test func refusesAnyOtherKey() async throws {
 		let url = try copiedLibrary()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
 		await #expect(throws: SQLiteError.wrongKey) {
 			_ = try await NoteStore.open(url: url, key: databaseKey)

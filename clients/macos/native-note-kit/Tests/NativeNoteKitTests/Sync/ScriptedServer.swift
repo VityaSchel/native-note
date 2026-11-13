@@ -8,10 +8,15 @@ final class ScriptedServer: SyncTransport, @unchecked Sendable {
 	let apiKey = SymmetricKey(size: .bits256)
 	private let lock = NSLock()
 	private var replies: [(Request) throws -> Response] = []
+	private var standingReply: ((Request) throws -> Response)?
 	private(set) var requests: [Request] = []
 
 	func answer(_ reply: @escaping (Request) -> Response) {
 		lock.withLock { replies.append(reply) }
+	}
+
+	func answerEvery(_ reply: @escaping (Request) -> Response) {
+		lock.withLock { standingReply = reply }
 	}
 
 	func refuse(status: Int = 502) {
@@ -24,7 +29,7 @@ final class ScriptedServer: SyncTransport, @unchecked Sendable {
 		let request = try RequestDecoding.decode(try #require(Padding.unpad(padded)))
 		let reply = try lock.withLock {
 			requests.append(request)
-			return try #require(replies.isEmpty ? nil : replies.removeFirst(), "no reply scripted for \(request)")
+			return try #require(replies.isEmpty ? standingReply : replies.removeFirst(), "no reply scripted for \(request)")
 		}
 		let response = try reply(request)
 		let inner = try #require(Padding.pad(responseBytes(response)))

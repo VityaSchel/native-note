@@ -71,17 +71,13 @@ struct SyncSectionTests {
 		return OffscreenWindow(SyncForm(section: SyncSection(controls: controls) { requests.presented.append($0) }), width: 440, height: 360)
 	}
 
-	private func press(_ label: String, in offscreen: OffscreenWindow<SyncForm>) throws {
-		try #require(offscreen.accessibilityElements(.button).first { $0.label == label }).press()
-	}
-
 	@Test func withoutAServerTheSectionOffersSetup() async throws {
 		let requests = Requests()
 		let offscreen = offscreen(AppModel.SyncStatus(), requests)
 		defer { offscreen.close() }
 
 		#expect(offscreen.accessibilityElements(.button).map(\.label) == ["Set Up Sync…"])
-		try press("Set Up Sync…", in: offscreen)
+		try offscreen.press("Set Up Sync…")
 		await offscreen.pump { !requests.presented.isEmpty }
 		#expect(requests.presented == [.setUpSync])
 	}
@@ -96,9 +92,9 @@ struct SyncSectionTests {
 		#expect(texts.contains("http://notes.example:8080/"))
 		#expect(texts.contains("Not synced yet"))
 		#expect(texts.contains("A note is larger than 1 MB."))
-		try press("Sync Now", in: offscreen)
-		try press("Change Server…", in: offscreen)
-		try press("Change Recovery Phrase…", in: offscreen)
+		try offscreen.press("Sync Now")
+		try offscreen.press("Change Server…")
+		try offscreen.press("Change Recovery Phrase…")
 		await offscreen.pump { requests.synced > 0 && requests.presented.count == 2 }
 		#expect(requests.presented == [.changeServer, .changeRecoveryPhrase])
 		#expect(!offscreen.accessibilityElements(.button).contains { $0.label == "Change API Key…" })

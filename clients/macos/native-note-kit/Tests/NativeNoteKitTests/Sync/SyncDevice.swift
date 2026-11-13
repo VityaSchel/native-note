@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Testing
 
 @testable import NativeNoteKit
 
@@ -10,23 +11,16 @@ final class SyncDevice {
 	let store: NoteStore
 	let transport: TestTransport
 	private(set) var engine: SyncEngine
-	private let directory: URL
 	private let settings: SyncSettings
 	private let skew: Int64
 
 	init(_ server: SyncServer, skew: Duration = .zero, contentKey: SymmetricKey = sharedContentKey) async throws {
-		directory = temporaryDirectory()
-		let url = AppLock.databaseFile(in: directory)
-		store = try await openStore(at: url)
+		store = try await openStore(at: temporaryDatabase())
 		transport = TestTransport(server)
 		settings = SyncSettings(server: server.url, apiKey: try server.apiKey, contentKey: contentKey)
 		try await store.enableSync(settings, pin: 1)
 		engine = SyncEngine(store: store, settings: settings, transport: transport)
 		self.skew = skew.components.seconds * 1000
-	}
-
-	deinit {
-		try? FileManager.default.removeItem(at: directory)
 	}
 
 	var now: Int64 {

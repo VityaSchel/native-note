@@ -5,7 +5,7 @@ struct SettingsView: View {
 	let model: AppModel
 
 	var isAvailable: Bool {
-		model.phase == .unlocked
+		model.phase == .unlocked && !model.isOnboarding
 	}
 
 	var body: some View {
@@ -22,7 +22,7 @@ struct SettingsView: View {
 				)
 				.fixedSize(horizontal: false, vertical: true)
 			} else {
-				ContentUnavailableView(Self.lockedMessage, systemImage: "lock")
+				ContentUnavailableView(model.isOnboarding ? Self.setupMessage : Self.lockedMessage, systemImage: "lock")
 					.frame(height: Self.lockedHeight)
 			}
 		}
@@ -30,6 +30,7 @@ struct SettingsView: View {
 	}
 
 	static let lockedMessage = "Unlock Native Note to change settings."
+	static let setupMessage = "Finish setting up Native Note to change settings."
 	static let width: CGFloat = 440
 	static let lockedHeight: CGFloat = 240
 }
@@ -56,8 +57,25 @@ struct SecuritySettings: View {
 	@State private var sheet: Sheet?
 
 	var body: some View {
-		SecurityForm(touchIDAvailable: touchIDAvailable, touchIDEnabled: touchIDEnabled, turnOffTouchID: turnOffTouchID, sync: sync) { sheet = $0 }
-			.sheet(item: $sheet) { content(for: $0) { sheet = nil } }
+		Form {
+			Section("Unlock") {
+				LabeledContent {
+					Button("Change Password…") { sheet = .changePassword }
+				} label: {
+					Text("Password")
+					Text("The app is encrypted with this password. It cannot be recovered.")
+				}
+				if touchIDAvailable {
+					Toggle(isOn: Binding(get: { touchIDEnabled }, set: { on in if on { sheet = .turnOnTouchID } else { turnOffTouchID() } })) {
+						Text("Touch ID")
+						Text("Unlock the app with your fingerprint.")
+					}
+				}
+			}
+			SyncSection(controls: sync) { sheet = $0 }
+		}
+		.formStyle(.grouped)
+		.sheet(item: $sheet) { content(for: $0) { sheet = nil } }
 	}
 
 	@ViewBuilder
@@ -80,35 +98,6 @@ struct SecuritySettings: View {
 		case .changeRecoveryPhrase:
 			SyncSetupView(mode: .rotate, controls: sync, done: done)
 		}
-	}
-}
-
-struct SecurityForm: View {
-	let touchIDAvailable: Bool
-	let touchIDEnabled: Bool
-	let turnOffTouchID: () -> Void
-	var sync = SyncControls()
-	let present: (SecuritySettings.Sheet) -> Void
-
-	var body: some View {
-		Form {
-			Section("Unlock") {
-				LabeledContent {
-					Button("Change Password…") { present(.changePassword) }
-				} label: {
-					Text("Password")
-					Text("The app is encrypted with this password. It cannot be recovered.")
-				}
-				if touchIDAvailable {
-					Toggle(isOn: Binding(get: { touchIDEnabled }, set: { on in if on { present(.turnOnTouchID) } else { turnOffTouchID() } })) {
-						Text("Touch ID")
-						Text("Unlock the app with your fingerprint.")
-					}
-				}
-			}
-			SyncSection(controls: sync, present: present)
-		}
-		.formStyle(.grouped)
 	}
 }
 

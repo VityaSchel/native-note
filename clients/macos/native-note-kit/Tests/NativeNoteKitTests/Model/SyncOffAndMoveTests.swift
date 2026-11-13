@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct SyncOffAndMoveTests {
 	private func mac() async throws -> (AppModel, URL) {
 		try await unlockedModel { AppModel(directory: $0, makeTransport: { HTTPTransport(url: $0) }, syncDelay: .seconds(3600)) }
@@ -27,8 +27,7 @@ struct SyncOffAndMoveTests {
 
 	@Test func turningSyncOffKeepsTheNotesAndStopsSyncing() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingMac(server, notes: ["kept", "also kept"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingMac(server, notes: ["kept", "also kept"])
 
 		#expect(await model.turnOffSync())
 
@@ -43,8 +42,7 @@ struct SyncOffAndMoveTests {
 
 	@Test func settingUpAgainOnTheSameServerReattachesWithoutWordsAndSendsWhatChanged() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingMac(server, notes: ["first"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingMac(server, notes: ["first"])
 		let pin = try await model.store?.pin()
 		#expect(await model.turnOffSync())
 		try await fill(model, with: ["written while off"])
@@ -60,8 +58,7 @@ struct SyncOffAndMoveTests {
 	@Test func settingUpOnAnEmptyServerMovesTheLibraryUnderANewPhraseAndAnotherMacJoinsIt() async throws {
 		let old = try SyncServer()
 		let new = try SyncServer()
-		let (model, directory, _) = try await syncingMac(old, notes: ["shopping", "trip"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingMac(old, notes: ["shopping", "trip"])
 		let shown = try #require(model.selection)
 		await model.delete(shown)
 		await model.syncNow()
@@ -78,8 +75,7 @@ struct SyncOffAndMoveTests {
 		#expect(try await bodiesOn(new) == 1)
 		#expect(try await bodiesOn(old) == 2)
 		#expect(try await model.store?.pin() == 1)
-		let (other, otherDirectory) = try await mac()
-		defer { try? FileManager.default.removeItem(at: otherDirectory) }
+		let (other, _) = try await mac()
 		#expect(await other.joinSync(server: new.url.absoluteString, apiKey: try apiKeyText(new), phrase: entry(phrase.words)) == nil)
 		await other.syncNow()
 		#expect(other.notes.map(\.body) == model.notes.map(\.body))
@@ -88,10 +84,8 @@ struct SyncOffAndMoveTests {
 	@Test func aServerHoldingAnotherLibraryIsRefusedAndNothingChanges() async throws {
 		let mine = try SyncServer()
 		let theirs = try SyncServer()
-		let (model, directory, _) = try await syncingMac(mine, notes: ["mine"])
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let (other, otherDirectory, _) = try await syncingMac(theirs, notes: ["theirs", "and more of theirs"])
-		defer { try? FileManager.default.removeItem(at: otherDirectory) }
+		let (model, _, _) = try await syncingMac(mine, notes: ["mine"])
+		let (other, _, _) = try await syncingMac(theirs, notes: ["theirs", "and more of theirs"])
 		_ = other
 		#expect(await model.turnOffSync())
 
@@ -104,8 +98,7 @@ struct SyncOffAndMoveTests {
 	@Test func changingServerWhileSyncingMovesTheLibraryAndStopsTheOldSync() async throws {
 		let old = try SyncServer()
 		let new = try SyncServer()
-		let (model, directory, _) = try await syncingMac(old, notes: ["moving"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingMac(old, notes: ["moving"])
 
 		guard case let .success(.newLibrary(phrase)) = await model.prepareSync(server: new.url.absoluteString, apiKey: try apiKeyText(new)) else {
 			Issue.record("the empty server did not ask for a new phrase")
@@ -122,8 +115,7 @@ struct SyncOffAndMoveTests {
 
 	@Test func changingToTheSameLibraryAtANewAddressReattaches() async throws {
 		let server = try SyncServer()
-		let (model, directory, _) = try await syncingMac(server, notes: ["same library"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _, _) = try await syncingMac(server, notes: ["same library"])
 		let before = server.url
 		try server.restart()
 		try #require(server.url != before)

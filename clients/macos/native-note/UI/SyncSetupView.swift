@@ -1,4 +1,3 @@
-import AppKit
 import NativeNoteKit
 import SwiftUI
 
@@ -10,7 +9,7 @@ struct SyncControls {
 	var joinSync: (String, String, PhraseEntry) async -> AppModel.SyncSetupFailure? = { _, _, _ in nil }
 	var prepareRotation: () async -> AppModel.RecoveryPhrase? = { nil }
 	var finishRotation: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
-	var adoptCurrentPhrase: (String) async -> AppModel.SyncSetupFailure? = { _ in nil }
+	var adoptCurrentPhrase: (PhraseEntry) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var turnOffSync: () async -> Bool = { false }
 	var cancel: () -> Void = {}
 }
@@ -40,7 +39,6 @@ struct SyncSetupView: View {
 	let announce: (String) -> Void
 
 	@State private var form: SyncSetupForm
-	@State private var revealed = false
 	@FocusState private var serverFocused: Bool
 	@State private var phraseTookEffect = false
 	@State private var running: Task<Void, Never>?
@@ -67,16 +65,15 @@ struct SyncSetupView: View {
 
 	var body: some View {
 		sheet
-			.textFieldStyle(.roundedBorder)
-		.defaultFocus($serverFocused, true)
-		.onDisappear {
-			if !phraseTookEffect { clipboard.clear() }
-		}
-		.task {
-			guard form.step == .preparing else { return }
-			form.begin()
-			form.show(await controls.prepareRotation())
-		}
+			.defaultFocus($serverFocused, true)
+			.onDisappear {
+				if !phraseTookEffect { clipboard.clear() }
+			}
+			.task {
+				guard form.step == .preparing else { return }
+				form.begin()
+				form.show(await controls.prepareRotation())
+			}
 	}
 
 	private var sheet: some View {
@@ -128,9 +125,7 @@ struct SyncSetupView: View {
 	}
 
 	static func list(_ numbers: [Int]) -> String {
-		let names = numbers.map(String.init)
-		guard let last = names.last, names.count > 1 else { return names.first ?? "" }
-		return names.dropLast().joined(separator: ", ") + " and " + last
+		numbers.formatted(.list(memberStyle: .number, type: .and))
 	}
 
 	private var title: String {
@@ -159,7 +154,7 @@ struct SyncSetupView: View {
 			}
 			.formStyle(.columns)
 		case let .words(phrase):
-			RecoveryWords(words: phrase.words, revealed: revealed) { revealed = true }
+			RecoveryWords(words: phrase.words, revealed: form.wordsRevealed) { form.revealWords() }
 			Button("Copy Words") { clipboard.copy(phrase.words) }
 		case let .confirm(phrase):
 			Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 6) {
@@ -167,7 +162,7 @@ struct SyncSetupView: View {
 					GridRow {
 						WordNumber(index: index)
 						TextField("Word \(index + 1)", text: $form.answers[position], prompt: Text(verbatim: ""))
-							.foregroundStyle(PhraseEntry.couldBeListWord(form.answers[position]) ? AnyShapeStyle(.primary) : AnyShapeStyle(.red))
+							.flagsUnknownWord(!PhraseEntry.couldBeListWord(form.answers[position]))
 							.autocorrectionDisabled()
 							.onSubmit(send)
 					}
@@ -225,7 +220,7 @@ struct SyncSetupView: View {
 			}
 		case .currentPhrase:
 			form.begin()
-			let phrase = form.currentEntry.words.joined(separator: " ")
+			let phrase = form.currentEntry
 			running = Task {
 				if let failure = await controls.adoptCurrentPhrase(phrase) {
 					form.finished(failure)
@@ -250,17 +245,11 @@ struct RecoveryWords: View {
 		ZStack {
 			if revealed {
 				RecoveryColumns(words: words)
+					.accessibilityRepresentation { Text(verbatim: RecoveryClipboard.list(words)) }
 			} else {
-				HStack(alignment: .top, spacing: RecoveryColumnsView.gap) {
-					ForEach(0 ..< Self.columns, id: \.self) { column in
-						Text(RecoveryColumnsView.lines(words.map { _ in Self.hiddenWord }, column: column).joined(separator: "\n"))
-					}
-				}
-				.monospacedDigit()
-				.lineSpacing(6)
-				.fixedSize()
-				.blur(radius: 7)
-				.accessibilityHidden(true)
+				RecoveryColumns(words: words.map { _ in Self.hiddenWord })
+					.blur(radius: 7)
+					.accessibilityHidden(true)
 				VStack(spacing: 10) {
 					Text(Self.warning)
 						.font(.callout)
@@ -271,6 +260,33 @@ struct RecoveryWords: View {
 		.padding(12)
 		.frame(maxWidth: .infinity)
 		.background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+	}
+
+	static func positions(inColumn column: Int, of count: Int) -> Range<Int> {
+		min(column * rows, count) ..< min((column + 1) * rows, count)
+	}
+}
+
+struct RecoveryColumns: View {
+	let words: [String]
+
+	var body: some View {
+		HStack(alignment: .top, spacing: 24) {
+			ForEach(0 ..< RecoveryWords.columns, id: \.self) { column in
+				Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 6) {
+					ForEach(RecoveryWords.positions(inColumn: column, of: words.count), id: \.self) { position in
+						GridRow {
+							Text(verbatim: "\(position + 1).")
+								.foregroundStyle(.secondary)
+								.gridColumnAlignment(.trailing)
+							Text(verbatim: words[position])
+						}
+					}
+				}
+			}
+		}
+		.monospacedDigit()
+		.fixedSize()
 	}
 }
 

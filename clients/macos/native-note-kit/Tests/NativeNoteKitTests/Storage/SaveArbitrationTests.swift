@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch)
 struct SaveArbitrationTests {
 	private func pulled(_ store: NoteStore, _ note: Note, body: String, v: UInt32) async throws {
 		let cipher = NoteCipher(contentKey: sharedContentKey)
@@ -78,5 +78,22 @@ struct SaveArbitrationTests {
 		#expect(try await store.save(note) == .saved)
 		let tombstone = try #require(try await store.note(id: note.id))
 		#expect(tombstone.deleted && tombstone.body.isEmpty)
+	}
+
+	@Test func aNewNoteLeftEmptyBeforeAPullWasShownKeepsThePulledTextAndIsTombstonedOnceItWas() async throws {
+		let store = try await openStore(at: temporaryDatabase())
+		let note = Note(id: UUID(), body: " ", createdAt: 1, updatedAt: 2, v: 1)
+		try await store.save(note)
+		try await pulled(store, note, body: "from elsewhere", v: 2)
+
+		try await store.discardUnsynced(id: note.id, shownAt: 1, at: 10)
+
+		let kept = try #require(try await store.note(id: note.id))
+		#expect((kept.body, kept.deleted, kept.dirty, kept.v) == ("from elsewhere", false, false, 2))
+
+		try await store.discardUnsynced(id: note.id, shownAt: 2, at: 11)
+
+		let tombstone = try #require(try await store.note(id: note.id))
+		#expect((tombstone.body, tombstone.deleted, tombstone.dirty, tombstone.v) == ("", true, true, 2))
 	}
 }

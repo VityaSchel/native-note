@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct SyncOfferTests {
 	private struct Offline: SyncTransport {
 		func post(_ body: Data) async throws -> Data {
@@ -26,8 +26,7 @@ struct SyncOfferTests {
 	}
 
 	@Test func settingUpTheLibraryStartsOnboardingOnceAndLockingEndsIt() async throws {
-		let (model, directory) = freshMac()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = freshMac()
 		try #require(model.phase == .needsSetup)
 
 		await model.submit(password: workspacePassword)
@@ -42,8 +41,7 @@ struct SyncOfferTests {
 	}
 
 	@Test func notNowLeavesSyncToSettings() async throws {
-		let (model, directory) = freshMac()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = freshMac()
 		await model.submit(password: workspacePassword)
 
 		model.finishOnboarding()
@@ -60,8 +58,7 @@ struct SyncOfferTests {
 		await first.syncNow()
 		try #require(first.syncStatus.phase == .idle)
 
-		let (wiped, directory) = freshMac(server)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (wiped, _) = freshMac(server)
 		await wiped.submit(password: "a new password")
 		try #require(wiped.isOnboarding)
 		#expect(await wiped.joinSync(server: server.url.absoluteString, apiKey: try apiKeyText(server), phrase: entry(phrase.words)) == nil)

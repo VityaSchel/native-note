@@ -34,6 +34,7 @@ private func throughThePragma(_ url: URL, key: String, _ statements: [String]) t
 	return last
 }
 
+@Suite(.scratch)
 struct RawKeyTests {
 	private let replacement = SymmetricKey(data: Data(repeating: 0x43, count: 32))
 
@@ -54,7 +55,6 @@ struct RawKeyTests {
 
 	@Test func aLibraryKeyedThroughThePragmaOpensWithTheSameKey() throws {
 		let url = try database()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try throughThePragma(url, key: literal(databaseKey), ["CREATE TABLE kept (x)", "INSERT INTO kept VALUES ('keyed through the pragma')"])
 
 		let connection = try SQLiteConnection(url: url, rawKey: databaseKey)
@@ -64,7 +64,6 @@ struct RawKeyTests {
 
 	@Test func aLibraryKeyedDirectlyOpensThroughThePragma() throws {
 		let url = try database()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		do {
 			let connection = try SQLiteConnection(url: url, rawKey: databaseKey)
 			try connection.execute("CREATE TABLE kept (x); INSERT INTO kept VALUES ('keyed directly')")
@@ -75,7 +74,6 @@ struct RawKeyTests {
 
 	@Test func aRekeyOpensThroughThePragmaWithOnlyTheNewKey() throws {
 		let url = try database()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		do {
 			let connection = try SQLiteConnection(url: url, rawKey: databaseKey)
 			try connection.execute("CREATE TABLE kept (x); INSERT INTO kept VALUES ('rekeyed directly')")
@@ -90,7 +88,6 @@ struct RawKeyTests {
 
 	@Test func aRekeyThroughThePragmaOpensWithOnlyTheNewKey() throws {
 		let url = try database()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try throughThePragma(url, key: literal(databaseKey), [
 			"CREATE TABLE kept (x)",
 			"INSERT INTO kept VALUES ('rekeyed through the pragma')",
@@ -105,7 +102,6 @@ struct RawKeyTests {
 
 	@Test func theKeyIsNeverTakenAsAPassphrase() throws {
 		let url = try database()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let passphrase = String(literal(databaseKey).dropFirst(2).dropLast())
 		try throughThePragma(url, key: passphrase, ["CREATE TABLE kept (x)"])
 

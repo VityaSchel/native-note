@@ -14,10 +14,7 @@ nonisolated public enum LibraryIntegrity {
 		guard let wal = FileHandle(forReadingAtPath: AppLock.databaseFile(in: directory).path + "-wal") else { return nil }
 		defer { try? wal.close() }
 		guard let header = try? wal.read(upToCount: 16), header.count == 16 else { return nil }
-		let words = stride(from: 0, to: 16, by: 4).map { start in
-			header.dropFirst(start).prefix(4).reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
-		}
-		guard [0x377F_0682, 0x377F_0683].contains(words[0]) else { return nil }
-		return Int(words[3])
+		guard [0x377F_0682, 0x377F_0683].contains(UInt32(bigEndianBytes: header.prefix(4))) else { return nil }
+		return Int(UInt32(bigEndianBytes: header.suffix(4)))
 	}
 }

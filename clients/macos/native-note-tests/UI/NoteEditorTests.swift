@@ -5,7 +5,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.takesFocus)
 struct NoteEditorTests {
 	private let bodySize = NSFont.preferredFont(forTextStyle: .body).pointSize
 	private let headingSize = NSFont.preferredFont(forTextStyle: .largeTitle).pointSize

@@ -16,6 +16,7 @@ struct UnlockView: View {
 	@State private var confirmingErase = false
 	@State private var anchor = WindowAnchor()
 	@FocusState private var typingPassword: Bool
+	@Environment(\.accessibilityReduceMotion) private var reduceMotion
 
 	var body: some View {
 		VStack(spacing: 18) {
@@ -44,14 +45,11 @@ struct UnlockView: View {
 			passwordField
 
 			if touchID.isBiometricUnlockEnabled || line != nil {
-				Text(line ?? " ")
+				ReservedLine(text: line)
 					.font(.callout)
 					.foregroundStyle(.secondary)
 					.multilineTextAlignment(.center)
-					.fixedSize(horizontal: false, vertical: true)
 					.padding(.top, 8)
-					.opacity(line == nil ? 0 : 1)
-					.accessibilityHidden(line == nil)
 			}
 
 			if eraseLibrary != nil {
@@ -80,7 +78,7 @@ struct UnlockView: View {
 	private var passwordField: some View {
 		ZStack {
 			if case let .listening(context) = touchID.state {
-				TouchIDGlyph(mode: .listening(context), label: nil, size: .mini, listen: touchID.listen)
+				TouchIDGlyph(mode: .listening(context, label: nil), size: .mini, listen: touchID.listen)
 					.frame(width: Self.coveredGlyphSide, height: Self.coveredGlyphSide)
 					.allowsHitTesting(false)
 					.accessibilityHidden(true)
@@ -88,8 +86,6 @@ struct UnlockView: View {
 
 			HStack(spacing: 6) {
 				SecureField("Password", text: $form.password)
-					.textFieldStyle(.plain)
-					.font(.system(size: 15))
 					.focused($typingPassword)
 					.onSubmit(send)
 					.disabled(opensWithTouchID)
@@ -110,13 +106,9 @@ struct UnlockView: View {
 				}
 				.frame(width: Self.arrowSide, height: Self.arrowSide)
 			}
-			.padding(.leading, 14)
-			.padding(.trailing, 7)
-			.frame(height: Self.fieldHeight)
-			.background(Color(nsColor: .textBackgroundColor), in: Capsule())
-			.overlay(Capsule().strokeBorder(.separator))
+			.capsuleField(trailingInset: 7)
 		}
-		.animation(.linear(duration: ShakeEffect.duration)) { $0.modifier(ShakeEffect(animatableData: CGFloat(shake.count))) }
+		.animation(.linear(duration: ShakeEffect.duration)) { $0.modifier(ShakeEffect(animatableData: reduceMotion ? 0 : CGFloat(shake.count))) }
 	}
 
 	private var opensWithTouchID: Bool {

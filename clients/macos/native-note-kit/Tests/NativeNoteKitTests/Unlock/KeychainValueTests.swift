@@ -5,6 +5,7 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct KeychainValueTests {
 	@Test func theValueHandedToTheKeychainHoldsTheKeyAndIsWipedAfterwards() {
 		let key = SymmetricKey(data: Data((0 ..< 32).map { UInt8($0 + 1) }))

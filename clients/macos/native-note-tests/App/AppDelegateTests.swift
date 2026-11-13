@@ -5,14 +5,13 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct AppDelegateTests {
 	private let alarm = Alarm()
 	private let shaking = Alarm()
 
 	@Test func quittingWaitsForThePendingSave() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -22,7 +21,7 @@ struct AppDelegateTests {
 
 		model.edit(id, "typed then quit")
 		#expect(delegate.terminate { replied = $0 } == .terminateLater)
-		await settle { replied != nil }
+		try await settle { replied != nil }
 
 		#expect(replied == true)
 		#expect(prompt.reasons.isEmpty)
@@ -31,10 +30,10 @@ struct AppDelegateTests {
 
 	@Test func quittingWithEditsThatCannotBeSavedAsksFirst() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
 		let blocker = try await connection(to: directory)
+		try await model.store?.failAtOnceWhenLocked()
 		let prompt = QuitPrompt()
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: prompt.ask)
 		var replied: Bool?
@@ -42,7 +41,7 @@ struct AppDelegateTests {
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed while the database was busy")
 		_ = delegate.terminate { replied = $0 }
-		await settle { replied != nil }
+		try await settle { replied != nil }
 		#expect(replied == false)
 		#expect(prompt.reasons.count == 1)
 		#expect(prompt.reasons.first?.isEmpty == false)
@@ -50,15 +49,95 @@ struct AppDelegateTests {
 		prompt.quitAnyway = true
 		replied = nil
 		_ = delegate.terminate { replied = $0 }
-		await settle { replied != nil }
+		try await settle { replied != nil }
 		#expect(replied == true)
 		#expect(prompt.reasons.count == 2)
 		try blocker.execute("ROLLBACK")
 	}
 
+	private func privatePasteboard() -> NSPasteboard {
+		NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
+	}
+
+	@Test func lockingWithNoWindowOpenTakesCopiedRecoveryWordsOffThePasteboard() async throws {
+		let pasteboard = privatePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let clipboard = RecoveryClipboard(pasteboard)
+		let (model, _) = try await unlockedModel(alarm: alarm)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, clipboard: clipboard)
+		clipboard.copy(["abandon", "ability"])
+		try #require(pasteboard.string(forType: .string) != nil)
+
+		try await lock(model, seenBy: delegate)
+
+		#expect(pasteboard.string(forType: .string) == nil)
+	}
+
+	private func lock(_ model: AppModel, seenBy delegate: AppDelegate) async throws {
+		delegate.exchange.isExporting = true
+		await model.lock()
+		try await settle { !delegate.exchange.isExporting }
+	}
+
+	@Test func quittingTakesCopiedRecoveryWordsOffThePasteboard() async throws {
+		let pasteboard = privatePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let clipboard = RecoveryClipboard(pasteboard)
+		let (model, _) = try await unlockedModel(alarm: alarm)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, clipboard: clipboard)
+		clipboard.copy(["abandon", "ability"])
+		var replied: Bool?
+
+		_ = delegate.terminate { replied = $0 }
+		try await settle { replied != nil }
+
+		#expect(replied == true)
+		#expect(pasteboard.string(forType: .string) == nil)
+	}
+
+	@Test func lockingAndQuittingClearWhatTheFindBarPutOnTheFindPasteboard() async throws {
+		let pasteboard = privatePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let (model, _) = try await unlockedModel(alarm: alarm)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, findPasteboard: FindPasteboard(pasteboard))
+		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+		pasteboard.clearContents()
+		pasteboard.setString("a line from a note", forType: .string)
+
+		try await lock(model, seenBy: delegate)
+		#expect(pasteboard.string(forType: .string) == nil)
+
+		await model.submit(password: workspacePassword)
+		pasteboard.clearContents()
+		pasteboard.setString("searched after unlocking", forType: .string)
+		delegate.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
+		var replied: Bool?
+		_ = delegate.terminate { replied = $0 }
+		try await settle { replied != nil }
+		#expect(pasteboard.string(forType: .string) == nil)
+	}
+
+	@Test func lockingLeavesAFindStringAnotherAppWrote() async throws {
+		let pasteboard = privatePasteboard()
+		defer { pasteboard.releaseGlobally() }
+		let (model, _) = try await unlockedModel(alarm: alarm)
+		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, findPasteboard: FindPasteboard(pasteboard))
+		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+		pasteboard.clearContents()
+		pasteboard.setString("a line from a note", forType: .string)
+		delegate.applicationWillResignActive(Notification(name: NSApplication.willResignActiveNotification))
+		pasteboard.clearContents()
+		pasteboard.setString("searched in another app", forType: .string)
+		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+
+		try await lock(model, seenBy: delegate)
+
+		try #require(!delegate.exchange.isExporting)
+		#expect(pasteboard.string(forType: .string) == "searched in another app")
+	}
+
 	@Test func quittingClosesTheLibrary() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
 		let sidecars = { try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix("-wal") || $0.hasSuffix("-shm") } }
@@ -66,7 +145,7 @@ struct AppDelegateTests {
 		#expect(try !sidecars().isEmpty)
 
 		_ = delegate.terminate { replied = $0 }
-		await settle { replied != nil }
+		try await settle { replied != nil }
 
 		#expect(replied == true)
 		#expect(try sidecars().isEmpty)
@@ -74,17 +153,17 @@ struct AppDelegateTests {
 
 	@Test func cancellingTheQuitKeepsTheLibraryOpen() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.createNote()
 		let id = try #require(model.selection)
 		let blocker = try await connection(to: directory)
+		try await model.store?.failAtOnceWhenLocked()
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
 		var replied: Bool?
 
 		try blocker.execute("BEGIN IMMEDIATE")
 		model.edit(id, "typed while the database was busy")
 		_ = delegate.terminate { replied = $0 }
-		await settle { replied != nil }
+		try await settle { replied != nil }
 		try blocker.execute("ROLLBACK")
 
 		#expect(replied == false)
@@ -92,18 +171,14 @@ struct AppDelegateTests {
 		#expect(try await observer(of: directory).note(id: id)?.body == "typed while the database was busy")
 	}
 
-	private func lockedWithTouchID(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm, shaking] directory in
+	private var library: Workspace {
+		Workspace { [alarm, shaking] directory, keys in
 			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys, shakeTimer: shaking.sleep)
 		}
-		try await turnOnTouchID(model)
-		await model.lock()
-		return (model, directory)
 	}
 
 	@Test func leavingTheLockedAppStopsTouchIDAndReturningListensAgain() async throws {
-		let (model, directory) = try await lockedWithTouchID(FakeKeyStore())
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(FakeKeyStore())
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
 		let listening = try #require(model.touchID.listeningContext)
 
@@ -121,8 +196,7 @@ struct AppDelegateTests {
 
 	@Test func aLibraryThatOpensLockedListensOnceTheAppIsActive() async throws {
 		let keys = FakeKeyStore()
-		let (_, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (_, directory) = try await library.lockedWithTouchID(keys)
 		let relaunched = AppModel(directory: directory, keyStore: keys)
 		let delegate = AppDelegate(model: relaunched, confirmQuitLosingEdits: QuitPrompt().ask)
 		relaunched.start()
@@ -136,8 +210,7 @@ struct AppDelegateTests {
 
 	@Test func aMissShakesThroughALeaveAndReturnThenListensAgain() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await lockedWithTouchID(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.lockedWithTouchID(keys)
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask)
 		keys.reply(with: .miss)
 		try #require(await touch(model))
@@ -146,8 +219,8 @@ struct AppDelegateTests {
 		delegate.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
 
 		#expect(model.touchID == .paused(.shaking))
-		await ring(shaking)
-		await settle { !model.shake.isRunning }
+		try await ring(shaking)
+		try await settle { !model.shake.isRunning }
 		let fresh = try #require(model.touchID.listeningContext)
 		#expect(fresh !== keys.contexts.first)
 		#expect(!isInvalidated(fresh))
@@ -177,7 +250,6 @@ struct AppDelegateTests {
 
 	@Test func leavingTheAppSavesAtOnce() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -192,7 +264,6 @@ struct AppDelegateTests {
 
 	@Test func sleepingSavesAndLocks() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let disk = try await observer(of: directory)
 		await model.createNote()
 		let id = try #require(model.selection)
@@ -205,14 +276,13 @@ struct AppDelegateTests {
 		try await settle { try await disk.note(id: id)?.body == "typed then slept" }
 
 		#expect(try await disk.note(id: id)?.body == "typed then slept")
-		await settle { model.phase == .locked }
+		try await settle { model.phase == .locked }
 		#expect(model.phase == .locked)
 	}
 
 	@Test func aLockedScreenOrAnotherUsersSessionLocksTheLibrary() async throws {
 		for away in ["screen", "session"] {
-			let (model, directory) = try await unlockedModel(alarm: alarm)
-			defer { try? FileManager.default.removeItem(at: directory) }
+			let (model, _) = try await unlockedModel(alarm: alarm)
 			let workspace = NotificationCenter()
 			let notice = Self.privateScreenLockNotice()
 			let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, workspace: workspace, screenLocked: notice)
@@ -223,7 +293,7 @@ struct AppDelegateTests {
 			} else {
 				workspace.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
 			}
-			await settle { model.phase == .locked }
+			try await settle { model.phase == .locked }
 
 			#expect(model.phase == .locked, "\(away)")
 		}
@@ -231,7 +301,6 @@ struct AppDelegateTests {
 
 	@Test func goingAwayBeforeSetupLeavesTheFirstRunAlone() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(libraryAt: directory)
 		model.start()
 		let notice = Self.privateScreenLockNotice()

@@ -3,31 +3,29 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct LockWhileAwayTests {
 	private let alarm = Alarm()
 
 	@Test func goingAwayLocksAnUnlockedLibrary() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["private"])
 
 		model.lockWhileAway()
-		await settle { model.phase == .locked && model.store == nil }
+		try await settle { model.phase == .locked && model.store == nil }
 
 		#expect(model.phase == .locked)
 		#expect(model.notes.isEmpty && model.store == nil)
 	}
 
 	@Test func goingAwayWhileThePasswordIsCheckedLocksAgainOnceItOpens() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["private"])
 		await model.lock()
 
 		let unlocking = Task { await model.unlock(password: workspacePassword) }
-		await settle { model.isCheckingPassword }
-		try #require(model.isCheckingPassword)
+		try await settle { model.biometricUnlock.isCheckingPassword }
+		try #require(model.biometricUnlock.isCheckingPassword)
 		model.lockWhileAway()
 		await unlocking.value
 
@@ -39,8 +37,7 @@ struct LockWhileAwayTests {
 	}
 
 	@Test func goingAwayBeforeAnUnlockStartsLeavesItAlone() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.lock()
 
 		model.lockWhileAway()

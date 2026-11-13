@@ -58,7 +58,6 @@ extension LibraryEndToEndTests {
 
 	@Test func theVerifierFindsEveryAcknowledgedSaveAfterTheTypistStopsAbruptly() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 
 		let prepared = try await runTypist(["prepare", directory.path, workspacePassword])
 		#expect(prepared.status == 0)
@@ -86,7 +85,6 @@ extension LibraryEndToEndTests {
 
 	@Test func theControlTypistAcknowledgesTextTheVerifierCannotFind() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		#expect(try await runTypist(["prepare", directory.path, workspacePassword]).status == 0)
 
 		let typing = try await runTypist(["acknowledge-before-saving", directory.path, workspacePassword, "3"])
@@ -105,7 +103,6 @@ extension LibraryEndToEndTests {
 
 	@Test func theVerifierReportsALibraryThatDoesNotUnlock() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
 
@@ -118,7 +115,6 @@ extension LibraryEndToEndTests {
 
 	@Test func theVerifierLeavesAMissingLibraryUnset() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 
 		let report = try await verify(directory)
 

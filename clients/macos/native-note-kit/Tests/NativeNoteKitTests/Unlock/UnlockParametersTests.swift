@@ -3,10 +3,10 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct UnlockParametersTests {
 	private static func encoded(_ parameters: UnlockParameters) throws -> Data {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = AppLock.currentFile(in: directory)
 		try AppLock.write(parameters, to: file)
 		return try Data(contentsOf: file)

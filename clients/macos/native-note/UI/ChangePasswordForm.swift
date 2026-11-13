@@ -23,11 +23,7 @@ struct ChangePasswordForm {
 
 	var inlineMessage: String? {
 		if mismatched { return "The new passwords do not match." }
-		return switch failure {
-		case .wrongPassword: "Wrong current password."
-		case let .unexpected(reason), let .unsaved(reason), let .failed(reason, _): reason
-		case .wrongExportPassphrase, nil: nil
-		}
+		return failure?.inlineMessage(wrongPassword: "Wrong current password.")
 	}
 
 	mutating func submit() -> (current: String, new: String)? {
@@ -43,7 +39,8 @@ struct ChangePasswordForm {
 
 	mutating func finish(_ failure: AppModel.Failure?) {
 		working = false
-		if failure == .wrongPassword { current = "" }
+		if failure == nil || failure == .wrongPassword { current = "" }
+		if failure == nil { (password, confirmation) = ("", "") }
 		self.failure = failure
 	}
 }

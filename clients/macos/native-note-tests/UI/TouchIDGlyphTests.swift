@@ -21,13 +21,13 @@ struct TouchIDGlyphTests {
 		let context = LAContext()
 		let view = glyph()
 
-		view.show(.listening(context), label: TurnOnTouchIDView.touchIDLabel)
-		await settle { !heard.glyphs.isEmpty }
+		view.show(.listening(context, label: TurnOnTouchIDView.touchIDLabel))
+		await staysTrue { heard.glyphs.isEmpty }
 		#expect(heard.glyphs.isEmpty)
 		#expect(view.paired?.context === context)
 
 		window.contentView = view
-		await settle { !heard.glyphs.isEmpty }
+		try await settle { !heard.glyphs.isEmpty }
 
 		#expect(heard.glyphs.count == 1)
 		#expect(heard.glyphs.first === view.paired)
@@ -41,11 +41,12 @@ struct TouchIDGlyphTests {
 		let context = LAContext()
 		let view = glyph()
 		window.contentView = view
-		view.show(.listening(context), label: TurnOnTouchIDView.touchIDLabel)
+		view.show(.listening(context, label: TurnOnTouchIDView.touchIDLabel))
 		let paired = try #require(view.paired)
 
-		view.show(.listening(context), label: TurnOnTouchIDView.touchIDLabel)
-		await settle { heard.glyphs.count > 1 }
+		view.show(.listening(context, label: TurnOnTouchIDView.touchIDLabel))
+		try await settle { heard.glyphs.count == 1 }
+		await staysTrue { heard.glyphs.count == 1 }
 
 		#expect(view.paired === paired)
 		#expect(heard.glyphs.count == 1)
@@ -56,10 +57,10 @@ struct TouchIDGlyphTests {
 		let second = LAContext()
 		let view = glyph()
 		window.contentView = view
-		view.show(.listening(first), label: TurnOnTouchIDView.touchIDLabel)
+		view.show(.listening(first, label: TurnOnTouchIDView.touchIDLabel))
 
-		view.show(.listening(second), label: TurnOnTouchIDView.touchIDLabel)
-		await settle { heard.glyphs.count == 2 }
+		view.show(.listening(second, label: TurnOnTouchIDView.touchIDLabel))
+		try await settle { heard.glyphs.count == 2 }
 
 		#expect(view.paired?.context === second)
 		#expect(view.subviews.count == 1)
@@ -72,7 +73,7 @@ struct TouchIDGlyphTests {
 		let context = LAContext()
 		let view = glyph()
 		window.contentView = view
-		view.show(.listening(context), label: TurnOnTouchIDView.touchIDLabel)
+		view.show(.listening(context, label: TurnOnTouchIDView.touchIDLabel))
 
 		window.contentView = nil
 
@@ -84,7 +85,7 @@ struct TouchIDGlyphTests {
 		let holder = NSView()
 		let view = glyph()
 		holder.addSubview(view)
-		view.show(.listening(context), label: TurnOnTouchIDView.touchIDLabel)
+		view.show(.listening(context, label: TurnOnTouchIDView.touchIDLabel))
 
 		view.removeFromSuperview()
 
@@ -95,9 +96,9 @@ struct TouchIDGlyphTests {
 		let context = LAContext()
 		let view = glyph()
 		window.contentView = view
-		view.show(.listening(context), label: TurnOnTouchIDView.touchIDLabel)
+		view.show(.listening(context, label: TurnOnTouchIDView.touchIDLabel))
 
-		view.show(.dimmed, label: TurnOnTouchIDView.touchIDLabel)
+		view.show(.dimmed)
 
 		#expect(view.paired == nil)
 		#expect(view.symbol?.contentTintColor == .tertiaryLabelColor)
@@ -107,9 +108,9 @@ struct TouchIDGlyphTests {
 
 	@Test func aGlyphWithoutALabelIsHiddenFromAccessibility() {
 		let labelled = glyph()
-		labelled.show(.listening(LAContext()), label: TurnOnTouchIDView.touchIDLabel)
+		labelled.show(.listening(LAContext(), label: TurnOnTouchIDView.touchIDLabel))
 		let unlabelled = glyph()
-		unlabelled.show(.listening(LAContext()), label: nil)
+		unlabelled.show(.listening(LAContext(), label: nil))
 
 		#expect(labelled.paired?.isAccessibilityElement() == true)
 		#expect(labelled.paired?.accessibilityRole() == .image)
@@ -119,10 +120,10 @@ struct TouchIDGlyphTests {
 
 	@Test func aGlyphPairsAtItsControlSize() throws {
 		let regular = glyph()
-		regular.show(.listening(LAContext()), label: nil)
+		regular.show(.listening(LAContext(), label: nil))
 		let mini = glyph()
 		mini.size = .mini
-		mini.show(.listening(LAContext()), label: nil)
+		mini.show(.listening(LAContext(), label: nil))
 
 		#expect(try #require(regular.paired).fittingSize == NSSize(width: TouchIDGlyphView.side, height: TouchIDGlyphView.side))
 		#expect(try #require(mini.paired).fittingSize == NSSize(width: UnlockView.coveredGlyphSide, height: UnlockView.coveredGlyphSide))

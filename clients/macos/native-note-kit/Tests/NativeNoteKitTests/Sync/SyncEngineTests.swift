@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch, .syncServer)
 struct SyncEngineTests {
 	@Test func aNoteWrittenOnOneDeviceArrivesOnAnotherWithItsTimesAndVersion() async throws {
 		let server = try SyncServer()
@@ -81,6 +81,96 @@ struct SyncEngineTests {
 		#expect(try await a.live() == [kept: "kept, edited on B"])
 		#expect(try await b.live() == [kept: "kept, edited on B"])
 		#expect(try await b.note(gone)?.deleted == true)
+	}
+
+	@Test func aNoteDiscardedDuringItsFirstPushEndsDeletedOnBothSides() async throws {
+		let server = try SyncServer()
+		let a = try await SyncDevice(server)
+		let b = try await SyncDevice(server)
+		let id = try await a.write("typed, then cleared and left")
+		a.transport.whilePosting = { [a] in
+			a.transport.whilePosting = nil
+			try? await a.store.discardUnsynced(id: id, shownAt: 0, at: a.now)
+		}
+
+		let applied = try await a.sync()
+
+		#expect(applied.changed[id]?.deleted == true)
+		#expect(try await a.live().isEmpty)
+		let left = try #require(try await a.note(id))
+		#expect((left.deleted, left.dirty, left.v, left.body) == (true, false, 2, ""))
+		try await b.sync()
+		#expect(try await b.live().isEmpty)
+		let received = try #require(try await b.note(id))
+		#expect((received.deleted, received.v) == (true, 2))
+		try await a.sync()
+		#expect(try await a.live().isEmpty)
+	}
+
+	@Test func aNoteDiscardedAfterALostFirstPushIsDeletedWhenItsEchoArrives() async throws {
+		let server = try SyncServer()
+		let a = try await SyncDevice(server)
+		let id = try await a.write("typed, then cleared and left")
+		a.transport.failNext(.dropResponse)
+		await #expect(throws: URLError.self) { try await a.sync() }
+		try await a.store.discardUnsynced(id: id, shownAt: 0, at: a.now)
+
+		try await a.sync()
+
+		#expect(try await a.live().isEmpty)
+		let left = try #require(try await a.note(id))
+		#expect((left.deleted, left.dirty, left.v) == (true, false, 2))
+	}
+
+	@Test func aNoteDiscardedAfterALostFirstPushIsDeletedByTheNextEngine() async throws {
+		let server = try SyncServer()
+		let a = try await SyncDevice(server)
+		let b = try await SyncDevice(server)
+		let id = try await a.write("typed, then cleared and left")
+		a.transport.failNext(.dropResponse)
+		await #expect(throws: URLError.self) { try await a.sync() }
+		try await a.store.discardUnsynced(id: id, shownAt: 0, at: a.now)
+		a.relaunch()
+
+		let applied = try await a.sync()
+
+		#expect(applied.changed[id]?.deleted == true)
+		#expect(try await a.live().isEmpty)
+		let left = try #require(try await a.note(id))
+		#expect((left.deleted, left.dirty, left.v, left.body) == (true, false, 2, ""))
+		try await b.sync()
+		#expect(try await b.live().isEmpty)
+		#expect(try await b.note(id)?.v == 2)
+	}
+
+	@Test func aLostFirstPushKeptByTheNextEngineStaysLiveAndIsForgottenOnceItsEchoArrives() async throws {
+		let server = try SyncServer()
+		let a = try await SyncDevice(server)
+		let id = try await a.write("kept")
+		a.transport.failNext(.dropResponse)
+		await #expect(throws: URLError.self) { try await a.sync() }
+		#expect(try await a.store.firstPushesAwaitingEcho() == [id])
+		a.relaunch()
+
+		try await a.sync()
+
+		#expect(try await a.live() == [id: "kept"])
+		#expect(try await a.dirty.isEmpty)
+		#expect(try await a.store.firstPushesAwaitingEcho().isEmpty)
+	}
+
+	@Test func movingToAnotherServerForgetsFirstPushesTheOldServerMayHold() async throws {
+		let server = try SyncServer()
+		let a = try await SyncDevice(server)
+		let id = try await a.write("kept")
+		a.transport.failNext(.dropResponse)
+		await #expect(throws: URLError.self) { try await a.sync() }
+		#expect(try await a.store.firstPushesAwaitingEcho() == [id])
+
+		let settings = try #require(try await a.store.syncSettings())
+		try await a.store.moveSync(to: settings, pin: 1)
+
+		#expect(try await a.store.firstPushesAwaitingEcho().isEmpty)
 	}
 
 	@Test func aPulledDeletionOverUnpushedTextKeepsTheTextAsANewNote() async throws {

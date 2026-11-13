@@ -83,7 +83,7 @@ final class SaveScheduler {
 	}
 
 	func discard(_ id: UUID) async {
-		pending.removeValue(forKey: id)?.deadline.cancel()
+		cancel(id)
 		await flush(id)
 	}
 

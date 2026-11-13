@@ -34,6 +34,7 @@ nonisolated final class SQLiteConnection {
 		}
 
 		do {
+			try Self.waitForOtherConnections(on: opened)
 			try Self.applyRawKey(rawKey, on: opened, with: sqlite3_key_v2, named: "sqlite3_key_v2")
 			try Self.confirmKeyOpens(opened)
 			try Self.execute("PRAGMA journal_mode = WAL", on: opened)
@@ -80,6 +81,15 @@ nonisolated final class SQLiteConnection {
 		try Self.applyRawKey(newKey, on: handle, with: sqlite3_rekey_v2, named: "sqlite3_rekey_v2")
 	}
 
+	static let busyTimeoutMilliseconds: Int32 = 5_000
+
+	private static func waitForOtherConnections(on handle: OpaquePointer) throws {
+		let code = sqlite3_busy_timeout(handle, busyTimeoutMilliseconds)
+		guard code == SQLITE_OK else {
+			throw SQLiteError.cannotExecute(code: code, message: String(cString: sqlite3_errmsg(handle)), sql: "sqlite3_busy_timeout")
+		}
+	}
+
 	private static func requireThirtyTwoBytes(_ key: SymmetricKey) throws {
 		guard key.bitCount == 256 else { throw SQLiteError.keyMustBe32Bytes(count: key.bitCount / 8) }
 	}
@@ -102,17 +112,13 @@ nonisolated final class SQLiteConnection {
 				literal[0] = UInt8(ascii: "x")
 				literal[1] = UInt8(ascii: "'")
 				for (index, byte) in key.enumerated() {
-					literal[2 + 2 * index] = hexDigit(byte >> 4)
-					literal[3 + 2 * index] = hexDigit(byte & 0x0f)
+					literal[2 + 2 * index] = Hex.digit(byte >> 4)
+					literal[3 + 2 * index] = Hex.digit(byte & 0x0f)
 				}
 				literal[literal.count - 1] = UInt8(ascii: "'")
 				return try body(UnsafeRawBufferPointer(literal))
 			}
 		}
-	}
-
-	private static func hexDigit(_ nibble: UInt8) -> UInt8 {
-		nibble < 10 ? UInt8(ascii: "0") + nibble : UInt8(ascii: "a") + nibble - 10
 	}
 
 	private static func confirmKeyOpens(_ handle: OpaquePointer) throws {

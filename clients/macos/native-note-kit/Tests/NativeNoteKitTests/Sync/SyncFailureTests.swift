@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch, .syncServer)
 struct SyncFailureTests {
 	@Test func aWriteWhoseResponseWasLostIsRecognizedByItsWriteIdAndMakesNoCopy() async throws {
 		let server = try SyncServer()
@@ -58,7 +58,8 @@ struct SyncFailureTests {
 		let a = try await SyncDevice(server)
 		let b = try await SyncDevice(server)
 		var expected: [UUID: String] = [:]
-		for (round, fault) in [TestTransport.Fault.dropRequest, .killServer, .killServer, .killServer].enumerated() {
+		let kills = [0, 1, 3].map { TestTransport.Fault.killServer(after: .milliseconds($0)) }
+		for (round, fault) in ([.dropRequest] + kills).enumerated() {
 			let id = try await a.write("note \(round)")
 			expected[id] = "note \(round)"
 			a.transport.failNext(fault)
@@ -80,7 +81,6 @@ struct SyncFailureTests {
 		server.kill()
 		let backup = temporaryDirectory()
 		try FileManager.default.copyItem(at: server.data, to: backup)
-		defer { try? FileManager.default.removeItem(at: backup) }
 		try server.start()
 		try await a.write("v2", to: id)
 		try await a.sync()

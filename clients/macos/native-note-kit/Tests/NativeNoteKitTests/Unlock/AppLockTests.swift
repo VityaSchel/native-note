@@ -3,6 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct AppLockTests {
 	private final class Flushes {
 		struct Flush {
@@ -36,7 +37,6 @@ struct AppLockTests {
 
 	@Test func aParameterFileReachesTheDiskBeforeItReplacesTheOldOneAndTheRenameAfter() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let url = AppLock.currentFile(in: directory)
 		try AppLock.write(.fast, to: url)
 		let flushes = Flushes(current: url)
@@ -50,7 +50,6 @@ struct AppLockTests {
 
 	@Test func aPromotedRekeyReachesTheDiskBeforeItReplacesTheOldParameters() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		try AppLock.write(.sample, to: AppLock.pendingRekeyFile(in: directory))
 		let flushes = Flushes(current: AppLock.currentFile(in: directory))
@@ -63,7 +62,6 @@ struct AppLockTests {
 
 	@Test func aParameterFileThatCannotReachTheDiskLeavesTheOldOneAndNoLeftovers() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let url = AppLock.currentFile(in: directory)
 		try AppLock.write(.fast, to: url)
 
@@ -77,7 +75,6 @@ struct AppLockTests {
 
 	@Test func writesPrivatelyAndReadsBack() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let url = AppLock.currentFile(in: directory)
 
 		try AppLock.write(.sample, to: url)
@@ -91,7 +88,6 @@ struct AppLockTests {
 
 	@Test func refusesParametersFromAFutureVersion() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		var future = UnlockParameters.sample
 		future.version = 2
 		let url = AppLock.currentFile(in: directory)
@@ -104,7 +100,6 @@ struct AppLockTests {
 
 	@Test func offersThePendingFileFirstButKeepsTheCurrentOneAsFallback() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let current = AppLock.currentFile(in: directory)
 		let pending = AppLock.pendingRekeyFile(in: directory)
 
@@ -117,7 +112,6 @@ struct AppLockTests {
 
 	@Test func keepingTheCurrentFileDropsAStalePendingOne() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		var next = UnlockParameters.sample
 		next.localSalt = Data(repeating: 0x99, count: 16)
 		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
@@ -131,7 +125,6 @@ struct AppLockTests {
 
 	@Test func keepingThePendingFilePromotesIt() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		var next = UnlockParameters.sample
 		next.localSalt = Data(repeating: 0x99, count: 16)
 		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
@@ -145,7 +138,6 @@ struct AppLockTests {
 
 	@Test func settingADatabaseAsideMovesItsSidecarsWithIt() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		let database = AppLock.databaseFile(in: directory)
 		for file in [database, walFile(of: database), shmFile(of: database)] {
@@ -170,7 +162,6 @@ struct AppLockTests {
 
 	@Test func promotingARekeyLeavesExactlyOneFile() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		var next = UnlockParameters.sample
 		next.localSalt = Data(repeating: 0x99, count: 16)
 		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
@@ -191,7 +182,6 @@ struct AppLockTests {
 
 	@Test func erasingRemovesOnlyTheLibraryFiles() throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		let database = AppLock.databaseFile(in: directory)
 		let library = [AppLock.currentFile(in: directory), AppLock.pendingRekeyFile(in: directory), database, walFile(of: database), shmFile(of: database), directory.appending(path: "notes-set-aside-x-1.db")]

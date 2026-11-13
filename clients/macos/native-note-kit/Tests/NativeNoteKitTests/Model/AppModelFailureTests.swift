@@ -28,7 +28,6 @@ struct AppModelFailureTests {
 		(CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: "/tmp/gone.zip"]), "The file “gone.zip” couldn’t be opened because there is no such file."),
 	])
 	func everyStorageAndUnlockErrorReadsAsASentence(error: any Error, reason: String) {
-		#expect(AppModel.Failure.reason(for: error) == reason)
 		#expect(AppModel.Failure(error) == .unexpected(reason))
 	}
 

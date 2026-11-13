@@ -3,16 +3,14 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct LibraryEraseTests {
 	private let alarm = Alarm()
 
-	private func library(_ keys: FakeKeyStore = FakeKeyStore(), _ bodies: [String] = ["Shopping", "Trip"]) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm] directory in
+	private var library: Workspace {
+		Workspace(holding: ["Shopping", "Trip"]) { [alarm] directory, keys in
 			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), makeParameters: { .fast }, keyStore: keys)
 		}
-		try await fill(model, with: bodies)
-		return (model, directory)
 	}
 
 	private func remaining(in directory: URL) throws -> [String] {
@@ -21,8 +19,7 @@ struct LibraryEraseTests {
 
 	@Test func erasingLeavesNoTraceOfTheLibraryAndReturnsToSetup() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(keys)
 		try await turnOnTouchID(model)
 		for name in ["notes-set-aside-20260101T000000Z-1.db", "notes-set-aside-20260101T000000Z-1.db-wal"] {
 			FileManager.default.createFile(atPath: directory.appending(path: name).path, contents: Data("old notes".utf8))
@@ -39,8 +36,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func aNewLibraryStartsEmptyAfterAnErase() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(FakeKeyStore())
 		await model.lock()
 		await model.eraseLibrary()
 
@@ -54,8 +50,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func erasingIsOnlyForTheLockScreen() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(FakeKeyStore())
 
 		await model.eraseLibrary()
 
@@ -65,8 +60,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func erasingWhileASaveKeepsFailingLeavesNothingBehind() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(FakeKeyStore())
 		try await connection(to: directory).execute(
 			"CREATE TRIGGER poison BEFORE UPDATE ON note WHEN new.body LIKE '%poison%' BEGIN SELECT RAISE(ABORT, 'poisoned'); END"
 		)
@@ -76,7 +70,7 @@ struct LibraryEraseTests {
 
 		await model.eraseLibrary()
 		await alarm.ring()
-		await settle { await alarm.sleeping == 0 }
+		try await settle { await alarm.sleeping == 0 }
 
 		#expect(model.phase == .needsSetup)
 		#expect(try remaining(in: directory).isEmpty)
@@ -86,8 +80,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func erasingDuringARekeyRemovesBothParameterFiles() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(FakeKeyStore())
 		await model.lock()
 		try AppLock.write(.fast, to: AppLock.pendingRekeyFile(in: directory))
 
@@ -98,12 +91,9 @@ struct LibraryEraseTests {
 	}
 
 	@Test func anEraseThatCannotDeleteAFileSaysSoAndStillReachesSetup() async throws {
-		let (model, directory) = try await library()
+		let (model, directory) = try await library.unlocked(FakeKeyStore())
 		let database = AppLock.databaseFile(in: directory)
-		defer {
-			try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: database.path)
-			try? FileManager.default.removeItem(at: directory)
-		}
+		defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: database.path) }
 		await model.lock()
 		try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: database.path)
 
@@ -117,8 +107,7 @@ struct LibraryEraseTests {
 
 	@Test func editsInTheNewLibraryAreSaved() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await library(keys)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(keys)
 		await model.lock()
 		await model.eraseLibrary()
 		await model.submit(password: "a fresh password")
@@ -135,8 +124,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func aSaveStillRunningWhenTheEraseStartsLeavesNoAlertBehind() async throws {
-		let (model, directory) = try await library()
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(FakeKeyStore())
 		try await connection(to: directory).execute(
 			"CREATE TRIGGER poison BEFORE UPDATE ON note WHEN new.body LIKE '%poison%' BEGIN SELECT RAISE(ABORT, 'poisoned'); END"
 		)
@@ -157,8 +145,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func theErasedLibrarysSearchDoesNotFollowIntoTheNewOne() async throws {
-		let (model, directory) = try await library(FakeKeyStore(), ["bank pin 4711"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(FakeKeyStore(), holding: ["bank pin 4711"])
 		model.search = "bank pin"
 		await model.runSearch()
 		await model.lock()

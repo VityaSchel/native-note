@@ -45,6 +45,13 @@ func noteToType(in model: AppModel) async -> UUID {
 	return id
 }
 
+func keepEmptyForTheNextRun(_ id: UUID, in model: AppModel) {
+	model.edit(id, "typed, left and cleared, so the note is no longer a New Note left empty")
+	model.selection = nil
+	model.selection = id
+	model.edit(id, "")
+}
+
 func verify(_ model: AppModel, library: URL, password: String, walCheckpoints: Int?) async {
 	guard model.phase == .locked else {
 		return send(VerifierReport(phase: String(describing: model.phase), failure: nil, integrity: nil, notes: 0, body: nil, walCheckpoints: walCheckpoints))
@@ -96,6 +103,7 @@ model.start()
 await model.submit(password: password)
 let id = await noteToType(in: model)
 if mode == .prepare {
+	keepEmptyForTheNextRun(id, in: model)
 	guard await model.flushPendingSaves() else {
 		reportUnsaved(model)
 		exit(1)

@@ -47,7 +47,7 @@ func storedBlob(_ server: SyncServer) async throws -> (v: UInt32, blob: Data) {
 	return (v, blob)
 }
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct AppModelSyncTests {
 	@Test func settingUpPutsTheContentKeyUnderThePhraseAtVersionOneAndStartsSyncing() async throws {
 		let server = try SyncServer()
@@ -65,6 +65,24 @@ struct AppModelSyncTests {
 		#expect(RecoveryBlob.open(stored.blob, under: recoveryKey) != nil)
 		#expect(model.syncStatus.server == server.url.absoluteString)
 		#expect(model.syncStatus.phase != .off)
+	}
+
+	@Test func aStoredServerAddressThatCannotBeReadIsReportedNotTakenForSyncOff() async throws {
+		let (model, directory) = try await unlockedModel { AppModel(directory: $0, keyStore: FakeKeyStore(), syncDelay: .seconds(3600)) }
+		let settings = SyncSettings(server: try #require(URL(string: "http://127.0.0.1:9/")), apiKey: SymmetricKey(size: .bits256), contentKey: sharedContentKey)
+		try await #require(model.store).enableSync(settings, pin: 1)
+		await model.lock()
+		try await connection(to: directory).execute("UPDATE meta SET v = CAST('nowhere' AS BLOB) WHERE k = 'server'")
+
+		await model.unlock(password: workspacePassword)
+
+		let reason = "The saved server address cannot be read. Enter the server again in Settings."
+		#expect(model.phase == .unlocked)
+		#expect(model.failure == .failed(reason, title: "Sync could not start."))
+		#expect(await model.adoptCurrentPhrase(entry(["any", "words"])) == .failed(reason))
+		model.dismissFailure()
+		#expect(await model.prepareRotation() == nil)
+		#expect(model.failure == .failed(reason, title: "The recovery phrase could not be changed."))
 	}
 
 	@Test func setupRefusesBadInputAndAWrongKeyAndJoinsAServerThatAlreadyHoldsALibrary() async throws {
@@ -141,9 +159,12 @@ struct AppModelSyncTests {
 		let aPhrase = try #require(await a.prepareRotation())
 		#expect(await a.finishRotation(answers: answers(aPhrase)) == .rotatedElsewhere)
 
-		#expect(await a.adoptCurrentPhrase(aPhrase.words.joined(separator: " ")) == .phraseDoesNotOpen)
-		#expect(await a.adoptCurrentPhrase(bPhrase.words.joined(separator: " ")) == nil)
+		#expect(await a.adoptCurrentPhrase(entry(aPhrase.words)) == .phraseDoesNotOpen)
+		#expect(await a.adoptCurrentPhrase(entry(bPhrase.words)) == nil)
 		#expect(try await a.store?.pin() == 2)
+		var numbered = PhraseEntry()
+		_ = numbered.set(bPhrase.words.enumerated().map { "\($0.offset + 1). \($0.element)," }.joined(separator: " "), at: 0)
+		#expect(await a.adoptCurrentPhrase(numbered) == nil)
 		let again = try #require(await a.prepareRotation())
 		#expect(await a.finishRotation(answers: answers(again)) == nil)
 		let stored = try await storedBlob(server)
@@ -157,7 +178,7 @@ struct AppModelSyncTests {
 		_ = try await setUpSync(a, server)
 		let (b, _) = try await syncingModel(server)
 		try await #require(b.store).enableSync(try #require(try await a.store?.syncSettings()), pin: 1)
-		await b.startSync(try #require(b.store))
+		await b.sync.start(try #require(b.store))
 
 		try await fill(a, with: ["From A"])
 		await a.syncNow()
@@ -166,7 +187,7 @@ struct AppModelSyncTests {
 
 		let id = try #require(b.notes.first?.id)
 		b.edit(id, "Edited on B")
-		try await Task.sleep(for: .milliseconds(600))
+		try await settle { b.notes.first { $0.id == id }?.dirty == false }
 		await a.syncNow()
 		#expect(a.notes.map(\.body) == ["Edited on B"])
 		#expect(b.syncStatus.lastSynced != nil && b.syncStatus.problems.isEmpty)
@@ -181,7 +202,7 @@ struct AppModelSyncTests {
 		let (b, transport) = try await syncingModel(server, alarm: alarm, idle: .seconds(3600))
 		let store = try #require(b.store)
 		try await store.enableSync(settings, pin: 1)
-		await b.startSync(store)
+		await b.sync.start(store)
 		try await fill(a, with: ["shared"])
 		await a.syncNow()
 		await b.syncNow()

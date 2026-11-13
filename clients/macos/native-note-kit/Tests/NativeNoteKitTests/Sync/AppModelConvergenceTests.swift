@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(5)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(5)))
 struct AppModelConvergenceTests {
 	private final class Ledger {
 		var written: Set<String> = []
@@ -19,7 +19,7 @@ struct AppModelConvergenceTests {
 		if let settings {
 			let store = try #require(model.store)
 			try await store.enableSync(settings, pin: 1)
-			await model.startSync(store)
+			await model.sync.start(store)
 		}
 		return (model, transport)
 	}
@@ -43,6 +43,7 @@ struct AppModelConvergenceTests {
 		let (second, secondTransport) = try await library(server, settings: try await first.store?.syncSettings())
 		let models = [(first, firstTransport), (second, secondTransport)]
 		var random = SeededGenerator(seed: seed)
+		var killDelays = SeededGenerator(seed: ~seed)
 		let ledger = Ledger()
 
 		for _ in 0 ..< 160 {
@@ -64,7 +65,7 @@ struct AppModelConvergenceTests {
 				let fault: TestTransport.Fault = switch Int.random(in: 0 ..< 8, using: &random) {
 				case 0: .dropRequest
 				case 1: .dropResponse
-				case 2: .killServer
+				case 2: .killServer(after: .milliseconds(Int.random(in: 0 ... 3, using: &killDelays)))
 				default: .none
 				}
 				transport.failNext(fault)

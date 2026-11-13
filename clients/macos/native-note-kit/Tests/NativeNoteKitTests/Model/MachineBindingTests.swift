@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct MachineBindingTests {
 	private func setUp(_ model: AppModel, in directory: URL) async throws -> UnlockParameters {
 		model.start()
@@ -15,7 +15,6 @@ struct MachineBindingTests {
 
 	@Test func aLibraryBindsToThisMacWheneverItHasASecureEnclave() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 
 		let parameters = try await setUp(AppModel(libraryAt: directory, keyStore: FakeKeyStore()), in: directory)
 
@@ -24,7 +23,6 @@ struct MachineBindingTests {
 
 	@Test func aLibraryAskedNotToBindNeedsNoSecureEnclaveAndStillOpens() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 
 		let parameters = try await setUp(AppModel(libraryAt: directory, keyStore: FakeKeyStore(), bindsToThisMac: false), in: directory)
 

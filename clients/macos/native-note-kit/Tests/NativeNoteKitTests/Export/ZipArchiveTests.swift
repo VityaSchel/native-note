@@ -3,6 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct ZipArchiveTests {
 	private static let moment = Date(timeIntervalSince1970: 1_760_000_000)
 
@@ -110,7 +111,6 @@ struct ZipArchiveTests {
 
 	@Test func unzipFindsNoErrorsAndExtractsIdenticalBytes() throws {
 		let directory = try scratchDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let archive = directory.appending(path: "export.zip")
 		let extracted = directory.appending(path: "extracted")
 		try ZipArchive.write(Self.sample).write(to: archive)
@@ -127,7 +127,6 @@ struct ZipArchiveTests {
 
 	@Test func zipinfoListsEveryEntryAsStoredWithItsUTCTime() throws {
 		let directory = try scratchDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let archive = directory.appending(path: "export.zip")
 		try ZipArchive.write(Self.sample).write(to: archive)
 		let total = Self.sample.reduce(0) { $0 + $1.data.count }
@@ -143,7 +142,6 @@ struct ZipArchiveTests {
 
 	@Test func readsStoredArchivesMadeByZip() throws {
 		let directory = try scratchDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let files = [
 			("a.md", Data("hello".utf8)),
 			("empty.md", Data()),
@@ -165,7 +163,6 @@ struct ZipArchiveTests {
 
 	@Test func rejectsDeflatedEntriesMadeByZip() throws {
 		let directory = try scratchDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try Data(String(repeating: "compressible ", count: 1_000).utf8).write(to: directory.appending(path: "long.md"))
 
 		#expect(try run("/usr/bin/zip", ["-6", "archive.zip", "long.md"], in: directory).status == 0)

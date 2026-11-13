@@ -25,17 +25,9 @@ struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 			}
 			fields
 			if reservesError || error != nil {
-				ZStack(alignment: .topLeading) {
-					Text(verbatim: "\n")
-						.hidden()
-						.accessibilityHidden(true)
-					if let error {
-						Text(error)
-							.foregroundStyle(.red)
-							.fixedSize(horizontal: false, vertical: true)
-					}
-				}
-				.font(.callout)
+				ReservedLine(text: error, lines: 2)
+					.font(.callout)
+					.foregroundStyle(.red)
 			}
 			HStack {
 				leadingButtons

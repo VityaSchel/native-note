@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNote
 
-@MainActor
+@MainActor @Suite(.takesFocus)
 struct EditorZoomTests {
 	@Test func zoomStepsStayWithinTheirRange() {
 		#expect(EditorZoom.larger(1) == 1.2)

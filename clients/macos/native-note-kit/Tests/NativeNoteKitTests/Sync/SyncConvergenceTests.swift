@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch, .syncServer)
 struct SyncConvergenceTests {
 	private struct Ledger {
 		var written: Set<String> = []
@@ -19,6 +19,7 @@ struct SyncConvergenceTests {
 			try await SyncDevice(server, skew: .seconds(-2 * 86400)),
 		]
 		var random = SeededGenerator(seed: seed)
+		var killDelays = SeededGenerator(seed: ~seed)
 		var ledger = Ledger()
 		var syncs = 0
 		var failed = 0
@@ -46,7 +47,7 @@ struct SyncConvergenceTests {
 				let fault: TestTransport.Fault = switch Int.random(in: 0 ..< 10, using: &random) {
 				case 0, 1: .dropRequest
 				case 2, 3: .dropResponse
-				case 4, 5: .killServer
+				case 4, 5: .killServer(after: .milliseconds(Int.random(in: 0 ... 3, using: &killDelays)))
 				default: .none
 				}
 				device.transport.failNext(fault)

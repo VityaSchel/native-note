@@ -77,7 +77,7 @@ struct ImportPassphraseSheet: View {
 
 extension ImportSummary {
 	var message: String {
-		let imported = added == 1 ? "Imported 1 note." : "Imported \(added) notes."
+		let imported = String(AttributedString(localized: "Imported ^[\(added) note](inflect: true).").characters)
 		let details = [
 			skipped > 0 ? "\(skipped) already here or deleted here" : nil,
 			notImported > 0 ? "\(notImported) not imported because Native Note locked" : nil,

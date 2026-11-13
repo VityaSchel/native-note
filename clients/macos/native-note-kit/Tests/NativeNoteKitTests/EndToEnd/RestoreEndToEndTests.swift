@@ -3,7 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.serialized, .timeLimit(.minutes(10)))
+@MainActor @Suite(.scratch, .syncServer, .serialized, .timeLimit(.minutes(10)))
 struct RestoreEndToEndTests {
 	private struct Snapshot: Equatable {
 		let body: String
@@ -64,12 +64,10 @@ struct RestoreEndToEndTests {
 		try FileManager.default.removeItem(at: originalDirectory)
 
 		let (kept, keptDirectory) = try await restore(server, phrase: phrase.words, apiKey: keptKey, password: "restored with the kept key")
-		defer { try? FileManager.default.removeItem(at: keptDirectory) }
 		#expect(snapshot(kept.notes) == saved)
 		#expect(try await kept.store?.liveNotes().allSatisfy { !$0.dirty } == true)
 
-		let (reread, rereadDirectory) = try await restore(server, phrase: phrase.words, apiKey: keyFile, password: "restored with the key file")
-		defer { try? FileManager.default.removeItem(at: rereadDirectory) }
+		let (reread, _) = try await restore(server, phrase: phrase.words, apiKey: keyFile, password: "restored with the key file")
 		#expect(snapshot(reread.notes) == saved)
 
 		let edited = try #require(kept.notes.first { $0.body.count > 40 })

@@ -31,8 +31,7 @@ struct NoteRow: View {
 	}
 
 	var spokenDate: String {
-		guard dateLabel.wholeMatch(of: /\d{4}\.\d{2}\.\d{2}/) != nil else { return dateLabel }
-		return note.updated.formatted(date: .long, time: .omitted)
+		NoteGrouping.spokenDateLabel(for: note.updated, now: now)
 	}
 
 	var body: some View {

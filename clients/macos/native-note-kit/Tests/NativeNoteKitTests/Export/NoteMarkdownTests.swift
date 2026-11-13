@@ -42,17 +42,15 @@ private func utf8(_ strings: [String]) -> [[UInt8]] {
 }
 
 struct NoteMarkdownTests {
-	@Test func importedNotesAreLiveDirtyAndUnsequenced() throws {
+	@Test func importedNotesAreLiveAndDirty() throws {
 		var original = note("Synced elsewhere", v: 12)
 		original.deleted = true
 		original.dirty = false
-		original.seq = 42
 
 		let parsed = try NoteMarkdown.parse(NoteMarkdown.render(original))
 
 		#expect(parsed.deleted == false)
 		#expect(parsed.dirty)
-		#expect(parsed.seq == nil)
 		#expect(parsed.v == 12)
 	}
 

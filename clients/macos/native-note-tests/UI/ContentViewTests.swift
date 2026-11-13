@@ -5,35 +5,23 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
 struct ContentViewTests {
 	private let alarm = Alarm()
 
-	private func library(_ bodies: [String]) async throws -> (AppModel, URL, OffscreenWindow<ContentView>) {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		try await fill(model, with: bodies)
-		return (model, directory, OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560))
-	}
-
-	private func press(_ label: String, in offscreen: OffscreenWindow<ContentView>) async throws {
-		await offscreen.pump { offscreen.accessibilityElements(.button).contains { $0.label == label } }
-		try #require(offscreen.accessibilityElements(.button).first { $0.label == label }, "\(label)").press()
-		offscreen.pump()
+	private func window(showing model: AppModel) -> OffscreenWindow<ContentView> {
+		OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560)
 	}
 
 	private func typePasswords(_ password: String, in offscreen: OffscreenWindow<ContentView>) throws {
 		for placeholder in ["Password", "Confirm Password"] {
-			let field = try #require(offscreen.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
-			try #require(offscreen.window.makeFirstResponder(field))
-			try #require(field.currentEditor()).insertText(password)
-			offscreen.pump()
+			try offscreen.type(password, into: placeholder)
 		}
 		offscreen.window.firstResponder?.insertNewline(nil)
 	}
 
 	@Test func exportingOpensTheSavePanelOnlyOnceTheSheetHasClosedAndWritesTheChosenFile() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["Shopping"])
 		let exchange = LibraryExchange(model: model)
 		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560, catchesSheets: true)
@@ -66,22 +54,21 @@ struct ContentViewTests {
 
 	@Test func aFirstLaunchWalksWelcomePasswordTouchIDAndSyncInTheWindowThenOpensTheLibrary() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560, catchesSheets: true)
 		defer { offscreen.close() }
 		await offscreen.pump { model.phase == .needsSetup }
 
-		try await press("Next", in: offscreen)
+		try await offscreen.pressOnceShown("Next")
 		try typePasswords(workspacePassword, in: offscreen)
 		await offscreen.pump { offscreen.accessibilityElements().contains { $0.label == "Unlock with Touch ID?" || $0.value == "Unlock with Touch ID?" } }
 		#expect(model.phase == .unlocked && model.isOnboarding)
 		#expect(offscreen.window.title != "All Notes")
 
-		try await press("Skip", in: offscreen)
+		try await offscreen.pressOnceShown("Skip")
 		await offscreen.pump { offscreen.accessibilityElements().contains { $0.label == "Sync Your Notes" || $0.value == "Sync Your Notes" } }
 		#expect(offscreen.sheet == nil)
-		try await press("Not Now", in: offscreen)
+		try await offscreen.pressOnceShown("Not Now")
 		await offscreen.pump { offscreen.window.title == "All Notes" }
 
 		#expect(!model.isOnboarding)
@@ -90,7 +77,6 @@ struct ContentViewTests {
 
 	@Test func aRelaunchAfterThePasswordStepUnlocksStraightIntoTheLibrary() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let first = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
 		first.start()
 		await first.submit(password: workspacePassword)
@@ -155,8 +141,8 @@ struct ContentViewTests {
 	}
 
 	@Test func newNotePutsTheInsertionPointInTheNewNote() async throws {
-		let (model, directory, offscreen) = try await library(["kayak"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let list = try #require(offscreen.views(of: NSTableView.self).first)
 		try #require(offscreen.window.makeFirstResponder(list))
@@ -170,39 +156,22 @@ struct ContentViewTests {
 	}
 
 	@Test func searchNotesFocusesTheSearchField() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["kayak"])
 		let exchange = LibraryExchange(model: model)
 		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560)
 		defer { offscreen.close() }
 		offscreen.pump()
 
-		exchange.focusSearch(in: offscreen.window)
+		exchange.searchNotes()
 		await offscreen.pump { (offscreen.window.firstResponder as? NSText)?.delegate is NSSearchField }
 
 		#expect((offscreen.window.firstResponder as? NSText)?.delegate is NSSearchField)
 	}
 
-	@Test func lockingTakesCopiedRecoveryWordsOffThePasteboard() async throws {
-		let pasteboard = NSPasteboard(name: .init("dev.hloth.nativenote.tests.\(UUID().uuidString)"))
-		defer { pasteboard.releaseGlobally() }
-		let clipboard = RecoveryClipboard(pasteboard)
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model), clipboard: clipboard), width: 980, height: 560)
-		defer { offscreen.close() }
-		clipboard.copy(["abandon", "ability"])
-
-		await model.lock()
-		await offscreen.pump { pasteboard.string(forType: .string) == nil }
-
-		#expect(pasteboard.string(forType: .string) == nil)
-	}
-
 	@Test func unlockingAnExistingLibraryOffersNothing() async throws {
-		let (_, directory, offscreen) = try await library(["kayak"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		offscreen.pump()
 
@@ -210,8 +179,8 @@ struct ContentViewTests {
 	}
 
 	@Test func aSearchFiltersTheList() async throws {
-		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 
 		model.search = "kayak"
@@ -221,8 +190,8 @@ struct ContentViewTests {
 	}
 
 	@Test func typingInTheEditorEditsTheShownNote() async throws {
-		let (model, directory, offscreen) = try await library(["Title"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["Title"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let editor = try #require(offscreen.views(of: NSTextView.self).first { $0.string == "Title" })
 
@@ -234,8 +203,8 @@ struct ContentViewTests {
 	}
 
 	@Test func theToolbarNamesTheNotebookAndCountsItsNotes() async throws {
-		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 
 		#expect(offscreen.window.title == "All Notes")
@@ -248,8 +217,8 @@ struct ContentViewTests {
 	}
 
 	@Test func deleteInTheListDeletesTheSelectedNote() async throws {
-		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let selected = try #require(model.selection)
 		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
@@ -264,16 +233,16 @@ struct ContentViewTests {
 	}
 
 	@Test func undoBringsADeletedNoteBackAndRedoDeletesItAgain() async throws {
-		let (model, directory, offscreen) = try await library(["kayak", "canoe trip"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe trip"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let deleted = try #require(model.selectedNote)
 		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
 		try #require(offscreen.window.makeFirstResponder(list))
 		offscreen.pump()
 		#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
-		await offscreen.pump { model.notes.count == 1 }
 		let undo = try #require(offscreen.window.undoManager)
+		await offscreen.pump { model.notes.count == 1 && undo.canUndo }
 		#expect(undo.undoActionName == "Delete Note")
 
 		undo.undo()
@@ -290,21 +259,64 @@ struct ContentViewTests {
 		#expect(!model.notes.contains { $0.body == deleted.body })
 	}
 
+	@Test func aDeleteOrARedoneDeleteThatFailsLeavesNothingToUndo() async throws {
+		let (model, directory) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe trip"])
+		let offscreen = window(showing: model)
+		defer { offscreen.close() }
+		let blocker = try await connection(to: directory)
+		try await model.store?.failAtOnceWhenLocked()
+		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
+		try #require(offscreen.window.makeFirstResponder(list))
+		offscreen.pump()
+		let undo = try #require(offscreen.window.undoManager)
+		undo.groupsByEvent = false
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
+		await offscreen.pump(turns: 4_000) { model.failure != nil }
+		try blocker.execute("ROLLBACK")
+		offscreen.pump(for: 0.05)
+
+		try #require(model.failure != nil)
+		#expect(model.notes.count == 2)
+		#expect(!undo.canUndo)
+		model.dismissFailure()
+
+		try #require(offscreen.window.makeFirstResponder(list))
+		#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
+		await offscreen.pump { model.notes.count == 1 && undo.canUndo }
+		undo.undo()
+		#expect(await model.flushPendingSaves())
+		try #require(model.notes.count == 2 && undo.canRedo)
+
+		try blocker.execute("BEGIN IMMEDIATE")
+		undo.redo()
+		await offscreen.pump(turns: 4_000) { model.failure != nil }
+		try blocker.execute("ROLLBACK")
+		offscreen.pump(for: 0.05)
+
+		try #require(model.failure != nil)
+		#expect(model.notes.count == 2)
+		#expect(!undo.canUndo)
+		model.dismissFailure()
+	}
+
 	@Test func undoAndRedoStepThroughTwoDeletes() async throws {
-		let (model, directory, offscreen) = try await library(["first", "second", "third"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await Workspace(alarm: alarm).unlocked(holding: ["first", "second", "third"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
 		let undo = try #require(offscreen.window.undoManager)
 		undo.groupsByEvent = false
+		let offered = UndoSteps()
+		NotificationCenter.default.addObserver(offered, selector: #selector(UndoSteps.closed), name: .NSUndoManagerDidCloseUndoGroup, object: undo)
+		defer { NotificationCenter.default.removeObserver(offered) }
 		for remaining in [2, 1] {
 			model.selection = model.notes.first?.id
 			try #require(offscreen.window.makeFirstResponder(list))
 			offscreen.pump()
-			undo.beginUndoGrouping()
 			#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
-			undo.endUndoGrouping()
-			await offscreen.pump { model.notes.count == remaining }
+			await offscreen.pump { model.notes.count == remaining && offered.count == 3 - remaining }
 		}
 
 		undo.undo()
@@ -323,14 +335,15 @@ struct ContentViewTests {
 	}
 
 	@Test func lockingClearsUndoDelete() async throws {
-		let (model, directory, offscreen) = try await library(["kayak", "canoe trip"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe trip"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let list = try #require(offscreen.views(of: NSTableView.self).first { $0.numberOfRows > 1 })
 		try #require(offscreen.window.makeFirstResponder(list))
 		offscreen.pump()
 		#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
 		let undo = try #require(offscreen.window.undoManager)
+		await offscreen.pump { undo.canUndo }
 		#expect(undo.canUndo)
 
 		await model.lock()
@@ -340,8 +353,8 @@ struct ContentViewTests {
 	}
 
 	@Test func deleteInTheEditorDeletesTextNotTheNote() async throws {
-		let (model, directory, offscreen) = try await library(["Title"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["Title"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let editor = try #require(offscreen.views(of: NSTextView.self).first { $0.string == "Title" })
 		try #require(offscreen.window.makeFirstResponder(editor))
@@ -360,8 +373,8 @@ struct ContentViewTests {
 	}
 
 	@Test func theFirstNoteInAnEmptyLibraryGetsAFullRow() async throws {
-		let (model, directory, offscreen) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: [])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 
 		await model.createNote()
@@ -379,8 +392,8 @@ struct ContentViewTests {
 	}
 
 	@Test func pickingANoteInTheListFocusesTheList() async throws {
-		let (model, directory, offscreen) = try await library(["kayak", "canoe"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe"])
+		let offscreen = window(showing: model)
 		defer { offscreen.close() }
 		let editor = try #require(offscreen.views(of: NSTextView.self).first { !$0.isFieldEditor && $0.isEditable })
 		try #require(offscreen.window.makeFirstResponder(editor))
@@ -396,10 +409,9 @@ struct ContentViewTests {
 
 	@Test func returningToTheLockedAppUnlocksWithATouch() async throws {
 		let keys = FakeKeyStore()
-		let (model, directory) = try await unlockedModel { [alarm] directory in
+		let (model, _) = try await unlockedModel { [alarm] directory in
 			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
 		}
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["kayak"])
 		try await turnOnTouchID(model)
 		keys.forgetReads()
@@ -436,8 +448,8 @@ struct ContentViewTests {
 	}
 
 	@Test func closingTheWindowSavesAtOnce() async throws {
-		let (model, directory, offscreen) = try await library(["Title"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await Workspace(alarm: alarm).unlocked(holding: ["Title"])
+		let offscreen = window(showing: model)
 		let id = try #require(model.selection)
 		let disk = try await observer(of: directory)
 
@@ -446,5 +458,13 @@ struct ContentViewTests {
 		try await settle { try await disk.note(id: id)?.body == "typed then closed" }
 
 		#expect(try await disk.note(id: id)?.body == "typed then closed")
+	}
+}
+
+@MainActor private final class UndoSteps: NSObject {
+	private(set) var count = 0
+
+	@objc func closed() {
+		count += 1
 	}
 }

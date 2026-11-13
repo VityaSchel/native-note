@@ -15,6 +15,12 @@ struct TestHostTests {
 		#expect(model.phase == .needsSetup)
 	}
 
+	@Test func onlyTheAppOutsideTheTestHostUsesTheSystemFindPasteboard() {
+		#expect(FindPasteboard.name(hostingTests: false) == .find)
+		#expect(FindPasteboard.name(hostingTests: true) != .find)
+		#expect(FindPasteboard.shared.pasteboard.name == FindPasteboard.name(hostingTests: true))
+	}
+
 	@Test func theTestHostStaysOutOfTheDockAndInTheBackground() {
 		#expect(NSApp.activationPolicy() == .prohibited)
 		#expect(!NSApp.isActive)
@@ -62,15 +68,27 @@ struct TestHostTests {
 		#expect(actual.keyEquivalent == "0" && actual.keyEquivalentModifierMask == .command)
 	}
 
-	@Test func zoomingLeavesTheViewMenuWithOneSeparatorBetweenGroups() async throws {
+	@Test(.writesStandardDefaults) func zoomingLeavesTheViewMenuWithOneSeparatorBetweenGroups() async throws {
 		let view = try #require(menu(containing: "Zoom In")?.menu)
 		let defaults = UserDefaults.standard
 		let kept = defaults.object(forKey: EditorZoom.key)
 		defer { defaults.set(kept, forKey: EditorZoom.key) }
+		func choose(_ command: String) throws {
+			view.performActionForItem(at: view.index(of: try #require(menu(containing: command))))
+		}
+		func storedZoom() -> Double {
+			defaults.double(forKey: EditorZoom.key)
+		}
+		defaults.set(EditorZoom.larger(1), forKey: EditorZoom.key)
+		try await settle {
+			try choose("Actual Size")
+			return storedZoom() == 1
+		}
 
-		for zoom in [1.2, 1.44, 1.2, 1.0] {
-			defaults.set(zoom, forKey: EditorZoom.key)
-			try await Task.sleep(for: .milliseconds(200))
+		for (command, zoom) in [("Zoom In", 1.2), ("Zoom In", 1.44), ("Zoom Out", 1.2), ("Actual Size", 1.0)] {
+			try choose(command)
+			try await settle { storedZoom() == zoom }
+			try #require(storedZoom() == zoom, "\(command)")
 		}
 		NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: NSApp.mainMenu)
 

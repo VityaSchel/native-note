@@ -3,9 +3,7 @@ import Foundation
 
 nonisolated enum RecoveryBlob {
 	static func seal(_ contentKey: SymmetricKey, under recoveryKey: SymmetricKey, nonce: AES.GCM.Nonce = AES.GCM.Nonce()) throws -> Data {
-		let sealed = try contentKey.withUnsafeBytes { try AES.GCM.seal($0, using: recoveryKey, nonce: nonce) }
-		guard let blob = sealed.combined else { throw EnvelopeError.unopenable }
-		return blob
+		try contentKey.withUnsafeBytes { try AES.GCM.seal($0, using: recoveryKey, nonce: nonce) }.framed()
 	}
 
 	static func open(_ blob: Data, under recoveryKey: SymmetricKey) -> SymmetricKey? {

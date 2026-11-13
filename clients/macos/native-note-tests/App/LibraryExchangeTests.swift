@@ -1,26 +1,23 @@
+import AppKit
 import Foundation
 import Testing
 
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct LibraryExchangeTests {
 	private let alarm = Alarm()
 
-	private func library(_ bodies: [String]) async throws -> (AppModel, URL) {
-		let (model, directory) = try await unlockedModel { [alarm] directory in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), exportParameters: .init(m: 1024, t: 1, p: 1))
+	private var library: Workspace {
+		Workspace { [alarm] directory, keys in
+			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), exportParameters: .init(m: 1024, t: 1, p: 1), keyStore: keys)
 		}
-		try await fill(model, with: bodies)
-		return (model, directory)
 	}
 
 	@Test func aPlainExportImportsAtOnce() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = sourceDirectory.appending(path: "export.zip")
 		#expect(await source.exportLibrary(to: file, passphrase: nil))
 		let exchange = LibraryExchange(model: target)
@@ -36,10 +33,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anEncryptedExportAsksForItsPassphraseFirst() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = sourceDirectory.appending(path: "export.nnexport")
 		#expect(await source.exportLibrary(to: file, passphrase: "correct staple"))
 		let exchange = LibraryExchange(model: target)
@@ -54,10 +49,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func cancellingThePassphraseImportsNothing() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = sourceDirectory.appending(path: "export.nnexport")
 		#expect(await source.exportLibrary(to: file, passphrase: "correct staple"))
 		let exchange = LibraryExchange(model: target)
@@ -79,8 +72,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func newNoteSearchExportAndImportBringAClosedWindowBackFirst() async throws {
-		let (model, directory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: [])
 		let exchange = LibraryExchange(model: model)
 		var shown = 0
 		var panels: [String] = []
@@ -106,6 +98,42 @@ struct LibraryExchangeTests {
 		#expect(panels == ["NSOpenPanel"])
 	}
 
+	@Test func lockingClosesTheOpenPanelAndForgetsTheExportAndTheWaitingImport() async throws {
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (target, _) = try await library.unlocked(holding: [])
+		let file = sourceDirectory.appending(path: "export.nnexport")
+		#expect(await source.exportLibrary(to: file, passphrase: "correct staple"))
+		let delegate = AppDelegate(model: target, confirmQuitLosingEdits: { _ in true })
+		let exchange = delegate.exchange
+		var shown: [NSSavePanel] = []
+		var closed: [NSSavePanel] = []
+		exchange.presentPanel = { panel, _ in shown.append(panel) }
+		exchange.closePanel = { closed.append($0) }
+
+		await exchange.receive(file)
+		exchange.chooseImport()
+		try #require(exchange.sheet == .passphrase)
+		await target.lock()
+		try await settle { exchange.sheet == nil }
+
+		#expect(exchange.sheet == nil)
+		#expect(shown.count == 1 && closed.count == 1 && closed.first === shown.first)
+
+		await target.submit(password: workspacePassword)
+		try #require(target.phase == .unlocked)
+		#expect(exchange.sheet == nil)
+		exchange.startExport()
+		exchange.chooseExport(passphrase: nil)
+		exchange.isExporting = true
+		await target.lock()
+		try await settle { exchange.sheet == nil }
+		await target.submit(password: workspacePassword)
+
+		#expect(exchange.sheet == nil)
+		exchange.presentSavePanelOnceSheetCloses()
+		#expect(shown.count == 1)
+	}
+
 	@Test func cancellingTheExportSheetClosesIt() {
 		let exchange = LibraryExchange(model: .previewing([]))
 		exchange.isExporting = true
@@ -120,7 +148,6 @@ struct LibraryExchangeTests {
 
 	@Test func commandsWaitForTheFirstRunSyncStep() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
 		model.start()
 		let exchange = LibraryExchange(model: model)
@@ -136,8 +163,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func commandsWaitForUnlockAndForTheOpenSheet() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await library.unlocked(holding: ["Shopping"])
 		let exchange = LibraryExchange(model: model)
 		#expect(exchange.acceptsCommands)
 		#expect(exchange.canExchange)
@@ -155,8 +181,7 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func anImportHoldsExportAndImportButNotEditing() async throws {
-		let (model, directory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, directory) = try await library.unlocked(holding: ["Shopping"])
 		let file = directory.appending(path: "Native Note.zip")
 		#expect(await model.exportLibrary(to: file, passphrase: nil))
 		let exchange = LibraryExchange(model: model)
@@ -183,10 +208,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func aWrongPassphraseKeepsTheSheetOpenToTryAgain() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = sourceDirectory.appending(path: "export.nnexport")
 		#expect(await source.exportLibrary(to: file, passphrase: "correct staple"))
 		let exchange = LibraryExchange(model: target)
@@ -204,10 +227,8 @@ struct LibraryExchangeTests {
 	}
 
 	@Test func cancellingAfterAWrongPassphraseForgetsIt() async throws {
-		let (source, sourceDirectory) = try await library(["Shopping"])
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
-		let (target, targetDirectory) = try await library([])
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Shopping"])
+		let (target, _) = try await library.unlocked(holding: [])
 		let file = sourceDirectory.appending(path: "export.nnexport")
 		#expect(await source.exportLibrary(to: file, passphrase: "correct staple"))
 		let exchange = LibraryExchange(model: target)

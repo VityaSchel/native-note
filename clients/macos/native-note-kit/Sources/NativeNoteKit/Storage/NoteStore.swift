@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 actor NoteStore {
-	static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, seq"
+	static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v"
 
 	private let url: URL
 	private var opened: SQLiteConnection?
@@ -46,34 +46,36 @@ actor NoteStore {
 	func save(_ note: Note) throws -> Saved {
 		try connection.transaction {
 			let held = try connection.prepare("SELECT v, pulled FROM note WHERE uuid = ?1")
-			held.bind(1, note.id.bytes)
+			try held.bind(1, note.id.bytes)
 			guard try held.step() else {
 				try put(note, pulled: false)
 				return .saved
 			}
 			let pulledAfterEditBegan = held.int(0) != Int64(note.v) && held.int(1) != 0
 			if pulledAfterEditBegan {
-				let copy = Note(id: UUID(), body: note.body, createdAt: note.createdAt, updatedAt: note.updatedAt, dirty: true)
+				let copy = note.unsyncedCopy()
 				try put(copy, pulled: false)
 				return .copied(copy.id)
 			}
 			let statement = try connection.prepare(
 				"UPDATE note SET body = ?2, updatedAt = ?3, deleted = ?4, dirty = ?5, pulled = 0 WHERE uuid = ?1 AND deleted = 0"
 			)
-			statement.bind(1, note.id.bytes)
-			statement.bind(2, note.body)
-			statement.bind(3, note.updatedAt)
-			statement.bind(4, note.deleted ? 1 : 0)
-			statement.bind(5, note.dirty ? 1 : 0)
+			try statement.bind(1, note.id.bytes)
+			try statement.bind(2, note.body)
+			try statement.bind(3, note.updatedAt)
+			try statement.bind(4, note.deleted ? 1 : 0)
+			try statement.bind(5, note.dirty ? 1 : 0)
 			try statement.step()
 			return .saved
 		}
 	}
 
+	private static let insertion = "INSERT INTO note (\(columns), pulled) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+
 	func put(_ note: Note, pulled: Bool) throws {
 		let statement = try connection.prepare(
 			"""
-			INSERT INTO note (\(Self.columns), pulled) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+			\(Self.insertion)
 			ON CONFLICT(uuid) DO UPDATE SET
 				body = excluded.body,
 				createdAt = excluded.createdAt,
@@ -84,16 +86,30 @@ actor NoteStore {
 				pulled = excluded.pulled
 			"""
 		)
-		statement.bind(1, note.id.bytes)
-		statement.bind(2, note.body)
-		statement.bind(3, note.createdAt)
-		statement.bind(4, note.updatedAt)
-		statement.bind(5, note.deleted ? 1 : 0)
-		statement.bind(6, note.dirty ? 1 : 0)
-		statement.bind(7, Int64(note.v))
-		if let seq = note.seq { statement.bind(8, seq) } else { statement.bindNull(8) }
-		statement.bind(9, pulled ? 1 : 0)
+		try Self.bind(note, pulled: pulled, to: statement)
 		try statement.step()
+	}
+
+	func insertMissing(_ notes: [Note]) throws -> [Note] {
+		try connection.transaction {
+			let statement = try connection.prepare("\(Self.insertion) ON CONFLICT(uuid) DO NOTHING RETURNING uuid")
+			return try notes.filter { note in
+				defer { statement.reset() }
+				try Self.bind(note, pulled: false, to: statement)
+				return try statement.step()
+			}
+		}
+	}
+
+	private static func bind(_ note: Note, pulled: Bool, to statement: SQLiteStatement) throws {
+		try statement.bind(1, note.id.bytes)
+		try statement.bind(2, note.body)
+		try statement.bind(3, note.createdAt)
+		try statement.bind(4, note.updatedAt)
+		try statement.bind(5, note.deleted ? 1 : 0)
+		try statement.bind(6, note.dirty ? 1 : 0)
+		try statement.bind(7, Int64(note.v))
+		try statement.bind(8, pulled ? 1 : 0)
 	}
 
 	func rekey(from oldKey: SymmetricKey, to newKey: SymmetricKey) throws -> Bool {
@@ -112,7 +128,7 @@ actor NoteStore {
 		let statement = try connection.prepare(
 			"SELECT \(Self.columns) FROM note WHERE uuid = ?1"
 		)
-		statement.bind(1, id.bytes)
+		try statement.bind(1, id.bytes)
 		return try statement.step() ? Self.note(from: statement) : nil
 	}
 
@@ -147,15 +163,19 @@ actor NoteStore {
 			ORDER BY rank
 			"""
 		)
-		statement.bind(1, expression)
+		try statement.bind(1, expression)
 		return try collect(statement)
 	}
 
-	func discardUnsynced(id: UUID, at moment: Int64) throws {
+	func discardUnsynced(id: UUID, shownAt v: UInt32, at moment: Int64) throws {
 		try connection.transaction {
-			let statement = try connection.prepare("DELETE FROM note WHERE uuid = ?1 AND v = 0 RETURNING uuid")
-			statement.bind(1, id.bytes)
-			guard try !statement.step() else { return }
+			let neverPushed = try connection.prepare("DELETE FROM note WHERE uuid = ?1 AND v = 0 RETURNING uuid")
+			try neverPushed.bind(1, id.bytes)
+			guard try !neverPushed.step() else { return }
+			let pulledSinceShown = try connection.prepare("SELECT 1 FROM note WHERE uuid = ?1 AND pulled = 1 AND v != ?2")
+			try pulledSinceShown.bind(1, id.bytes)
+			try pulledSinceShown.bind(2, Int64(v))
+			guard try !pulledSinceShown.step() else { return }
 			try markDeleted(id: id, at: moment)
 		}
 	}
@@ -167,8 +187,8 @@ actor NoteStore {
 			ON CONFLICT(uuid) DO UPDATE SET deleted = 1, dirty = 1, body = '', updatedAt = ?2, pulled = 0
 			"""
 		)
-		statement.bind(1, id.bytes)
-		statement.bind(2, moment)
+		try statement.bind(1, id.bytes)
+		try statement.bind(2, moment)
 		try statement.step()
 	}
 
@@ -189,8 +209,7 @@ actor NoteStore {
 			updatedAt: statement.int(3),
 			deleted: statement.int(4) != 0,
 			dirty: statement.int(5) != 0,
-			v: UInt32(statement.int(6)),
-			seq: statement.isNull(7) ? nil : statement.int(7)
+			v: UInt32(statement.int(6))
 		)
 	}
 }

@@ -43,16 +43,15 @@ extension OffscreenWindow {
 	}
 
 	private static func accessibilityElements(under root: NSView) -> [AccessibilityElement] {
-		let setValue = NSSelectorFromString("accessibilitySetValue:forAttribute:")
-		NSApp.perform(setValue, with: true, with: "AXEnhancedUserInterface")
-		defer { NSApp.perform(setValue, with: false, with: "AXEnhancedUserInterface") }
-		var found: [AccessibilityElement] = []
-		var pending: [AnyObject] = [root]
-		while let element = pending.popLast() {
-			if element !== root { found.append(AccessibilityElement(element)) }
-			pending.append(contentsOf: (element.accessibilityChildren?() ?? []).reversed().map { $0 as AnyObject })
+		EnhancedAccessibility.reading {
+			var found: [AccessibilityElement] = []
+			var pending: [AnyObject] = [root]
+			while let element = pending.popLast() {
+				if element !== root { found.append(AccessibilityElement(element)) }
+				pending.append(contentsOf: (element.accessibilityChildren?() ?? []).reversed().map { $0 as AnyObject })
+			}
+			return found
 		}
-		return found
 	}
 
 	func onScreen(_ view: NSView) -> NSRect {
@@ -104,11 +103,34 @@ struct AttributeElement {
 
 extension OffscreenWindow {
 	func attributeTree() -> [AttributeElement] {
-		let setValue = NSSelectorFromString("accessibilitySetValue:forAttribute:")
-		NSApp.perform(setValue, with: true, with: "AXEnhancedUserInterface")
-		defer { NSApp.perform(setValue, with: false, with: "AXEnhancedUserInterface") }
-		_ = AttributeElement.tree(of: window)
-		pump(for: 0.5)
-		return AttributeElement.tree(of: window)
+		EnhancedAccessibility.reading {
+			_ = AttributeElement.tree(of: window)
+			pump(for: 0.5)
+			return AttributeElement.tree(of: window)
+		}
+	}
+}
+
+@MainActor
+enum EnhancedAccessibility {
+	private(set) static var readers = 0
+
+	static var isOn: Bool {
+		let read = NSSelectorFromString("accessibilityAttributeValue:")
+		return (NSApp.perform(read, with: "AXEnhancedUserInterface")?.takeUnretainedValue() as? NSNumber)?.boolValue ?? false
+	}
+
+	static func reading<Read>(_ read: () -> Read) -> Read {
+		if readers == 0 { set(true) }
+		readers += 1
+		defer {
+			readers -= 1
+			if readers == 0 { set(false) }
+		}
+		return read()
+	}
+
+	private static func set(_ isOn: Bool) {
+		NSApp.perform(NSSelectorFromString("accessibilitySetValue:forAttribute:"), with: isOn, with: "AXEnhancedUserInterface")
 	}
 }

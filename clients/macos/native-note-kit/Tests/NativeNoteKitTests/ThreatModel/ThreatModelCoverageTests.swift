@@ -1,17 +1,62 @@
 import Foundation
 import Testing
 
+enum ProofSource {
+	static func flaw(ofSwiftTest name: String, in source: String) -> String? {
+		flaw(of: "func \(name)(", marker: "@Test", disabling: ".disabled(", expectations: ["#expect(", "#require("], in: source)
+	}
+
+	static func flaw(ofRustTest name: String, in source: String) -> String? {
+		flaw(of: "fn \(name)(", marker: "#[test]", disabling: "#[ignore", expectations: ["assert!(", "assert_eq!(", "assert_ne!("], in: source)
+	}
+
+	private static func flaw(of declaration: String, marker: String, disabling: String, expectations: [String], in source: String) -> String? {
+		let lines = source.components(separatedBy: "\n")
+		guard let start = lines.firstIndex(where: { $0.contains(declaration) }) else { return "has no \(declaration)" }
+		let indentation = String(lines[start].prefix { $0 == "\t" })
+		let closing = indentation + "}"
+		let precedingLines = lines[..<start].reversed().prefix { !$0.trimmingCharacters(in: .whitespaces).isEmpty && $0 != closing }
+		let attributes = precedingLines.reversed() + [lines[start].components(separatedBy: declaration)[0]]
+		guard attributes.contains(where: { $0.contains(marker) }) else { return "is not marked \(marker)" }
+		guard !attributes.contains(where: { $0.contains(disabling) }) else { return "is disabled" }
+		let isOneLine = lines[start].hasSuffix("}")
+		let body = isOneLine ? [String(lines[start].drop { $0 != "{" })] : Array(lines[(start + 1)...].prefix { $0 != closing })
+		let code = body.filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+		guard code.contains(where: { line in expectations.contains { line.contains($0) } }) else { return "expects nothing" }
+		return nil
+	}
+}
+
 struct ThreatModelCoverageTests {
 	private struct Proof {
+		enum Kind {
+			case swiftTest
+			case rustTest
+			case text
+		}
+
 		let file: String
-		let needle: String
+		let name: String
+		let kind: Kind
 
 		static func swift(_ file: String, _ name: String) -> Proof {
-			Proof(file: "clients/macos/native-note-kit/Tests/NativeNoteKitTests/\(file).swift", needle: "func \(name)(")
+			Proof(file: "clients/macos/native-note-kit/Tests/NativeNoteKitTests/\(file).swift", name: name, kind: .swiftTest)
 		}
 
 		static func rust(_ file: String, _ name: String) -> Proof {
-			Proof(file: file, needle: "fn \(name)(")
+			Proof(file: file, name: name, kind: .rustTest)
+		}
+
+		static func text(_ file: String, _ name: String) -> Proof {
+			Proof(file: file, name: name, kind: .text)
+		}
+
+		func flaw(in source: String) -> String? {
+			switch kind {
+			case .swiftTest: ProofSource.flaw(ofSwiftTest: name, in: source)
+			case .rustTest: ProofSource.flaw(ofRustTest: name, in: source)
+			case .text: source.contains(name) ? nil : "has no \(name)"
+			}
 		}
 	}
 
@@ -54,7 +99,7 @@ struct ThreatModelCoverageTests {
 		"Hand-rolled HTTP parser": [
 			.rust("server/native-note-core/src/http/tests.rs", "bad_framing_is_a_bad_request"),
 			.rust("server/native-note-core/src/http/tests.rs", "at_most_one_hundred_headers_are_accepted"),
-			Proof(file: "server/native-note-core/fuzz/fuzz_targets/http.rs", needle: "fuzz_target!"),
+			.text("server/native-note-core/fuzz/fuzz_targets/http.rs", "fuzz_target!"),
 		],
 		"Plaintext `v` leaks per-note edit counts": [.swift("ThreatModel/ServerViewTests", "theServerSeesEachNotesVersionCountAndNothingElseOfIt")],
 		"Payload length leaks note size in 4 KiB steps": [
@@ -101,13 +146,41 @@ struct ThreatModelCoverageTests {
 		#expect(Set(claims) == Set(Self.proofs.keys), "unproven: \(Set(claims).subtracting(Self.proofs.keys)); stale: \(Set(Self.proofs.keys).subtracting(claims))")
 	}
 
-	@Test func everyNamedProofExists() throws {
+	@Test func everyNamedProofIsATestThatRunsAndExpectsSomething() throws {
 		for (claim, proofs) in Self.proofs {
 			#expect(!proofs.isEmpty, "\(claim)")
 			for proof in proofs {
 				let source = try String(contentsOf: Self.repository.appending(path: proof.file), encoding: .utf8)
-				#expect(source.contains(proof.needle), "\(claim): \(proof.file) has no \(proof.needle)")
+				let flaw = proof.flaw(in: source)
+				#expect(flaw == nil, "\(claim): \(proof.name) in \(proof.file) \(flaw ?? "")")
 			}
 		}
+	}
+
+	@Test(arguments: [
+		("\t@Test func proof() async throws {\n\t\tlet opened = try open()\n\t\t#expect(opened)\n\t}", nil),
+		("\t@Test(arguments: [\n\t\t1,\n\t])\n\tfunc proof(seed: Int) throws {\n\t\ttry #require(seed > 0)\n\t}", nil),
+		("\t@Test func proof() { #expect(true) }", nil),
+		("\t@Test func another() {\n\t\t#expect(true)\n\t}", "has no func proof("),
+		("\tprivate func proof() {\n\t\t#expect(true)\n\t}", "is not marked @Test"),
+		("\t@Test func other() {\n\t\t#expect(true)\n\t}\n\tfunc proof() {\n\t\t#expect(true)\n\t}", "is not marked @Test"),
+		("\t@Test(.disabled(\"later\")) func proof() {\n\t\t#expect(true)\n\t}", "is disabled"),
+		("\t@Test func proof() async throws {\n\t\t_ = try open()\n\t}", "expects nothing"),
+		("\t@Test func proof() {\n\t\t// #expect(opened)\n\t}", "expects nothing"),
+		("\t@Test func proof() {\n\t\tsetUp()\n\t}\n\n\t@Test func next() {\n\t\t#expect(true)\n\t}", "expects nothing"),
+	] as [(String, String?)])
+	func aSwiftProofCountsOnlyAsARunningTestWithAnExpectation(source: String, flaw: String?) {
+		#expect(ProofSource.flaw(ofSwiftTest: "proof", in: source) == flaw)
+	}
+
+	@Test(arguments: [
+		("#[test]\nfn proof() {\n\tassert_eq!(status(), 413);\n}", nil),
+		("fn proof() {\n\tassert!(true);\n}", "is not marked #[test]"),
+		("#[test]\n#[ignore]\nfn proof() {\n\tassert!(true);\n}", "is disabled"),
+		("#[test]\nfn proof() {\n\tlet _ = status();\n}\n\n#[test]\nfn next() {\n\tassert!(true);\n}", "expects nothing"),
+		("#[test]\nfn other() {\n\tassert!(true);\n}", "has no fn proof("),
+	] as [(String, String?)])
+	func aRustProofCountsOnlyAsARunningTestWithAnAssertion(source: String, flaw: String?) {
+		#expect(ProofSource.flaw(ofRustTest: "proof", in: source) == flaw)
 	}
 }

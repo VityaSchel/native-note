@@ -8,10 +8,13 @@ nonisolated public struct Note: Equatable, Identifiable, Sendable {
 	var deleted = false
 	var dirty = false
 	var v: UInt32 = 0
-	var seq: Int64?
 
 	public var updated: Date {
 		Date(epochMilliseconds: updatedAt)
+	}
+
+	func unsyncedCopy(id: UUID = UUID()) -> Note {
+		Note(id: id, body: body, createdAt: createdAt, updatedAt: updatedAt, dirty: true)
 	}
 
 	public var title: String {

@@ -3,6 +3,7 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct SQLCipherBuildTests {
 	private func connection() throws -> (SQLiteConnection, URL) {
 		let url = temporaryDatabase()
@@ -11,16 +12,14 @@ struct SQLCipherBuildTests {
 	}
 
 	@Test func isSQLCipher4_17OnCommonCrypto() throws {
-		let (connection, url) = try connection()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let (connection, _) = try connection()
 
 		#expect(try connection.scalar("PRAGMA cipher_version") == "4.17.0 community")
 		#expect(try connection.scalar("PRAGMA cipher_provider") == "commoncrypto")
 	}
 
 	@Test func keepsThePrebuiltDefaultsWithFTS5AsTheOnlyExtra() throws {
-		let (connection, url) = try connection()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+		let (connection, _) = try connection()
 
 		let statement = try connection.prepare("PRAGMA compile_options")
 		var options: [String] = []

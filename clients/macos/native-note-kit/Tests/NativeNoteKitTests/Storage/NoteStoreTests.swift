@@ -3,10 +3,10 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct NoteStoreTests {
 	@Test func openingNeverCreatesAMissingDatabase() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 
 		await #expect(throws: SQLiteError.cannotOpen(code: 14, message: "unable to open database file")) {
@@ -15,9 +15,50 @@ struct NoteStoreTests {
 		#expect(!FileManager.default.fileExists(atPath: url.path))
 	}
 
+	@Test func insertsOnlyTheNotesItDoesNotHoldAndReturnsThem() async throws {
+		let url = temporaryDatabase()
+		let notes = try await openStore(at: url)
+		let live = sampleNote(body: "held and edited here")
+		let deleted = sampleNote(body: "held, then deleted")
+		try await notes.save(live)
+		try await notes.save(deleted)
+		try await notes.markDeleted(id: deleted.id, at: 1_760_000_000_500)
+		let held = try await [notes.note(id: live.id), notes.note(id: deleted.id)]
+		var staleLive = live
+		staleLive.body = "from the archive"
+		var staleDeleted = deleted
+		staleDeleted.dirty = true
+		var first = sampleNote(body: "new, first")
+		first.dirty = true
+		var second = sampleNote(body: "")
+		second.dirty = true
+
+		let inserted = try await notes.insertMissing([first, staleLive, staleDeleted, second, first])
+
+		#expect(inserted == [first, second])
+		#expect(try await [notes.note(id: live.id), notes.note(id: deleted.id)] == held)
+		#expect(try await notes.note(id: first.id) == first)
+		#expect(try await notes.note(id: second.id) == second)
+		#expect(try await notes.search("first").map(\.id) == [first.id])
+	}
+
+	@Test func anInsertThatFailsPartWayAddsNothing() async throws {
+		let url = temporaryDatabase()
+		let notes = try await openStore(at: url)
+		try SQLiteConnection(url: url, rawKey: databaseKey, create: false).execute(
+			"CREATE TRIGGER refuse_marked BEFORE INSERT ON note WHEN new.body = 'refused' BEGIN SELECT RAISE(ABORT, 'refused'); END"
+		)
+		let accepted = sampleNote(body: "accepted")
+
+		await #expect(throws: SQLiteError.self) {
+			_ = try await notes.insertMissing([accepted, sampleNote(body: "refused")])
+		}
+
+		#expect(try await notes.note(id: accepted.id) == nil)
+	}
+
 	@Test func roundTripsANoteThroughTheDatabase() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		let note = sampleNote()
 
@@ -28,7 +69,6 @@ struct NoteStoreTests {
 
 	@Test func keepsMillisecondTimestampsExactly() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var note = sampleNote()
 		note.updatedAt = 1_760_000_000_123
@@ -41,7 +81,6 @@ struct NoteStoreTests {
 
 	@Test func updatesInPlaceRatherThanInserting() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var note = sampleNote()
 
@@ -57,7 +96,6 @@ struct NoteStoreTests {
 
 	@Test func deletionSetsAFlagInsteadOfRemovingTheRow() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		let note = sampleNote()
 		try await notes.save(note)
@@ -73,7 +111,6 @@ struct NoteStoreTests {
 
 	@Test func closingReleasesTheDatabase() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote())
 		#expect(FileManager.default.fileExists(atPath: walFile(of: url).path))
@@ -86,7 +123,6 @@ struct NoteStoreTests {
 
 	@Test func aSaveNeverRevivesATombstone() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var note = sampleNote(body: "kayak")
 		try await notes.save(note)
@@ -103,7 +139,6 @@ struct NoteStoreTests {
 
 	@Test func listsNewestFirstAndReportsPendingPushes() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var older = sampleNote(body: "older")
 		older.updatedAt = 1_000
@@ -120,7 +155,6 @@ struct NoteStoreTests {
 
 	@Test func keepsBodiesWithEmbeddedNulIntact() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		let note = sampleNote(body: "visible\u{0000}tail that must survive")
 
@@ -130,15 +164,12 @@ struct NoteStoreTests {
 		#expect(try await notes.search("tail").count == 1)
 	}
 
-	@Test func roundTripsSeqAndPreservesCreatedAtAcrossResaves() async throws {
+	@Test func preservesCreatedAtAcrossResaves() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var note = sampleNote()
-		note.seq = 4_294_967_296
 
 		try await notes.save(note)
-		#expect(try await notes.note(id: note.id)?.seq == 4_294_967_296)
 
 		let created = note.createdAt
 		note.createdAt = 1
@@ -146,12 +177,10 @@ struct NoteStoreTests {
 		try await notes.save(note)
 
 		#expect(try await notes.note(id: note.id)?.createdAt == created)
-		#expect(try await notes.note(id: note.id)?.seq == 4_294_967_296)
 	}
 
 	@Test func deletionStampsTheSuppliedMoment() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		let note = sampleNote()
 		try await notes.save(note)
@@ -163,7 +192,6 @@ struct NoteStoreTests {
 
 	@Test func aMissingNoteReadsAsNil() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 
 		#expect(try await notes.note(id: UUID()) == nil)
@@ -171,7 +199,6 @@ struct NoteStoreTests {
 
 	@Test func aRowWithAMalformedIdIsSkipped() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote())
 
@@ -183,7 +210,6 @@ struct NoteStoreTests {
 
 	@Test func findsNotesByBody() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote(body: "shopping list\nquartz and bread"))
 		try await notes.save(sampleNote(body: "meeting notes\nbudget review"))
@@ -195,7 +221,6 @@ struct NoteStoreTests {
 
 	@Test func treatsPunctuationAsPlainTextRatherThanQuerySyntax() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote(body: "reply to e-mail\ndon't forget the c++ notes"))
 
@@ -213,7 +238,6 @@ struct NoteStoreTests {
 
 	@Test func followsEditsAndDeletions() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		var note = sampleNote(body: "kayak")
 		try await notes.save(note)
@@ -230,7 +254,6 @@ struct NoteStoreTests {
 
 	@Test func matchesAPrefixOfTheLastWordOnly() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		let notes = try await openStore(at: url)
 		try await notes.save(sampleNote(body: "kayak trip"))
 

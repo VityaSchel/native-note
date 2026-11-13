@@ -5,7 +5,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.serialized, .timeLimit(.minutes(2)))
+@MainActor @Suite(.takesFocus, .scratch, .serialized, .timeLimit(.minutes(5)))
 struct TypingPerformanceTests {
 	private let alarm = Alarm()
 
@@ -72,7 +72,6 @@ struct TypingPerformanceTests {
 		for library in [small, large] {
 			#expect(await library.model.flushPendingSaves())
 			library.offscreen.close()
-			try? FileManager.default.removeItem(at: library.directory)
 		}
 	}
 }

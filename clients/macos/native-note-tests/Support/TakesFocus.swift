@@ -37,4 +37,6 @@ struct TakesFocus: SuiteTrait, TestTrait, TestScoping {
 
 extension Trait where Self == TakesFocus {
 	static var takesFocus: Self { TakesFocus() }
+
+	static var writesStandardDefaults: Self { TakesFocus() }
 }

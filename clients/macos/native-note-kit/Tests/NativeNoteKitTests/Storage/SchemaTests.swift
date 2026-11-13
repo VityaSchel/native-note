@@ -3,10 +3,10 @@ import Testing
 
 @testable import NativeNoteKit
 
+@Suite(.scratch)
 struct SchemaTests {
 	@Test func migratesOnceAndRecordsTheVersion() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 
 		_ = try await openStore(at: url)
 		#expect(try SQLiteConnection(url: url, rawKey: databaseKey).scalar("PRAGMA user_version") == String(Schema.migrations.count))
@@ -18,7 +18,6 @@ struct SchemaTests {
 
 	@Test func aVersionOneLibraryGainsThePulledMarkAndKeepsItsNotes() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 		let old = try SQLiteConnection(url: url, rawKey: databaseKey)
 		try old.execute(Schema.migrations[0])
@@ -33,7 +32,6 @@ struct SchemaTests {
 
 	@Test func refusesADatabaseFromANewerVersion() async throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		_ = try await openStore(at: url)
 		try SQLiteConnection(url: url, rawKey: databaseKey).execute("PRAGMA user_version = \(Schema.migrations.count + 1)")
 
@@ -44,7 +42,6 @@ struct SchemaTests {
 
 	@Test func aFailedMigrationLeavesTheVersionUnchanged() throws {
 		let url = temporaryDatabase()
-		defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 		try makeDirectory(for: url)
 		let connection = try SQLiteConnection(url: url, rawKey: databaseKey)
 		try connection.execute("CREATE TABLE note_dirty (x)")

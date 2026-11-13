@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.serialized, .timeLimit(.minutes(10)))
+@MainActor @Suite(.scratch, .serialized, .timeLimit(.minutes(10)))
 struct LibraryEndToEndTests {
 	let corpus = RealisticCorpus.bodies(count: 600)
 
@@ -37,7 +37,6 @@ struct LibraryEndToEndTests {
 
 	@Test func aRealisticLibrarySurvivesLockAndRelaunch() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery")
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let saved = snapshot(model.notes)
 		#expect(saved.count == corpus.count)
 		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
@@ -60,7 +59,6 @@ struct LibraryEndToEndTests {
 
 	@Test func anEncryptedExportRestoresTheLibraryOnAnotherSetUp() async throws {
 		let (source, sourceDirectory) = try await realLibrary(password: "first machine")
-		defer { try? FileManager.default.removeItem(at: sourceDirectory) }
 		let saved = snapshot(source.notes)
 		let file = sourceDirectory.appending(path: "Native Note.nnexport")
 
@@ -71,7 +69,6 @@ struct LibraryEndToEndTests {
 		#expect(sealed.range(of: Data("Trip to Lisbon".utf8)) == nil)
 
 		let (target, targetDirectory) = try await realLibrary(password: "second machine", filled: false)
-		defer { try? FileManager.default.removeItem(at: targetDirectory) }
 		#expect(await target.importLibrary(from: file, passphrase: "export passphrase ✓") == ImportSummary(added: corpus.count))
 		#expect(snapshot(target.notes) == saved)
 		await target.lock()
@@ -82,7 +79,6 @@ struct LibraryEndToEndTests {
 
 	@Test func aPlainExportOpensInTheSystemUnzip() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery")
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = directory.appending(path: "Native Note.zip")
 		let extracted = directory.appending(path: "extracted")
 
@@ -99,7 +95,6 @@ struct LibraryEndToEndTests {
 
 	@Test func anImportAddsNewNotesAndLeavesEditsAndDeletionsSinceTheExport() async throws {
 		let (model, directory) = try await realLibrary(password: "correct horse battery")
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let file = directory.appending(path: "Native Note.zip")
 		#expect(await model.exportLibrary(to: file, passphrase: nil))
 		let exported = snapshot(model.notes)
@@ -107,8 +102,7 @@ struct LibraryEndToEndTests {
 		let edited = Array(ids.prefix(25))
 		let deleted = Array(ids.dropFirst(25).prefix(5))
 
-		let (other, otherDirectory) = try await realLibrary(password: "second machine", filled: false)
-		defer { try? FileManager.default.removeItem(at: otherDirectory) }
+		let (other, _) = try await realLibrary(password: "second machine", filled: false)
 		#expect(await other.importLibrary(from: file, passphrase: nil) == ImportSummary(added: corpus.count))
 		try await fill(other, with: Array(corpus.suffix(40)))
 		let written = snapshot(other.notes.filter { exported[$0.id] == nil })
@@ -135,7 +129,6 @@ struct LibraryEndToEndTests {
 
 	@Test func changingThePasswordKeepsEveryNote() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let unlocked = try await Unlock.setUp(password: "old password", in: directory) {
 			var parameters = try Unlock.makeParameters()
 			parameters.argon.m = Argon2.floor.m / 2
@@ -161,7 +154,6 @@ struct LibraryEndToEndTests {
 
 	@Test func changingThePasswordFromTheAppKeepsEveryNote() async throws {
 		let (model, directory) = try await realLibrary(password: "old password")
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let edited = try #require(model.selection)
 		model.edit(edited, "typed just before the change")
 		let saved = snapshot(model.notes)
@@ -179,7 +171,6 @@ struct LibraryEndToEndTests {
 	@Test func touchIDTurnedOnWithThePasswordUnlocksTheRelaunchedLibrary() async throws {
 		let keys = FakeKeyStore()
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = try await launch(in: directory, password: "correct horse battery", keyStore: keys)
 		try await fill(model, with: corpus)
 		let saved = snapshot(model.notes)
@@ -192,9 +183,7 @@ struct LibraryEndToEndTests {
 		let missed = ContinuousClock.now
 		#expect(await touch(model))
 		#expect(model.touchID == .paused(.shaking))
-		for _ in 0 ..< 400 where model.touchID.listeningContext == nil {
-			try await Task.sleep(for: .milliseconds(5))
-		}
+		try await settle { model.touchID.listeningContext != nil }
 		#expect(ContinuousClock.now - missed >= AppModel.Shake.duration)
 		#expect(model.shake == AppModel.Shake(count: 1, isRunning: false))
 		keys.reply(with: .key)
@@ -220,7 +209,6 @@ struct LibraryEndToEndTests {
 
 	@Test func setUpAfterACrashKeepsTheOrphanedNotes() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let orphan = try await openStore(at: AppLock.databaseFile(in: directory))
 		for body in corpus.prefix(100) { try await orphan.save(sampleNote(body: body)) }
 		let orphaned = try await snapshot(orphan.liveNotes())
@@ -236,7 +224,6 @@ struct LibraryEndToEndTests {
 
 	@Test func erasingARealLibraryLeavesNothingToOpen() async throws {
 		let (model, directory) = try await realLibrary(password: "forgotten password")
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.lock()
 
 		await model.eraseLibrary()

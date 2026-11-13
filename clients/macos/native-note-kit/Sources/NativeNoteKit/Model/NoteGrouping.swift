@@ -67,42 +67,45 @@ nonisolated public enum NoteGrouping {
 	public static func dateLabel(for date: Date, now: Date, calendar: Calendar = .current) -> String {
 		switch Boundaries(now: now, calendar: calendar).bucket(for: date) {
 		case .today:
-			date.formatted(
-				Date.FormatStyle(
-					date: .omitted,
-					time: .shortened,
-					locale: calendar.locale ?? .autoupdatingCurrent,
-					calendar: calendar,
-					timeZone: calendar.timeZone
-				)
-			)
+			time(of: date, calendar: calendar)
 		case .yesterday:
 			"Yesterday"
 		case .previousWeek:
 			calendar.standaloneWeekdaySymbols[calendar.component(.weekday, from: date) - 1]
 		case .thisYear, .earlier:
+			day(of: date, calendar: calendar)
+		}
+	}
+
+	public static func spokenDateLabel(for date: Date, now: Date, calendar: Calendar = .current) -> String {
+		switch Boundaries(now: now, calendar: calendar).bucket(for: date) {
+		case .thisYear, .earlier:
 			date.formatted(
-				Date.VerbatimFormatStyle(
-					format: "\(year: .defaultDigits).\(month: .twoDigits).\(day: .twoDigits)",
-					timeZone: calendar.timeZone,
-					calendar: calendar
-				)
+				Date.FormatStyle(date: .long, time: .omitted, locale: calendar.locale ?? .autoupdatingCurrent, calendar: calendar, timeZone: calendar.timeZone)
 			)
+		case .today, .yesterday, .previousWeek:
+			dateLabel(for: date, now: now, calendar: calendar)
 		}
 	}
 
 	public static func editorDateLine(for date: Date, calendar: Calendar = .current) -> String {
-		let day = date.formatted(
+		"\(day(of: date, calendar: calendar)) at \(time(of: date, calendar: calendar))"
+	}
+
+	private static func day(of date: Date, calendar: Calendar) -> String {
+		date.formatted(
 			Date.VerbatimFormatStyle(
 				format: "\(year: .defaultDigits).\(month: .twoDigits).\(day: .twoDigits)",
 				timeZone: calendar.timeZone,
 				calendar: calendar
 			)
 		)
-		let time = date.formatted(
+	}
+
+	private static func time(of date: Date, calendar: Calendar) -> String {
+		date.formatted(
 			Date.FormatStyle(date: .omitted, time: .shortened, locale: calendar.locale ?? .autoupdatingCurrent, calendar: calendar, timeZone: calendar.timeZone)
 		)
-		return "\(day) at \(time)"
 	}
 
 	private static let monthNames: DateFormatter = {

@@ -56,15 +56,16 @@ extension LibraryEndToEndTests {
 		return (start, keystrokes, killedAt)
 	}
 
-	@Test func aKilledSessionLosesOnlyTheLastSaveWindow() async throws {
+	@Test(arguments: [UInt64(0xf0_0002)])
+	func aKilledSessionLosesOnlyTheLastSaveWindow(seed: UInt64) async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
+		var random = SeededGenerator(seed: seed)
 		var survivedTyping = 0
 
 		for _ in 0 ..< 12 {
-			let session = try await killMidTyping(in: directory, after: .milliseconds(Int.random(in: 100 ... 1_200)))
+			let session = try await killMidTyping(in: directory, after: .milliseconds(Int.random(in: 100 ... 1_200, using: &random)))
 
 			let disk = try await observer(of: directory)
 			let body = try await disk.liveNotes().first?.body ?? ""

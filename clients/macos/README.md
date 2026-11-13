@@ -18,7 +18,8 @@ Dependencies:
 - Argon2 and Secure Enclave calls run on one serial queue, `BlockingWork`, off the main actor and the concurrency pool; concurrent Secure Enclave calls deadlock
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
 - The `AppDelegate` owns `AppModel`, so `applicationShouldTerminate` can hold quit until pending saves land
-- The test host runs with `.prohibited` activation, so tests never take focus or show in the Dock
+- Lock and quit clear what the editor's find bar put on the shared find pasteboard, unless something else was written since
+- The test host runs with `.prohibited` activation, so tests never take focus or show in the Dock, and uses a private find pasteboard
 - Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee
 
 Primitives:

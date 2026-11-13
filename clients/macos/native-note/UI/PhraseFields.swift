@@ -18,11 +18,9 @@ struct PhraseFields: View {
 					}
 				}
 			}
-			Text(checksumMessage ?? " ")
+			ReservedLine(text: checksumMessage)
 				.font(.callout)
 				.foregroundStyle(.red)
-				.fixedSize(horizontal: false, vertical: true)
-				.accessibilityHidden(checksumMessage == nil)
 		}
 		.onChange(of: editing) { left, now in
 			let spoken = left.map { entry.isInvalid(at: $0, editing: $0) } ?? true
@@ -44,6 +42,8 @@ struct PhraseFields: View {
 		"Word \(number) is not in the recovery word list."
 	}
 
+	static let unknownWordLabel = "Not in the recovery word list"
+
 	private var unknownWord: Int? {
 		guard case let .unknownWord(index) = entry.problem(editing: editing) else { return nil }
 		return index
@@ -54,7 +54,7 @@ struct PhraseFields: View {
 			WordNumber(index: index)
 			TextField("Word \(index + 1)", text: word(index), prompt: Text(verbatim: ""))
 				.focused($editing, equals: index)
-				.foregroundStyle(entry.isInvalid(at: index, editing: editing) ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+				.flagsUnknownWord(entry.isInvalid(at: index, editing: editing))
 				.autocorrectionDisabled()
 				.onSubmit { submitted(index) }
 				.onKeyPress(keys: [.tab, Self.backTab], phases: .down) { press in moveByTab(from: index, back: press.key == Self.backTab) }
@@ -91,6 +91,21 @@ struct PhraseFields: View {
 
 	private var checksumMessage: String? {
 		entry.problem(editing: editing) == .checksum ? "These words are not a recovery phrase. Check for a mistyped or swapped word." : nil
+	}
+}
+
+extension View {
+	func flagsUnknownWord(_ unknown: Bool) -> some View {
+		foregroundStyle(unknown ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+			.overlay(alignment: .trailing) {
+				if unknown {
+					Image(systemName: "exclamationmark.circle.fill")
+						.foregroundStyle(.red)
+						.padding(.trailing, 5)
+						.allowsHitTesting(false)
+						.accessibilityLabel(PhraseFields.unknownWordLabel)
+				}
+			}
 	}
 }
 

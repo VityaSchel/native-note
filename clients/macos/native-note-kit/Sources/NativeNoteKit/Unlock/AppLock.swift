@@ -68,6 +68,12 @@ nonisolated enum AppLock {
 		try FileManager.default.removeItem(at: pendingRekeyFile(in: directory))
 	}
 
+	static func promoteRekey(to parameters: UnlockParameters, in directory: URL, sync: (Int32) throws -> Void = fullSync) throws {
+		try write(parameters, to: currentFile(in: directory), sync: sync)
+		let pending = pendingRekeyFile(in: directory)
+		if FileManager.default.fileExists(atPath: pending.path) { try FileManager.default.removeItem(at: pending) }
+	}
+
 	static func read(from url: URL) throws -> UnlockParameters {
 		let parameters = try PropertyListDecoder().decode(UnlockParameters.self, from: Data(contentsOf: url))
 		guard parameters.version == UnlockParameters.currentVersion else {

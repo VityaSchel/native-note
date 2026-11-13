@@ -20,6 +20,7 @@ final class SyncEngine {
 		let apply = apply ?? { [store] in try await store.commit($0) }
 		var total = try await apply(.settleLastVersion)
 		var sent: Set<UUID> = []
+		var deletedWhilePushed: Set<UUID> = []
 		var more = true
 		while true {
 			let since = try await store.since()
@@ -30,6 +31,7 @@ final class SyncEngine {
 			guard !batch.isEmpty || more else { return total }
 
 			for sealed in batch { unacknowledged[sealed.write.writeId] = sealed }
+			try await store.awaitEchoes(ofFirstPushes: batch.map(\.note).filter { $0.v == 0 }.map(\.id))
 			let response = try await connection.send(.sync(since: since, writes: batch.map(\.write)))
 			guard case let .sync(results, changes, nextSeq, hasMore) = response, Self.allows(results, for: batch, more: hasMore, changes: changes, since: since, nextSeq: nextSeq) else {
 				throw SyncError.protocolViolation
@@ -41,11 +43,13 @@ final class SyncEngine {
 			for sealed in batch { unacknowledged[sealed.write.writeId] = nil }
 			let (pulled, unverifiable) = await Self.open(changes, with: cipher)
 			let pullMark = changes.last.map { PullMark(blindedId: $0.blindedId, v: $0.v) }
-			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, pullMark: pullMark)
+			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, pullMark: pullMark, reachedHead: !hasMore)
 			var applied = try await apply(.exchange(exchange))
 			applied.problems += Array(repeating: .unverifiableChange, count: unverifiable)
 			let resolved = Set(pulled.map(\.content.id))
 			unacknowledged = unacknowledged.filter { !resolved.contains($0.value.note.id) }
+			let tombstonesToPush = applied.changed.values.filter { $0.deleted && $0.dirty && deletedWhilePushed.insert($0.id).inserted }
+			sent.subtract(tombstonesToPush.map(\.id))
 			total.merge(applied)
 			more = hasMore
 		}

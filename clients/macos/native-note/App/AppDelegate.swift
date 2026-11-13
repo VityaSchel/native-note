@@ -1,5 +1,6 @@
 import AppKit
 import NativeNoteKit
+import Observation
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
 	let model: AppModel
@@ -7,18 +8,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 	private let confirmQuitLosingEdits: @MainActor (String) -> Bool
 	private let workspace: NotificationCenter
 	private let screenLocked: Notification.Name
+	private let clipboard: RecoveryClipboard
+	private let findPasteboard: FindPasteboard
 
 	init(
 		model: AppModel,
 		confirmQuitLosingEdits: @escaping @MainActor (String) -> Bool = AppDelegate.askToQuitLosingEdits,
 		workspace: NotificationCenter = NSWorkspace.shared.notificationCenter,
-		screenLocked: Notification.Name = Notification.Name("com.apple.screenIsLocked")
+		screenLocked: Notification.Name = Notification.Name("com.apple.screenIsLocked"),
+		clipboard: RecoveryClipboard = .shared,
+		findPasteboard: FindPasteboard = .shared
 	) {
 		self.model = model
 		exchange = LibraryExchange(model: model)
 		self.confirmQuitLosingEdits = confirmQuitLosingEdits
 		self.workspace = workspace
 		self.screenLocked = screenLocked
+		self.clipboard = clipboard
+		self.findPasteboard = findPasteboard
+		super.init()
+		clearOnLock()
+	}
+
+	private func clearOnLock() {
+		let wasUnlocked = model.phase == .unlocked
+		withObservationTracking {
+			_ = model.phase
+		} onChange: { [weak self] in
+			Task { @MainActor in self?.phaseChanged(wasUnlocked: wasUnlocked) }
+		}
+	}
+
+	private func phaseChanged(wasUnlocked: Bool) {
+		if wasUnlocked, model.phase != .unlocked { forgetWhatLockHides() }
+		clearOnLock()
+	}
+
+	private func forgetWhatLockHides() {
+		clipboard.clear()
+		findPasteboard.clear()
+		exchange.lock()
 	}
 
 	override convenience init() {
@@ -62,11 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 	func applicationWillResignActive(_ notification: Notification) {
 		model.appResignedActive()
+		findPasteboard.appResignedActive()
 		flushPendingSaves()
 	}
 
 	func applicationDidBecomeActive(_ notification: Notification) {
 		model.appBecameActive()
+		findPasteboard.appBecameActive()
 	}
 
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -88,7 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 			await model.flushPendingSaves()
 			if let reason = model.unsavedReason, !confirmQuitLosingEdits(reason) { return reply(false) }
 			await model.close()
-			RecoveryClipboard.shared.clear()
+			clipboard.clear()
+			findPasteboard.clear()
 			reply(true)
 		}
 		return .terminateLater

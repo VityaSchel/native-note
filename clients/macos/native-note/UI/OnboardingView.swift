@@ -125,7 +125,15 @@ struct OnboardingView: View {
 		}
 		.disabled(form.working)
 		.onAppear { Task { focus = .password } }
-		ReservedMessage(text: form.inlineMessage)
+		message(form.inlineMessage)
+	}
+
+	private func message(_ text: String?) -> some View {
+		ReservedLine(text: text)
+			.font(.callout)
+			.foregroundStyle(.red)
+			.multilineTextAlignment(.center)
+			.frame(minHeight: 18)
 	}
 
 	@ViewBuilder
@@ -134,7 +142,7 @@ struct OnboardingView: View {
 			TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel)
 				.frame(maxWidth: .infinity)
 		} else {
-			ReservedMessage(text: touchIDForm.inlineMessage)
+			message(touchIDForm.inlineMessage)
 		}
 	}
 
@@ -253,26 +261,7 @@ private struct TallSecureField: View {
 
 	var body: some View {
 		SecureField(title, text: $text)
-			.textFieldStyle(.plain)
-			.font(.system(size: 15))
-			.padding(.horizontal, 14)
-			.frame(height: UnlockView.fieldHeight)
-			.background(Color(nsColor: .textBackgroundColor), in: Capsule())
-			.overlay(Capsule().strokeBorder(.separator))
-	}
-}
-
-private struct ReservedMessage: View {
-	let text: String?
-
-	var body: some View {
-		Text(text ?? " ")
-			.font(.callout)
-			.foregroundStyle(.red)
-			.multilineTextAlignment(.center)
-			.fixedSize(horizontal: false, vertical: true)
-			.frame(minHeight: 18)
-			.accessibilityHidden(text == nil)
+			.capsuleField()
 	}
 }
 

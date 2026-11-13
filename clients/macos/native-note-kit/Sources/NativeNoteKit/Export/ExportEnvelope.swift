@@ -48,8 +48,8 @@ nonisolated enum ExportEnvelope {
 	static func open(_ file: Data, passphrase: String) throws -> Data {
 		guard file.count >= minimumLength, isEncrypted(file) else { throw Failure.notAnExport }
 		let header = file.prefix(headerLength)
-		let fields = header.dropFirst(magic.count)
-		let parameters = Argon2.Parameters(m: word(fields, at: 0), t: word(fields, at: 4), p: word(fields, at: 8))
+		var fields = WireReader(header.dropFirst(magic.count))
+		let parameters = Argon2.Parameters(m: try fields.u32(), t: try fields.u32(), p: try fields.u32())
 		guard isWithinBounds(parameters) else { throw Failure.parametersOutOfBounds }
 		let key = try key(passphrase: passphrase, salt: Data(header.suffix(saltLength)), parameters: parameters)
 		do {
@@ -61,18 +61,14 @@ nonisolated enum ExportEnvelope {
 	}
 
 	static func header(parameters: Argon2.Parameters, salt: Data) -> Data {
-		var header = magic
-		for word in [parameters.m, parameters.t, parameters.p] {
-			withUnsafeBytes(of: word.bigEndian) { header.append(contentsOf: $0) }
-		}
-		return header + salt
+		var header = WireWriter()
+		header.fixed(magic)
+		for word in [parameters.m, parameters.t, parameters.p] { header.u32(word) }
+		header.fixed(salt)
+		return header.data
 	}
 
 	static func key(passphrase: String, salt: Data, parameters: Argon2.Parameters) throws -> SymmetricKey {
 		try Argon2.hash(password: passphrase, salt: salt, parameters: parameters)
-	}
-
-	private static func word(_ bytes: Data, at offset: Int) -> UInt32 {
-		bytes.dropFirst(offset).prefix(4).reduce(0) { $0 << 8 | UInt32($1) }
 	}
 }

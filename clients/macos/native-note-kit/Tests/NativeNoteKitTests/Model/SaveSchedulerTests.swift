@@ -11,7 +11,7 @@ struct SaveSchedulerTests {
 		SaveScheduler(sleep: alarm.sleep)
 	}
 
-	@Test func coalescesABurstIntoOneSaveOfTheLatestEdit() async {
+	@Test func coalescesABurstIntoOneSaveOfTheLatestEdit() async throws {
 		let scheduler = scheduler()
 		let saves = Log()
 		let id = UUID()
@@ -19,42 +19,42 @@ struct SaveSchedulerTests {
 		for value in 0 ..< 5 {
 			scheduler.schedule(id) { await saves.append(value) }
 		}
-		await ring(alarm)
-		await settle { await !saves.values.isEmpty }
+		try await ring(alarm)
+		try await settle { await !saves.values.isEmpty }
 
 		#expect(await saves.values == [4])
 	}
 
-	@Test func keepsTheFirstDeadlineWhileEditsContinue() async {
+	@Test func keepsTheFirstDeadlineWhileEditsContinue() async throws {
 		let scheduler = scheduler()
 		let saves = Log()
 		let id = UUID()
 
 		scheduler.schedule(id) { await saves.append(1) }
 		scheduler.schedule(id) { await saves.append(2) }
-		await ring(alarm)
-		await settle { await saves.values == [2] }
+		try await ring(alarm)
+		try await settle { await saves.values == [2] }
 		scheduler.schedule(id) { await saves.append(3) }
-		await ring(alarm)
-		await settle { await saves.values == [2, 3] }
+		try await ring(alarm)
+		try await settle { await saves.values == [2, 3] }
 
 		#expect(await alarm.started == 2)
 		#expect(await saves.values == [2, 3])
 	}
 
-	@Test func savesForDifferentNotesDoNotCancelEachOther() async {
+	@Test func savesForDifferentNotesDoNotCancelEachOther() async throws {
 		let scheduler = scheduler()
 		let saves = Log()
 
 		scheduler.schedule(UUID()) { await saves.append(1) }
 		scheduler.schedule(UUID()) { await saves.append(2) }
-		await ring(alarm, whenSleeping: 2)
-		await settle { await saves.values.count == 2 }
+		try await ring(alarm, whenSleeping: 2)
+		try await settle { await saves.values.count == 2 }
 
 		#expect(await saves.values.sorted() == [1, 2])
 	}
 
-	@Test func flushWritesImmediatelyAndCancelsThePendingWrite() async {
+	@Test func flushWritesImmediatelyAndCancelsThePendingWrite() async throws {
 		let scheduler = scheduler()
 		let saves = Log()
 		let id = UUID()
@@ -64,11 +64,11 @@ struct SaveSchedulerTests {
 		#expect(await saves.values == [1])
 
 		#expect(await scheduler.flushAll())
-		await settle { await alarm.sleeping == 0 }
+		try await settle { await alarm.sleeping == 0 }
 		#expect(await saves.values == [1])
 	}
 
-	@Test func writesForOneNoteLandInOrder() async {
+	@Test func writesForOneNoteLandInOrder() async throws {
 		let scheduler = scheduler()
 		let saves = Log()
 		let id = UUID()
@@ -80,10 +80,10 @@ struct SaveSchedulerTests {
 			return await saves.append(1)
 		}
 		let first = Task { await scheduler.flush(id) }
-		await settle { await saves.values == [0] }
+		try await settle { await saves.values == [0] }
 		scheduler.schedule(id) { await saves.append(2) }
 		let second = Task { await scheduler.flush(id) }
-		await ring(slowWrite)
+		try await ring(slowWrite)
 		_ = await first.value
 		_ = await second.value
 
@@ -127,7 +127,7 @@ struct SaveSchedulerTests {
 		#expect(await saves.values.isEmpty)
 	}
 
-	@Test func discardingAllDropsASaveScheduledWhileItWaits() async {
+	@Test func discardingAllDropsASaveScheduledWhileItWaits() async throws {
 		let scheduler = scheduler()
 		let held = Alarm()
 		let saves = Log()
@@ -138,7 +138,7 @@ struct SaveSchedulerTests {
 			return false
 		}
 		let flushing = Task { await scheduler.flush(id) }
-		await settle { await held.sleeping == 1 }
+		try await settle { await held.sleeping == 1 }
 
 		let discarding = Task { await scheduler.discardAll() }
 		await held.ring()

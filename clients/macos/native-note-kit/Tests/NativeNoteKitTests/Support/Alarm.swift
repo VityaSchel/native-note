@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 
 @testable import NativeNoteKit
 
@@ -48,7 +49,7 @@ actor Alarm {
 	}
 }
 
-func ring(_ alarm: Alarm, whenSleeping count: Int = 1) async {
-	await settle { await alarm.sleeping >= count }
+func ring(_ alarm: Alarm, whenSleeping count: Int = 1) async throws {
+	try await settle { await alarm.sleeping >= count }
 	await alarm.ring()
 }

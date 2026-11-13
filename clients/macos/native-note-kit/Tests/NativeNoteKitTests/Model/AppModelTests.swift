@@ -3,13 +3,12 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(1)))
+@MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct AppModelTests {
 	private let alarm = Alarm()
 
 	@Test func walksSetUpEditLockAndUnlock() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 
 		model.start()
@@ -33,8 +32,9 @@ struct AppModelTests {
 		await model.unlock(password: "wrong horse")
 		#expect(model.phase == .locked)
 		#expect(model.failure == .wrongPassword)
+		#expect(await model.submit(password: "wrong horse") == .wrongPassword)
 
-		await model.unlock(password: "correct horse")
+		#expect(await model.submit(password: "correct horse") == nil)
 		#expect(model.phase == .unlocked)
 		#expect(model.notes.map(\.id) == [id])
 		#expect(model.notes.first?.body == "Shopping\nquartz and bread")
@@ -42,7 +42,6 @@ struct AppModelTests {
 
 	@Test func startsLockedWhenParametersAlreadyExist() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
 
 		let model = AppModel(directory: directory, makeParameters: { .fast })
@@ -53,7 +52,6 @@ struct AppModelTests {
 
 	@Test func submitSetsUpOnFirstRunAndUnlocksAfterwards() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 		model.start()
 		#expect(model.phase == .needsSetup)
@@ -82,7 +80,6 @@ struct AppModelTests {
 
 	@Test func parametersBoundToAnotherMacSaySo() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		var foreign = UnlockParameters.fast
 		foreign.enclaveKey = Data(repeating: 0x11, count: 8)
 		try AppLock.write(foreign, to: AppLock.currentFile(in: directory))
@@ -98,7 +95,6 @@ struct AppModelTests {
 
 	@Test func setUpFindingParametersFromElsewhereLocks() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 		model.start()
 		try await Unlock.setUp(password: "other instance", in: directory, makeParameters: { .fast }).store.close()
@@ -113,7 +109,6 @@ struct AppModelTests {
 
 	@Test func aDamagedParameterFileLocksRatherThanOfferingSetup() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		try Data("not a property list".utf8).write(to: AppLock.currentFile(in: directory))
 		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
@@ -129,7 +124,6 @@ struct AppModelTests {
 
 	@Test func aDatabaseFromANewerVersionAsksForAnUpdate() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		await model.lock()
 		try await connection(to: directory).execute("PRAGMA user_version = 99")
 
@@ -141,7 +135,6 @@ struct AppModelTests {
 
 	@Test func aDatabaseThatCannotBeOpenedSaysWhy() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		try FileManager.default.createDirectory(at: AppLock.databaseFile(in: directory), withIntermediateDirectories: true)
 		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
@@ -154,8 +147,7 @@ struct AppModelTests {
 	}
 
 	@Test func lockingTwiceIsHarmless() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 
 		await model.lock()
 		await model.lock()
@@ -166,7 +158,6 @@ struct AppModelTests {
 
 	@Test func deletingRemovesTheNoteFromTheList() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 		await model.setUp(password: "correct horse")
 		await model.createNote()
@@ -179,7 +170,6 @@ struct AppModelTests {
 
 	@Test func deletingAnotherNoteKeepsTheSelection() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast })
 		await model.setUp(password: "correct horse")
 		await model.createNote()
@@ -199,8 +189,7 @@ struct AppModelTests {
 	}
 
 	@Test func deletingTheOpenNoteClosesIt() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.createNote()
 
 		await model.delete(try #require(model.selection))
@@ -210,8 +199,7 @@ struct AppModelTests {
 	}
 
 	@Test func deletingWithNothingSelectedDoesNothing() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		await model.createNote()
 		model.edit(try #require(model.selection), "kept")
 		model.selection = nil

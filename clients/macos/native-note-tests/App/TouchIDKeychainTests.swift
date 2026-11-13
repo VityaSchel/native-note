@@ -37,7 +37,7 @@ private final class TouchAcceptedKeychain: UnlockKeyStore {
 	}
 }
 
-@MainActor @Suite(.serialized, .enabled(if: touchIDReady))
+@MainActor @Suite(.scratch, .serialized, .enabled(if: touchIDReady))
 struct TouchIDKeychainTests {
 	private func lookUp(_ directory: URL, _ constraint: [String: Any]) -> OSStatus {
 		let context = LAContext()
@@ -103,7 +103,6 @@ struct TouchIDKeychainTests {
 
 	@Test func aLibraryTurnsTouchIDOnAndOffUpToTheTouch() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
 		model.start()
@@ -122,7 +121,6 @@ struct TouchIDKeychainTests {
 
 	@Test func aWrongPasswordPutsNothingInTheKeychain() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		model.start()
@@ -137,7 +135,6 @@ struct TouchIDKeychainTests {
 
 	@Test func erasingTheLibraryRemovesItsTouchIDKey() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		defer { try? KeychainUnlockKeyStore(directory: directory).delete() }
 		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: TouchAcceptedKeychain(directory: directory))
 		model.start()

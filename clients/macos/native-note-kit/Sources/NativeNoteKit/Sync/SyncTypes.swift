@@ -5,6 +5,11 @@ nonisolated struct SyncSettings: Sendable {
 	let server: URL
 	let apiKey: SymmetricKey
 	let contentKey: SymmetricKey
+
+	static func server(from address: String) -> URL? {
+		guard let url = URL(string: address), ["http", "https"].contains(url.scheme?.lowercased()), url.host() != nil else { return nil }
+		return url
+	}
 }
 
 nonisolated struct SealedWrite: Sendable {
@@ -25,6 +30,7 @@ nonisolated struct Exchange: Sendable {
 	var nextSeq: UInt64 = 0
 	var unacknowledged: [Data: SealedWrite] = [:]
 	var pullMark: PullMark?
+	var reachedHead = false
 }
 
 nonisolated struct PullMark: Equatable, Sendable {

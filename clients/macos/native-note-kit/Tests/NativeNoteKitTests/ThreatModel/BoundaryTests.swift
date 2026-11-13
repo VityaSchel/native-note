@@ -4,7 +4,7 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor @Suite(.timeLimit(.minutes(2)))
+@MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(2)))
 struct BoundaryTests {
 	private let repository = URL(filePath: #filePath).appending(path: "../../../../../../..").standardized
 
@@ -83,14 +83,13 @@ struct BoundaryTests {
 		await owner.lock()
 
 		#expect(owner.phase == .locked)
-		#expect(owner.store == nil && owner.engine == nil)
+		#expect(owner.store == nil && owner.sync.engine == nil)
 		#expect(owner.notes.isEmpty)
 		#expect(owner.syncStatus == AppModel.SyncStatus())
 	}
 
 	@Test func aDeletedNoteLeavesNoPlaintextOnDisk() async throws {
 		let (model, directory) = try await unlockedModel { AppModel(directory: $0) }
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["quartzite zephyr deleted", "kept"])
 		await model.delete(try #require(model.notes.first { $0.body.hasPrefix("quartzite") }).id)
 
@@ -102,8 +101,7 @@ struct BoundaryTests {
 	}
 
 	@Test func anyNumberOfWrongPasswordsLeavesTheRightOneWorking() async throws {
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0, shakeTimer: { _ in }) }
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel { AppModel(directory: $0, shakeTimer: { _ in }) }
 		await model.lock()
 
 		for attempt in 0 ..< 25 {
@@ -117,7 +115,6 @@ struct BoundaryTests {
 
 	@Test func aLibraryWithoutHardwareBindingCanBeGuessedFromItsFilesAlone() async throws {
 		let (model, directory) = try await unlockedModel { AppModel(directory: $0) }
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["guessable"])
 		await model.lock()
 		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
@@ -137,7 +134,6 @@ struct BoundaryTests {
 	@Test(.enabled(if: MachineKey.isAvailable))
 	func withTheMachineIdReadOnceGuessingCostsOnlyArgon2() async throws {
 		let directory = temporaryDirectory()
-		defer { try? FileManager.default.removeItem(at: directory) }
 		let parameters = try UnlockParameters.fastBoundToThisMac()
 		let representation = try #require(parameters.enclaveKey)
 		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))

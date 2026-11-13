@@ -4,13 +4,9 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch)
 struct SyncVerificationTests {
 	private let cipher = NoteCipher(contentKey: sharedContentKey)
-
-	private func library() async throws -> NoteStore {
-		try await openStore(at: temporaryDatabase())
-	}
 
 	private func note(_ body: String, v: UInt32 = 0, dirty: Bool = true) -> Note {
 		Note(id: UUID(), body: body, createdAt: 1, updatedAt: 2, dirty: dirty, v: v)
@@ -24,7 +20,7 @@ struct SyncVerificationTests {
 		"too few results", "an accepted result at another version", "an accepted result without a seq", "more with no changes",
 	])
 	func aResponseTheProtocolForbidsIsRefusedWhole(_ violation: String) async throws {
-		let store = try await library()
+		let store = try await openStore(at: temporaryDatabase())
 		let pushed = note("pushed")
 		try await store.save(pushed)
 		let server = ScriptedServer()
@@ -46,7 +42,7 @@ struct SyncVerificationTests {
 	}
 
 	@Test func aChangeWhoseTextNamesAnotherNoteIsReportedAndNotApplied() async throws {
-		let store = try await library()
+		let store = try await openStore(at: temporaryDatabase())
 		let mine = note("mine", v: 3, dirty: false)
 		try await store.save(mine)
 		let server = ScriptedServer()
@@ -61,7 +57,7 @@ struct SyncVerificationTests {
 	}
 
 	@Test func aPulledVersionBelowTheLocalOneOrAPushConflictBelowItReportsTheServerBehind() async throws {
-		let store = try await library()
+		let store = try await openStore(at: temporaryDatabase())
 		let held = note("at five", v: 5, dirty: false)
 		let edited = note("edited at three", v: 3)
 		try await store.save(held)
@@ -79,7 +75,7 @@ struct SyncVerificationTests {
 	}
 
 	@Test func theLargestNoteThatFitsItsFilledPayloadSyncsAndOneByteMoreStaysHere() async throws {
-		let store = try await library()
+		let store = try await openStore(at: temporaryDatabase())
 		let largest = note(String(repeating: "a", count: 255 * Content.block - 38))
 		let over = note(String(repeating: "a", count: 255 * Content.block - 37))
 		try await store.save(largest)
@@ -97,6 +93,22 @@ struct SyncVerificationTests {
 		#expect(writes.map(\.payload.count) == [255 * Content.block + 28])
 		#expect(try await store.note(id: largest.id)?.dirty == false)
 		#expect(try await store.note(id: over.id)?.dirty == true)
+	}
+
+	@Test func aWriteTheServerAnswersTooLargeStaysDirtyHereAndIsReportedWithoutARetry() async throws {
+		let store = try await openStore(at: temporaryDatabase())
+		let refused = note("refused by the server")
+		try await store.save(refused)
+		let server = ScriptedServer()
+		server.answer { _ in .sync(results: [WriteResult(status: .tooLarge, v: 0, seq: 0)], changes: [], nextSeq: 7, more: false) }
+
+		let applied = try await server.device(store).sync()
+
+		#expect(applied.problems == [.tooLarge(refused.id)])
+		#expect(applied.changed.isEmpty && applied.copies.isEmpty)
+		#expect(try await store.note(id: refused.id).map { $0.dirty && $0.v == 0 && $0.body == "refused by the server" } == true)
+		#expect(try await store.since() == 7)
+		#expect(server.requests.count == 1)
 	}
 
 	@Test func aRecoveryPutConflictBelowThePinReportsTheServerBehind() async throws {

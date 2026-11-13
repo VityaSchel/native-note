@@ -5,12 +5,11 @@ import SwiftUI
 
 struct TouchIDGlyph: NSViewRepresentable {
 	enum Mode {
-		case listening(LAContext)
+		case listening(LAContext, label: String?)
 		case dimmed
 	}
 
 	let mode: Mode
-	let label: String?
 	var size = NSControl.ControlSize.regular
 	var listen: (LAAuthenticationView) async -> Void = { _ in }
 
@@ -21,7 +20,7 @@ struct TouchIDGlyph: NSViewRepresentable {
 	func updateNSView(_ view: TouchIDGlyphView, context: Context) {
 		view.listen = listen
 		view.size = size
-		view.show(mode, label: label)
+		view.show(mode)
 	}
 }
 
@@ -33,9 +32,9 @@ final class TouchIDGlyphView: NSView {
 	private(set) var paired: LAAuthenticationView?
 	private(set) var symbol: NSImageView?
 
-	func show(_ mode: TouchIDGlyph.Mode, label: String?) {
+	func show(_ mode: TouchIDGlyph.Mode) {
 		switch mode {
-		case let .listening(context):
+		case let .listening(context, label):
 			if paired?.context !== context { pair(with: context) }
 			paired?.setAccessibilityElement(label != nil)
 			paired?.setAccessibilityLabel(label)

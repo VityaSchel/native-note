@@ -7,6 +7,16 @@ nonisolated enum WireError: Error, Equatable {
 	case notCanonical
 }
 
+nonisolated extension FixedWidthInteger {
+	var bigEndianBytes: Data {
+		withUnsafeBytes(of: bigEndian) { Data($0) }
+	}
+
+	init(bigEndianBytes bytes: some Sequence<UInt8>) {
+		self = bytes.reduce(0) { $0 << 8 | Self(truncatingIfNeeded: $1) }
+	}
+}
+
 nonisolated struct WireReader {
 	private let buffer: Data
 	private var offset: Int
@@ -27,11 +37,11 @@ nonisolated struct WireReader {
 	}
 
 	mutating func u32() throws(WireError) -> UInt32 {
-		try take(4).reduce(0) { $0 << 8 | UInt32($1) }
+		UInt32(bigEndianBytes: try take(4))
 	}
 
 	mutating func u64() throws(WireError) -> UInt64 {
-		try take(8).reduce(0) { $0 << 8 | UInt64($1) }
+		UInt64(bigEndianBytes: try take(8))
 	}
 
 	mutating func i64() throws(WireError) -> Int64 {
@@ -82,11 +92,11 @@ nonisolated struct WireWriter {
 	}
 
 	mutating func u32(_ value: UInt32) {
-		withUnsafeBytes(of: value.bigEndian) { data.append(contentsOf: $0) }
+		data.append(value.bigEndianBytes)
 	}
 
 	mutating func u64(_ value: UInt64) {
-		withUnsafeBytes(of: value.bigEndian) { data.append(contentsOf: $0) }
+		data.append(value.bigEndianBytes)
 	}
 
 	mutating func i64(_ value: Int64) {

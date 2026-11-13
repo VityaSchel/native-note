@@ -7,20 +7,56 @@ import Testing
 let workspacePassword = "correct horse"
 
 @MainActor
-func unlockedModel(alarm: Alarm) async throws -> (AppModel, URL) {
-	try await unlockedModel { AppModel(directory: $0, scheduler: SaveScheduler(sleep: alarm.sleep)) }
+struct Workspace {
+	typealias Make = @MainActor (URL, (any UnlockKeyStore)?) -> AppModel
+
+	private let bodies: [String]
+	private let make: Make
+
+	init(holding bodies: [String] = [], _ make: @escaping Make) {
+		self.bodies = bodies
+		self.make = make
+	}
+
+	init(holding bodies: [String] = [], alarm: Alarm) {
+		self.init(holding: bodies) { AppModel(directory: $0, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: $1) }
+	}
+
+	func unlocked(_ keys: (any UnlockKeyStore)? = nil, holding bodies: [String]? = nil) async throws -> (AppModel, URL) {
+		let directory = temporaryDirectory()
+		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
+		let model = make(directory, keys)
+		model.start()
+		await model.unlock(password: workspacePassword)
+		try #require(model.phase == .unlocked)
+		let bodies = bodies ?? self.bodies
+		if !bodies.isEmpty { try await fill(model, with: bodies) }
+		return (model, directory)
+	}
+
+	func unlockedWithTouchID(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
+		let (model, directory) = try await unlocked(keys)
+		try await turnOnTouchID(model)
+		keys.forgetReads()
+		return (model, directory)
+	}
+
+	func lockedWithTouchID(_ keys: FakeKeyStore) async throws -> (AppModel, URL) {
+		let (model, directory) = try await unlockedWithTouchID(keys)
+		await model.lock()
+		return (model, directory)
+	}
 }
 
 @MainActor
-func unlockedModel(_ make: (URL) -> AppModel) async throws -> (AppModel, URL) {
-	let directory = temporaryDirectory()
-	try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-	try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
-	let model = make(directory)
-	model.start()
-	await model.unlock(password: workspacePassword)
-	try #require(model.phase == .unlocked)
-	return (model, directory)
+func unlockedModel(alarm: Alarm) async throws -> (AppModel, URL) {
+	try await Workspace(alarm: alarm).unlocked()
+}
+
+@MainActor
+func unlockedModel(_ make: @escaping @MainActor (URL) -> AppModel) async throws -> (AppModel, URL) {
+	try await Workspace { directory, _ in make(directory) }.unlocked()
 }
 
 @MainActor
@@ -56,4 +92,10 @@ func connection(to directory: URL) async throws -> SQLiteConnection {
 
 func observer(of directory: URL) async throws -> NoteStore {
 	try await Unlock.open(password: workspacePassword, in: directory).store
+}
+
+extension NoteStore {
+	func failAtOnceWhenLocked() throws {
+		try connection.execute("PRAGMA busy_timeout = 0")
+	}
 }

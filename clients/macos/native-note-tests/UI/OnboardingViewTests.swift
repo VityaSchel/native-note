@@ -51,34 +51,11 @@ struct OnboardingViewTests {
 		)
 	}
 
-	private func texts(_ offscreen: OffscreenWindow<OnboardingView>) -> [String] {
-		offscreen.accessibilityElements().filter { [.staticText, NSAccessibility.Role(rawValue: "AXHeading")].contains($0.role) }.map { $0.value.isEmpty ? $0.label : $0.value }
-	}
-
-	private func button(_ label: String, in offscreen: OffscreenWindow<OnboardingView>) -> AccessibilityElement? {
-		offscreen.accessibilityElements(.button).first { $0.label == label }
-	}
-
-	private func press(_ label: String, in offscreen: OffscreenWindow<OnboardingView>) throws {
-		try #require(button(label, in: offscreen), "\(label)").press()
-		offscreen.pump()
-	}
-
-	private func field(_ placeholder: String, in offscreen: OffscreenWindow<OnboardingView>) throws -> NSSecureTextField {
-		try #require(offscreen.views(of: NSSecureTextField.self).first { $0.placeholderString == placeholder })
-	}
-
-	private func type(_ text: String, into field: NSTextField, of offscreen: OffscreenWindow<OnboardingView>) throws {
-		try #require(offscreen.window.makeFirstResponder(field))
-		try #require(field.currentEditor()).insertText(text)
-		offscreen.pump()
-	}
-
 	private func enterPassword(_ password: String, confirming confirmation: String? = nil, in offscreen: OffscreenWindow<OnboardingView>) throws {
-		try press("Next", in: offscreen)
-		try type(password, into: try field("Password", in: offscreen), of: offscreen)
-		let confirm = try field("Confirm Password", in: offscreen)
-		try type(confirmation ?? password, into: confirm, of: offscreen)
+		try offscreen.press("Next")
+		try offscreen.type(password, into: try offscreen.field("Password"))
+		let confirm = try offscreen.field("Confirm Password")
+		try offscreen.type(confirmation ?? password, into: confirm)
 		confirm.currentEditor()?.insertNewline(nil)
 	}
 
@@ -86,18 +63,18 @@ struct OnboardingViewTests {
 		let offscreen = onboarding(Calls())
 		defer { offscreen.close() }
 		offscreen.pump()
-		#expect(texts(offscreen).contains("Welcome to Native Note"))
-		#expect(texts(offscreen).contains("A personal encrypted self-hosted note-taking app"))
+		#expect(offscreen.texts().contains("Welcome to Native Note"))
+		#expect(offscreen.texts().contains("A personal encrypted self-hosted note-taking app"))
 		#expect(offscreen.views(of: NSSecureTextField.self).isEmpty)
 
-		try press("Next", in: offscreen)
+		try offscreen.press("Next")
 
-		#expect(texts(offscreen).contains("Set an Unlock Password"))
-		#expect(texts(offscreen).contains("The app is encrypted with this password. It cannot be recovered."))
-		let password = offscreen.onScreen(try field("Password", in: offscreen))
-		let confirmation = offscreen.onScreen(try field("Confirm Password", in: offscreen))
+		#expect(offscreen.texts().contains("Set an Unlock Password"))
+		#expect(offscreen.texts().contains("The app is encrypted with this password. It cannot be recovered."))
+		let password = offscreen.onScreen(try offscreen.field("Password"))
+		let confirmation = offscreen.onScreen(try offscreen.field("Confirm Password"))
 		#expect(password.midY - confirmation.midY == UnlockView.fieldHeight + 10)
-		let field = try field("Password", in: offscreen)
+		let field = try offscreen.field("Password")
 		await offscreen.pump { offscreen.window.firstResponder === field.currentEditor() }
 		#expect(offscreen.window.firstResponder === field.currentEditor())
 	}
@@ -115,15 +92,15 @@ struct OnboardingViewTests {
 		await offscreen.pump { !calls.created.isEmpty }
 
 		#expect(calls.created == ["correct horse"])
-		let next = try #require(button("Next", in: offscreen))
+		let next = try #require(offscreen.button("Next"))
 		#expect(!next.isEnabled)
 		#expect(next.value == OnboardingLabel.busyValue)
 		#expect(offscreen.views(of: NSSecureTextField.self).allSatisfy { !$0.isEnabled })
 
 		gate.release()
-		await offscreen.pump { texts(offscreen).contains("Sync Your Notes") }
+		await offscreen.pump { offscreen.texts().contains("Sync Your Notes") }
 
-		#expect(texts(offscreen).contains("Sync Your Notes"))
+		#expect(offscreen.texts().contains("Sync Your Notes"))
 		#expect(calls.created == ["correct horse"])
 	}
 
@@ -133,11 +110,12 @@ struct OnboardingViewTests {
 		defer { offscreen.close() }
 
 		try enterPassword("correct horse", confirming: "correct hose", in: offscreen)
-		await offscreen.pump(turns: 40) { !calls.created.isEmpty }
+		await offscreen.pump { offscreen.texts().contains("The passwords do not match.") }
+		offscreen.pump(for: 0.2)
 
 		#expect(calls.created.isEmpty)
-		#expect(try field("Password", in: offscreen).stringValue == "correct horse")
-		#expect(texts(offscreen).contains("The passwords do not match."))
+		#expect(try offscreen.field("Password").stringValue == "correct horse")
+		#expect(offscreen.texts().contains("The passwords do not match."))
 	}
 
 	@Test func aFailedCreateStaysOnThePasswordStep() async throws {
@@ -146,19 +124,19 @@ struct OnboardingViewTests {
 		defer { offscreen.close() }
 
 		try enterPassword("correct horse", in: offscreen)
-		await offscreen.pump { button("Next", in: offscreen)?.isEnabled == true || !texts(offscreen).contains("Set an Unlock Password") }
+		await offscreen.pump { offscreen.button("Next")?.isEnabled == true || !offscreen.texts().contains("Set an Unlock Password") }
 
-		#expect(texts(offscreen).contains("Set an Unlock Password"))
-		#expect(!texts(offscreen).contains("Sync Your Notes"))
+		#expect(offscreen.texts().contains("Set an Unlock Password"))
+		#expect(!offscreen.texts().contains("Sync Your Notes"))
 	}
 
 	@Test func thePasswordStepWarnsOnlyWithoutASecureEnclave() throws {
 		for hasSecureEnclave in [false, true] {
 			let offscreen = onboarding(Calls(), hasSecureEnclave: hasSecureEnclave)
 			defer { offscreen.close() }
-			try press("Next", in: offscreen)
+			try offscreen.press("Next")
 
-			#expect(texts(offscreen).contains(OnboardingView.noSecureEnclaveWarning) == !hasSecureEnclave)
+			#expect(offscreen.texts().contains(OnboardingView.noSecureEnclaveWarning) == !hasSecureEnclave)
 		}
 	}
 
@@ -166,7 +144,7 @@ struct OnboardingViewTests {
 		let calls = Calls()
 		let offscreen = onboarding(calls, touchID: TouchIDControls(state: .listening(LAContext()), listen: { _ in calls.listened += 1 }))
 		defer { offscreen.close() }
-		try press("Next", in: offscreen)
+		try offscreen.press("Next")
 		offscreen.pump(for: 0.1)
 
 		#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
@@ -179,16 +157,16 @@ struct OnboardingViewTests {
 		defer { offscreen.close() }
 
 		try enterPassword("correct horse", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Unlock with Touch ID?") }
-		#expect(texts(offscreen).contains("Unlock the app with your fingerprint"))
-		#expect(button("Set Up Touch ID", in: offscreen) != nil && button("Skip", in: offscreen) != nil)
-		let primary = try #require(button("Set Up Touch ID", in: offscreen)).frame
-		let secondary = try #require(button("Skip", in: offscreen)).frame
+		await offscreen.pump { offscreen.texts().contains("Unlock with Touch ID?") }
+		#expect(offscreen.texts().contains("Unlock the app with your fingerprint"))
+		#expect(offscreen.button("Set Up Touch ID") != nil && offscreen.button("Skip") != nil)
+		let primary = try #require(offscreen.button("Set Up Touch ID")).frame
+		let secondary = try #require(offscreen.button("Skip")).frame
 		#expect(primary.minY > secondary.maxY)
 		#expect(primary.width == secondary.width)
 
-		try press("Set Up Touch ID", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Sync Your Notes") }
+		try offscreen.press("Set Up Touch ID")
+		await offscreen.pump { offscreen.texts().contains("Sync Your Notes") }
 
 		#expect(calls.touchID == ["correct horse"])
 	}
@@ -198,11 +176,11 @@ struct OnboardingViewTests {
 		let offscreen = onboarding(calls, touchIDAvailable: true)
 		defer { offscreen.close() }
 		try enterPassword("correct horse", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Unlock with Touch ID?") }
+		await offscreen.pump { offscreen.texts().contains("Unlock with Touch ID?") }
 
-		try press("Skip", in: offscreen)
+		try offscreen.press("Skip")
 
-		#expect(texts(offscreen).contains("Sync Your Notes"))
+		#expect(offscreen.texts().contains("Sync Your Notes"))
 		#expect(calls.touchID.isEmpty)
 	}
 
@@ -211,14 +189,14 @@ struct OnboardingViewTests {
 		let offscreen = onboarding(calls, touchIDAvailable: true, turnOnTouchID: { _ in .failed("Touch ID was cancelled.", title: "") })
 		defer { offscreen.close() }
 		try enterPassword("correct horse", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Unlock with Touch ID?") }
+		await offscreen.pump { offscreen.texts().contains("Unlock with Touch ID?") }
 
-		try press("Set Up Touch ID", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Touch ID was cancelled.") }
-		#expect(texts(offscreen).contains("Unlock with Touch ID?"))
+		try offscreen.press("Set Up Touch ID")
+		await offscreen.pump { offscreen.texts().contains("Touch ID was cancelled.") }
+		#expect(offscreen.texts().contains("Unlock with Touch ID?"))
 
-		try press("Skip", in: offscreen)
-		#expect(texts(offscreen).contains("Sync Your Notes"))
+		try offscreen.press("Skip")
+		#expect(offscreen.texts().contains("Sync Your Notes"))
 	}
 
 	@Test func skippingWhileWaitingForTheTouchCancelsItAndALateAnswerChangesNothing() async throws {
@@ -236,16 +214,16 @@ struct OnboardingViewTests {
 		)
 		defer { offscreen.close() }
 		try enterPassword("correct horse", in: offscreen)
-		await offscreen.pump { texts(offscreen).contains("Unlock with Touch ID?") }
-		try press("Set Up Touch ID", in: offscreen)
+		await offscreen.pump { offscreen.texts().contains("Unlock with Touch ID?") }
+		try offscreen.press("Set Up Touch ID")
 		await offscreen.pump { !calls.touchID.isEmpty }
 
-		try press("Skip", in: offscreen)
+		try offscreen.press("Skip")
 		gate.release()
 		offscreen.pump(for: 0.1)
 
 		#expect(cancelled == 1)
-		#expect(texts(offscreen).contains("Sync Your Notes"))
+		#expect(offscreen.texts().contains("Sync Your Notes"))
 	}
 
 	@Test func theSyncStepLinksTheServerGuideAndNotNowFinishes() throws {
@@ -254,13 +232,13 @@ struct OnboardingViewTests {
 		defer { offscreen.close() }
 		offscreen.pump()
 
-		#expect(texts(offscreen).contains("Sync Your Notes"))
-		#expect(texts(offscreen).contains { $0.contains("Native Note server") && $0.contains("sync your encrypted notes across devices") })
-		let primary = try #require(button("Set Up", in: offscreen)).frame
-		let secondary = try #require(button("Not Now", in: offscreen)).frame
+		#expect(offscreen.texts().contains("Sync Your Notes"))
+		#expect(offscreen.texts().contains { $0.contains("Native Note server") && $0.contains("sync your encrypted notes across devices") })
+		let primary = try #require(offscreen.button("Set Up")).frame
+		let secondary = try #require(offscreen.button("Not Now")).frame
 		#expect(primary.minY > secondary.maxY)
 
-		try press("Not Now", in: offscreen)
+		try offscreen.press("Not Now")
 
 		#expect(calls.finished == 1)
 	}
@@ -285,7 +263,7 @@ struct OnboardingViewTests {
 		#expect(sync.status.server == nil)
 		let offscreen = onboarding(calls, libraryExists: true, sync: sync)
 		defer { offscreen.close() }
-		try press("Set Up", in: offscreen)
+		try offscreen.press("Set Up")
 		await offscreen.pump { offscreen.sheet != nil }
 		let sheet = try #require(offscreen.sheet)
 		func editable() -> [NSTextField] {
@@ -321,7 +299,7 @@ struct OnboardingViewTests {
 		let offscreen = onboarding(calls, libraryExists: true)
 		defer { offscreen.close() }
 
-		try press("Set Up", in: offscreen)
+		try offscreen.press("Set Up")
 		await offscreen.pump { offscreen.sheet != nil }
 		let sheet = try #require(offscreen.sheet?.contentView)
 		#expect(offscreen.sheetAccessibilityElements(NSAccessibility.Role(rawValue: "AXHeading")).contains { $0.label == "Set Up Sync" || $0.value == "Set Up Sync" })
@@ -331,6 +309,6 @@ struct OnboardingViewTests {
 		await offscreen.pump { offscreen.sheet == nil }
 
 		#expect(calls.finished == 0)
-		#expect(texts(offscreen).contains("Sync Your Notes"))
+		#expect(offscreen.texts().contains("Sync Your Notes"))
 	}
 }

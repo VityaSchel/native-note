@@ -1,14 +1,11 @@
 import CryptoKit
 import Foundation
+import Testing
 
 @testable import NativeNoteKit
 
-func temporaryDirectory() -> URL {
-	URL.temporaryDirectory.appending(path: UUID().uuidString)
-}
-
-func temporaryDatabase() -> URL {
-	AppLock.databaseFile(in: temporaryDirectory())
+func temporaryDatabase(sourceLocation: SourceLocation = #_sourceLocation) -> URL {
+	AppLock.databaseFile(in: temporaryDirectory(sourceLocation: sourceLocation))
 }
 
 func walFile(of database: URL) -> URL {

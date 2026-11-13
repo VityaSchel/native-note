@@ -3,13 +3,12 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
+@MainActor @Suite(.scratch)
 struct UndoDeleteTests {
 	private let alarm = Alarm()
 
 	@Test func aDeletedNoteComesBackAsANewNoteWithItsUnsavedTextAndItsTimes() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["kept text"])
 		let original = try #require(model.selectedNote)
 		model.edit(original.id, "kept text, typed just before deleting")
@@ -31,8 +30,7 @@ struct UndoDeleteTests {
 	}
 
 	@Test func nothingComesBackWhileTheOriginalStillLives() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["not deleted after all"])
 		let id = try #require(model.selection)
 		let kept = try #require(model.keepForUndo(id))
@@ -42,8 +40,7 @@ struct UndoDeleteTests {
 	}
 
 	@Test func lockingForgetsTheKeptText() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["gone"])
 		let id = try #require(model.selection)
 		let kept = try #require(model.keepForUndo(id))
@@ -59,7 +56,6 @@ struct UndoDeleteTests {
 
 	@Test func deletingARestoredNoteBeforeItsSaveLandsLeavesNothingOnDisk() async throws {
 		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
 		try await fill(model, with: ["deleted twice"])
 		let id = try #require(model.selection)
 		let kept = try #require(model.keepForUndo(id))
@@ -78,8 +74,7 @@ struct UndoDeleteTests {
 	}
 
 	@Test func undoRightAfterDeleteRestoresBeforeTheTombstoneLands() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["quick undo"])
 		let id = try #require(model.selection)
 		let kept = try #require(model.keepForUndo(id))
@@ -87,15 +82,14 @@ struct UndoDeleteTests {
 		let deleting = Task { await model.delete(id) }
 		await Task.yield()
 		let restored = model.restore(kept)
-		await deleting.value
+		_ = await deleting.value
 
 		#expect(restored != nil)
 		#expect(model.notes.map(\.body) == ["quick undo"])
 	}
 
 	@Test func aRestoredNoteJoinsASearchTypedAfterTheDelete() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["kayak trip", "canoe trip", "kayak repair"])
 		let deleted = try #require(model.notes.first { $0.body == "kayak trip" })
 		let kept = try #require(model.keepForUndo(deleted.id))
@@ -105,15 +99,14 @@ struct UndoDeleteTests {
 		try #require(model.groups.flatMap(\.notes).map(\.body) == ["kayak repair"])
 
 		let restored = try #require(model.restore(kept))
-		await settle { model.groups.flatMap(\.notes).count == 2 }
+		try await settle { model.groups.flatMap(\.notes).count == 2 }
 
 		#expect(Set(model.groups.flatMap(\.notes).map(\.body)) == ["kayak trip", "kayak repair"])
 		#expect(model.groups.flatMap(\.notes).contains { $0.id == restored })
 	}
 
 	@Test func aRestoredNoteTakesItsPlaceInTheSearchResults() async throws {
-		let (model, directory) = try await unlockedModel(alarm: alarm)
-		defer { try? FileManager.default.removeItem(at: directory) }
+		let (model, _) = try await unlockedModel(alarm: alarm)
 		try await fill(model, with: ["kayak trip", "canoe trip", "kayak repair"])
 		model.search = "kayak"
 		await model.runSearch()

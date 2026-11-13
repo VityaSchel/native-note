@@ -9,7 +9,7 @@ nonisolated enum Mnemonic {
 	static let wordlist: [String]? = {
 		guard let url = Bundle.module.url(forResource: "english", withExtension: "txt"),
 			let file = try? Data(contentsOf: url),
-			SHA256.hash(data: file).map({ String(format: "%02x", $0) }).joined() == wordlistSHA256
+			Hex.string(SHA256.hash(data: file)) == wordlistSHA256
 		else { return nil }
 		return String(decoding: file, as: UTF8.self).split(separator: "\n").map(String.init)
 	}()

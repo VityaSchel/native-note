@@ -78,12 +78,7 @@ nonisolated enum Unlock {
 	}
 
 	@concurrent static func open(password: String, in directory: URL) async throws -> Unlocked {
-		let files = AppLock.parameterFiles(in: directory)
-		guard !files.isEmpty else { throw Failure.neverSetUp }
-		let database = AppLock.databaseFile(in: directory)
-		let size = (try? FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int) ?? 0
-		guard size > 0 else { throw Failure.databaseMissing }
-
+		let (database, files) = try existingLibrary(in: directory)
 		var unreadable: Error?
 		for file in files {
 			let parameters: UnlockParameters
@@ -106,10 +101,7 @@ nonisolated enum Unlock {
 	}
 
 	@concurrent static func open(key: SymmetricKey, in directory: URL) async throws -> Unlocked {
-		guard !AppLock.parameterFiles(in: directory).isEmpty else { throw Failure.neverSetUp }
-		let database = AppLock.databaseFile(in: directory)
-		let size = (try? FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int) ?? 0
-		guard size > 0 else { throw Failure.databaseMissing }
+		let database = try existingLibrary(in: directory).database
 		let store: NoteStore
 		do {
 			store = try await NoteStore.open(url: database, key: key)
@@ -117,6 +109,15 @@ nonisolated enum Unlock {
 			throw Failure.storedKeyRejected
 		}
 		return Unlocked(store: store, parameters: try AppLock.read(from: AppLock.currentFile(in: directory)))
+	}
+
+	private static func existingLibrary(in directory: URL) throws -> (database: URL, parameterFiles: [URL]) {
+		let files = AppLock.parameterFiles(in: directory)
+		guard !files.isEmpty else { throw Failure.neverSetUp }
+		let database = AppLock.databaseFile(in: directory)
+		let size = (try? FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int) ?? 0
+		guard size > 0 else { throw Failure.databaseMissing }
+		return (database, files)
 	}
 
 	@discardableResult
@@ -137,13 +138,14 @@ nonisolated enum Unlock {
 		next.argon = calibrated.m > parameters.argon.m ? calibrated : parameters.argon
 		let newKey = try await BlockingWork.run { [next] in try localDbKey(password: newPassword, parameters: next) }
 
+		guard !Task.isCancelled else { throw Failure.passwordNotChanged }
 		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
 		guard try await store.rekey(from: oldKey, to: newKey) else {
 			try FileManager.default.removeItem(at: AppLock.pendingRekeyFile(in: directory))
 			throw Failure.passwordNotChanged
 		}
 		try? storedKey?.delete()
-		try AppLock.promoteRekey(in: directory)
+		try AppLock.promoteRekey(to: next, in: directory)
 		return Unlocked(store: store, parameters: next)
 	}
 }
