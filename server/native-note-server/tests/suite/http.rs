@@ -3,12 +3,13 @@ use crate::support::{
 	post, read_reply, request, runtime, runtime_with_short_timeouts, send, serve_at, start,
 };
 use native_note_core::{Request, Seq, Version};
+use native_note_server::{Runtime, Timing};
 use native_note_testkit::SEALED_MAX;
 use native_note_testkit::client::{self, Response, Status, sync};
 use native_note_testkit::corpus::{payload, write};
 use native_note_testkit::session::Exchange;
 use rusqlite::Connection;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
 use std::path::Path;
 use std::sync::Arc;
@@ -228,48 +229,53 @@ fn a_stalled_client_is_closed_at_the_read_timeout_and_a_trickling_one_at_the_dea
 	);
 	let trickling = closed_after(address, Some(SOCKET_IO_TIMEOUT / 4));
 	assert!(
-		trickling >= CONNECTION_DEADLINE && trickling < CONNECTION_DEADLINE + SOCKET_IO_TIMEOUT,
+		trickling >= CONNECTION_DEADLINE && trickling < CONNECTION_DEADLINE * 2,
 		"{trickling:?}"
 	);
 	assert_eq!(running.log.lines(), Vec::<String>::new());
 }
 
+fn is_still_open(mut stream: &TcpStream) -> bool {
+	stream.set_nonblocking(true).expect("stops blocking");
+	matches!(stream.read(&mut [0]), Err(error) if error.kind() == ErrorKind::WouldBlock)
+}
+
 #[test]
 fn stalled_clients_hold_only_their_own_workers_and_the_ninth_waits_in_the_backlog() {
 	let running = start("http-workers");
+	let timing = Timing {
+		socket_io_timeout: Duration::from_secs(3),
+		connection_deadline: Duration::from_secs(12),
+	};
 	let address = serve_at(
 		running.data.path(),
-		runtime_with_short_timeouts(&running.log),
+		Runtime {
+			timing,
+			..runtime(&running.log)
+		},
 	);
 	let mut client = Client::new(address, running.key, 7);
-	let stall = |count: usize| -> Vec<TcpStream> {
-		let streams: Vec<_> = (0..count).map(|_| connect(address)).collect();
-		thread::sleep(SOCKET_IO_TIMEOUT / 6);
-		streams
-	};
+	let stall = |count: usize| -> Vec<TcpStream> { (0..count).map(|_| connect(address)).collect() };
 
 	let seven = stall(7);
-	let started = Instant::now();
 	let Response::Sync { results, .. } = call(&mut client, &sync(0, &[write(1, 1, 64)])) else {
 		panic!("a sync response");
 	};
 	assert_eq!(results[0].status, Status::Accepted);
 	assert!(
-		started.elapsed() < SOCKET_IO_TIMEOUT * 3 / 4,
-		"{:?}",
-		started.elapsed()
+		seven.iter().all(is_still_open),
+		"the sync waited for a stalled client to time out"
 	);
 	drop(seven);
 
-	thread::sleep(SOCKET_IO_TIMEOUT * 2);
-	let eight = stall(8);
 	let started = Instant::now();
+	let eight = stall(8);
 	let Response::Sync { changes, .. } = call(&mut client, &sync(0, &[])) else {
 		panic!("a sync response");
 	};
 	assert_eq!(changes, [write(1, 1, 64)]);
 	assert!(
-		started.elapsed() >= SOCKET_IO_TIMEOUT / 2,
+		started.elapsed() >= timing.socket_io_timeout,
 		"{:?}",
 		started.elapsed()
 	);

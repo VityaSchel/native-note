@@ -4,10 +4,11 @@ use native_note_testkit::client::{Response, Status};
 use native_note_testkit::corpus::{payload, write};
 use native_note_testkit::scratch::Scratch;
 use std::fs;
-use std::io::{BufRead, BufReader};
-use std::net::SocketAddr;
+use std::io::{BufRead, BufReader, ErrorKind};
+use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::process::{Child, ChildStderr, Command, Stdio};
+use std::{panic, thread};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_native-note-server");
 
@@ -45,6 +46,13 @@ impl Process {
 	fn kill(mut self) {
 		self.child.kill().expect("kills the server");
 		self.child.wait().expect("reaps it");
+	}
+}
+
+impl Drop for Process {
+	fn drop(&mut self) {
+		self.child.kill().ok();
+		self.child.wait().ok();
 	}
 }
 
@@ -118,6 +126,24 @@ fn the_binary_survives_a_kill_with_every_answered_write_and_its_key() {
 		}
 	);
 	server.kill();
+}
+
+#[test]
+fn a_test_that_unwinds_kills_its_server() {
+	let scratch = Scratch::new("binary-unwound");
+	let data = scratch.join("data");
+	let unwound = thread::spawn(move || {
+		let mut server = Process::start(&data);
+		server.line();
+		panic::resume_unwind(Box::new(server.address()));
+	})
+	.join()
+	.expect_err("unwinds");
+	let address = unwound.downcast::<SocketAddr>().expect("the address");
+	assert_eq!(
+		TcpStream::connect(*address).err().map(|error| error.kind()),
+		Some(ErrorKind::ConnectionRefused)
+	);
 }
 
 #[test]
