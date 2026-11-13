@@ -14,11 +14,7 @@ let prebuiltSQLCipherDefaults: [CSetting] = [
 	.define("SQLITE_EXTRA_SHUTDOWN", to: "sqlcipher_extra_shutdown"),
 	.define("SQLITE_THREADSAFE", to: "1"),
 	.define("SQLITE_TEMP_STORE", to: "2"),
-	.define("SQLITE_USE_URI", to: "1"),
-	.define("SQLITE_DEFAULT_WAL_SYNCHRONOUS", to: "1"),
 	.define("SQLITE_DEFAULT_JOURNAL_SIZE_LIMIT", to: "1048576"),
-	.define("SQLITE_MAX_VARIABLE_NUMBER", to: "99999"),
-	.define("SQLITE_ENABLE_MEMORY_MANAGEMENT"),
 	.define("SQLITE_ENABLE_FTS5"),
 ]
 
