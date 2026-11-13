@@ -65,7 +65,7 @@ nonisolated struct RecoveryFlow: Sendable {
 	}
 
 	private func get() async throws -> (v: UInt32, blob: Data) {
-		guard case let .get(v, blob) = try await sendAgainIfLost(.get), (v == 0) == blob.isEmpty else {
+		guard case let .get(v, blob) = try await sendAgainIfLost(.get), v > 0 || blob.isEmpty else {
 			throw SyncError.protocolViolation
 		}
 		return (v, blob)

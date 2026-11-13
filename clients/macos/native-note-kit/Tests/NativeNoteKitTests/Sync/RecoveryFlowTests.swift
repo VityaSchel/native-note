@@ -123,6 +123,21 @@ struct RecoveryFlowTests {
 		await #expect(throws: RecoveryFlow.Failure.outcomeUnknown) { try await flow(server).put(sharedContentKey, under: recoveryKey, pin: 3) }
 	}
 
+	@Test func anEmptyBlobAtAStoredVersionIsABlobThatDoesNotOpen() async throws {
+		let server = ScriptedServer()
+		server.answerEvery { _ in .get(v: 5, blob: Data()) }
+
+		#expect(try await flow(server, []).storedVersion() == 5)
+		#expect(try await flow(server, []).join(under: recoveryKey) == nil)
+	}
+
+	@Test func aBlobWhereNoneIsStoredIsAProtocolError() async throws {
+		let server = ScriptedServer()
+		server.answerEvery { _ in .get(v: 0, blob: Data([1])) }
+
+		await #expect(throws: SyncError.protocolViolation) { try await flow(server, []).storedVersion() }
+	}
+
 	@Test func aServerThatCouldNotBeReachedIsNotAskedAgain() async throws {
 		let transport = Unreachable()
 		let flow = RecoveryFlow(connection: SyncConnection(apiKey: SymmetricKey(size: .bits256), transport: transport))

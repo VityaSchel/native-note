@@ -177,6 +177,22 @@ struct ReplacedAPIKeyTests {
 		#expect(model.syncStatus.phase == .idle)
 	}
 
+	@Test func anEmptyRecoveryBlobPutWithTheLeakedKeyDoesNotBlockTheNewKey() async throws {
+		let server = try SyncServer()
+		let (model, _, _) = try await syncingLibrary(server)
+		let leaked = SyncConnection(apiKey: try server.apiKey, transport: HTTPTransport(url: server.url))
+		let pin = try #require(try await model.store?.pin())
+		guard case .put(.accepted, _) = try await leaked.send(.put(v: pin + 1, blob: Data())) else {
+			Issue.record("the server did not keep the empty blob")
+			return
+		}
+		let replacement = try replaceKey(of: server)
+
+		#expect(await changeServer(model, server, key: replacement) == .success(.reattached))
+		await model.syncNow()
+		#expect(model.syncStatus.phase == .idle)
+	}
+
 	@Test func lockingCancelsAServerChangeInFlightAndKeepsTheOldKey() async throws {
 		let server = try SyncServer()
 		let stalling = Stalling(TestTransport(server))
