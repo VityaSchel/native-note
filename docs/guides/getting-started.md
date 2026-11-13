@@ -13,7 +13,7 @@ Lock with ⌘L. Closing the window keeps Native Note running and the library unl
 
 A library copied from another Mac does not open there: it is bound to that Mac's Secure Enclave. Notes move through sync or an export.
 
-Set an unlock password, then choose Set Up and enter the same address and API key. Native Note asks for the current 24 words, then syncs every note. A Mac that already has notes joins from Settings → Set Up Sync…, and its notes sync too.
+Set an unlock password, then choose Set Up and enter the same address and API key. Native Note asks for the current 24 words, then syncs every note. A Mac that already has notes joins from Settings → Set Up Sync…, and its notes sync too. A Mac that turned sync off keeps its own library and cannot join another one; its notes move through an export.
 
 ## Changing the recovery phrase
 

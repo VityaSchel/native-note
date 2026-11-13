@@ -40,7 +40,7 @@ Offline-first. Notes are encrypted at rest under a mandatory unlock password; a 
 
 - ID: a client-generated UUIDv4
 - Created At, Updated At
-- Body: plain text, rendered as markdown; the first line is the title
+- Body: plain text; the first line is the title
 
 ### Exports
 

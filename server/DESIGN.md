@@ -39,7 +39,7 @@ The HTTP layer is hand-rolled and blocking on `std::net::TcpListener`: ~300 line
 - Framing, route and statuses per [API](../docs/PROTOCOL.md#api): no chunked decoding and no keep-alive. A request rejected before unsealing writes no log line.
 - Caps on the request line and headers per [API](../docs/PROTOCOL.md#api) and on [body size](../docs/PROTOCOL.md#limits), enforced before allocating.
 - Each socket read and write times out after 10 s, and a connection ends 60 s after accept, the reply included.
-- The server reads exactly `Content-Length` bytes of body; anything after them is never read.
+- The body is exactly `Content-Length` bytes; anything after them is ignored.
 - After a `400` or `413` the server reads and discards what the client still sends until it stops or the deadline passes, so closing does not reset the refusal before the client reads it.
 - No devices, sessions, per-caller state or rate limits; throttling belongs in a reverse proxy.
 
@@ -91,10 +91,10 @@ CREATE TABLE content_key (
 native-note-server <listen address> <data directory>
 ```
 
-Both arguments are required and positional, read with `std::env::args`. No flags, config file or environment variables. Wrong arguments exit `2`, any other startup failure `1`.
+Both arguments are required and positional, read with `std::env::args_os`. No flags, config file or environment variables. Wrong arguments exit `2`, any other startup failure `1`.
 
 The [systemd unit](native-note-server.service) runs `/usr/local/bin/native-note-server` (mode `0755`, owner `root:root`) as a `DynamicUser`, passes `/var/lib/native-note-server/` (its `StateDirectory`, mode `0700`) as the data directory, sets `LimitCORE=0`, and sandboxes the service to an exposure of 1.1 in `systemd-analyze security`.
 
 ## Server release
 
-[server-release.sh](../.forgejo/scripts/server-release.sh) builds a clean checkout into static `x86_64` and `aarch64` musl binaries with the toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), the pinned `zig` as the C compiler and `rust-lld` as the linker, remapping every local path, and packs each with the systemd unit into a tarball with fixed owner, modes, order and time, in `releases/` with its SHA-256. Two builds on the same build host produce identical tarballs; builds on different hosts do not, since Cargo hashes `rustc -vV`, which names the host, into every crate.
+[server-release.sh](../.forgejo/scripts/server-release.sh) builds a clean checkout into static `x86_64` and `aarch64` musl binaries with the toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), the pinned `zig` as the C compiler and `rust-lld` as the linker, remapping every local path, and packs each with the systemd unit into a tarball with fixed owner, modes, order and time, in `releases/`, printing its SHA-256. Two builds on the same build host produce identical tarballs; builds on different hosts do not, since Cargo hashes `rustc -vV`, which names the host, into every crate.

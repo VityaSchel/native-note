@@ -30,7 +30,7 @@ contentKeyEncrypted = AES-256-GCM(recoveryKey, e2eeContentKey, aad: empty)
 
 A blob that opens to anything but 32 bytes does not open.
 
-Clients never persist the recovery key, user is responsible for storing it securely. A client puts the blob at its pinned `v + 1`, never at a fetched `v + 1`. The pin is the `v` of the last blob the client put or opened, 0 before either.
+Clients never persist the recovery key, user is responsible for storing it securely. A client puts the blob at its pinned `v + 1`, never at a fetched `v + 1`. The pin is the `v` of the last blob the client put or opened, 0 before either and again when the library [moves to an empty server](../clients/DESIGN.md#recovery-flow).
 
 ## Notes
 
@@ -138,7 +138,7 @@ result     status(1) ‖ v_be32 ‖ seq_be64
 change     same layout as write
 ```
 
-`results` carries one entry per submitted write, in the order submitted. A client treats as an error a response with any other result count, an `accepted` result whose `v` is not the one sent or whose `seq` is `0`, and `more` with no changes, and applies none of it.
+`results` carries one entry per submitted write, in the order submitted. A client treats as an error a response with any other result count, an `accepted` result whose `v` is not the one sent or whose `seq` is `0`, and `more` with no changes or with a `nextSeq` not above `since`, and applies none of it.
 
 | `status`    | Byte | Description                                            |
 | ----------- | ---- | ------------------------------------------------------ |
