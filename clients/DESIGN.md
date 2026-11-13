@@ -114,7 +114,7 @@ Touch ID stops on the unlock screen, with no retry click, after a lockout, an at
 - The key fails to read, or no longer opens the database: show the error and forget the key. A key that cannot be forgotten stays, and Touch ID stops.
 - The library fails to open after a touch for another reason: show the error, keep the key, and Touch ID stops.
 
-Turning it on takes the password, checks the derived key opens the database, stores it, and is on only once a touch reads it back; waiting for the touch pauses while another app is active. A wrong password stores nothing; a wrong finger or an attempt the OS ends waits for a click to retry; anything else short of a matching touch deletes the key: cancel, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quit, lock, or a password change. Turning it off asks nothing.
+Turning it on takes the password, checks the derived key opens the database, stores it, and is on only once a touch reads it back; waiting for the touch pauses while another app is active. A wrong password stores nothing; a wrong finger waits for a click to retry, and an attempt the OS ends waits for a click or the next return to the app; anything else short of a matching touch deletes the key: cancel, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quit, lock, or a password change. Turning it off asks nothing.
 
 Onboarding offers it after the password step, with the password just set, held only until that step ends. Changing the password, or setting up a new library in the same place, deletes the stored key; after a password change the same sheet offers to turn it on again.
 

@@ -147,6 +147,26 @@ struct BiometricEnableTests {
 		#expect(model.isBiometricUnlockEnabled)
 	}
 
+	@Test func anInterruptedTouchWhileTurningOnListensAgainOnReturnToTheApp() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await library.unlocked(keys)
+		let enabling = try await listeningToTurnOn(model)
+		let interrupted = try #require(model.touchID.listeningContext)
+		keys.reply(with: .cancel)
+		#expect(await touch(model))
+		try #require(model.touchID == .needsClick(after: .cancel))
+
+		model.appResignedActive()
+		model.appBecameActive()
+
+		let listening = try #require(model.touchID.listeningContext)
+		#expect(listening !== interrupted)
+		keys.reply(with: .key)
+		#expect(await touch(model))
+		#expect(await enabling.value == nil)
+		#expect(model.isBiometricUnlockEnabled)
+	}
+
 	@Test func cancellingWhileTouchIDIsAwaitedStopsListeningAtOnceAndLeavesItOff() async throws {
 		let keys = FakeKeyStore()
 		let (model, _) = try await library.unlocked(keys)
