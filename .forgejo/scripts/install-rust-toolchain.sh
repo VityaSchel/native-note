@@ -6,10 +6,10 @@ rustup_sha256="4acc9acc76d5079515b46346a485974457b5a79893cfb01112423c89aeb5aa10"
 
 cd "$(dirname "$0")/../.."
 
-command -v cc >/dev/null 2>&1 || {
+{ command -v cc && command -v c++; } >/dev/null 2>&1 || {
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update -y
-	apt-get install -y --no-install-recommends gcc libc6-dev
+	apt-get install -y --no-install-recommends gcc g++ libc6-dev
 }
 
 workdir="$(mktemp -d)"

@@ -60,7 +60,7 @@ jobs:
       - name: Licenses, bans, sources and advisories
         run: |
           cd "$WORKSPACE"
-          for project in spec/generator server; do
+          for project in spec/generator server server/native-note-core/fuzz; do
             [ -f "$project/Cargo.toml" ] || continue
             echo "── $project ──"
             ( cd "$project" && cargo deny --config "$WORKSPACE/deny.toml" check )
@@ -69,7 +69,7 @@ jobs:
       - name: Advisories against the committed lockfiles
         run: |
           cd "$WORKSPACE"
-          for project in spec/generator server; do
+          for project in spec/generator server server/native-note-core/fuzz; do
             [ -f "$project/Cargo.lock" ] || continue
             echo "── $project ──"
             ( cd "$project" && cargo audit --deny warnings )

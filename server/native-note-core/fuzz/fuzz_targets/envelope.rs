@@ -1,7 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use native_note_core::{Envelope, EnvelopeKey, Secret};
+use native_note_core::{DecodeError, Envelope, EnvelopeKey, Request, Secret};
+use native_note_testkit::client;
 use ring::aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey};
 use ring::hkdf::{HKDF_SHA256, Salt};
 use std::sync::LazyLock;
@@ -55,6 +56,18 @@ fuzz_target!(|input: &[u8]| {
 			.and_then(|envelope| KEY.open(envelope))
 			.expect("a sealed padded buffer opens");
 		assert_eq!(opened.nonce(), NONCE);
-		let _ = opened.request();
+		let request = opened.request();
+		assert_eq!(
+			request,
+			client::unpad(input)
+				.ok_or(DecodeError::Padding)
+				.and_then(Request::decode)
+		);
+		if let Ok(request) = request {
+			assert_eq!(
+				client::pad(&client::encode_request(&request)).as_deref(),
+				Some(input)
+			);
+		}
 	}
 });

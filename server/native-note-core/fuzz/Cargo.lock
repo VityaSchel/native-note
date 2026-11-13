@@ -93,6 +93,15 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "native-note-core",
+ "native-note-testkit",
+ "ring",
+]
+
+[[package]]
+name = "native-note-testkit"
+version = "0.1.0"
+dependencies = [
+ "native-note-core",
  "ring",
 ]
 

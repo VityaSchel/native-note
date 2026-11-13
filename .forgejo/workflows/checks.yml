@@ -86,10 +86,13 @@ jobs:
       - name: Clippy
         run: |
           cd "$WORKSPACE"
-          for project in spec/generator server; do
+          for project in spec/generator server server/native-note-core/fuzz; do
             [ -f "$project/Cargo.toml" ] || continue
             ( cd "$project" && cargo clippy --all-targets --locked -- -D warnings )
           done
+
+      - name: Fuzz targets build
+        run: cd "$WORKSPACE/server/native-note-core/fuzz" && cargo build --locked
 
       - name: Tests
         run: |

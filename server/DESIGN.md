@@ -13,7 +13,7 @@ Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. With `ring` the server
 
 - `serde_json`: the core's tests replay [spec/vectors](../spec/README.md), which are JSON
 - `proptest`: property tests
-- `libfuzzer-sys`: the fuzz targets, in their own workspace and lockfile under `native-note-core/fuzz`
+- `libfuzzer-sys`: the fuzz targets, in their own workspace and lockfile under `native-note-core/fuzz`, where `frame` and `envelope` check decoding against the testkit's encoder; its NCSA license is the one exception in [deny.toml](../deny.toml), and it alone needs a C++ compiler
 - `native-note-testkit`: the workspace's test client, corpus, reference model and device sessions, so the same sessions run against the core in memory and the server over HTTP
 
 ## Server core

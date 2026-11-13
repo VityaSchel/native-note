@@ -77,7 +77,7 @@ pub fn pad(inner: &[u8]) -> Option<Vec<u8>> {
 	Some(padded)
 }
 
-fn unpad(padded: &[u8]) -> Option<&[u8]> {
+pub fn unpad(padded: &[u8]) -> Option<&[u8]> {
 	let (len, rest) = padded.split_first_chunk::<LEN_PREFIX>()?;
 	let len = usize::try_from(u32::from_be_bytes(*len)).expect("a u32 fits usize");
 	let (inner, fill) = rest.split_at_checked(len)?;

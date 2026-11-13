@@ -33,6 +33,7 @@ cd server
 cargo fmt --check
 rustfmt --check --edition 2024 native-note-core/fuzz/fuzz_targets/*.rs
 cargo clippy --all-targets -- -D warnings
+(cd native-note-core/fuzz && cargo clippy --all-targets -- -D warnings && cargo build)
 cargo test
 ../.forgejo/scripts/server-coverage.sh
 ```
@@ -43,7 +44,7 @@ cargo test
 
 ### Supply chain
 
-In `server/` and `spec/generator/`, with the versions [audit.yml](.forgejo/workflows/audit.yml) pins:
+In `server/`, `server/native-note-core/fuzz/` and `spec/generator/`, with the versions [audit.yml](.forgejo/workflows/audit.yml) pins:
 
 ```sh
 cargo deny --config <repository>/deny.toml check
