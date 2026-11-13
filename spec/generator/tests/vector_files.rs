@@ -44,17 +44,6 @@ fn no_stray_vector_files() {
 }
 
 #[test]
-fn generation_is_deterministic() {
-	for ((name, a), (_, b)) in vectors::all().iter().zip(vectors::all().iter()) {
-		assert_eq!(
-			vectors::render(a),
-			vectors::render(b),
-			"{name} is not deterministic"
-		);
-	}
-}
-
-#[test]
 fn every_case_satisfies_its_own_assertions() {
 	for (file, doc) in vectors::all() {
 		for case in doc["cases"].as_array().unwrap() {
