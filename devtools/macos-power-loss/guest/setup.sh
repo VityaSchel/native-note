@@ -6,10 +6,24 @@ label=dev.hloth.devtools.native-note-power-loss-test
 launcher=/usr/local/libexec/native-note-power-loss/start-agent.sh
 library_volume=PowerLossLibrary
 library_disk_bytes=2147483648
+virtual_disk_media="Apple Inc. VirtIO Block Media"
 
 fail() {
 	echo "setup: $*" >&2
 	exit 1
+}
+
+require_virtual_machine() {
+	[ "$(sysctl -n kern.hv_vmm_present 2>/dev/null)" = 1 ] || fail "this erases a disk and runs only inside the power-loss VM; this Mac is not a virtual machine"
+}
+
+disk_property() {
+	diskutil info -plist "$1" | plutil -extract "$2" raw -o - -
+}
+
+require_virtual_disk() {
+	media=$(disk_property "$1" MediaName)
+	[ "$media" = "$virtual_disk_media" ] || fail "$1 is \"$media\", not an \"$virtual_disk_media\" disk; refusing to erase it"
 }
 
 require_root_without_filevault() {
@@ -26,7 +40,7 @@ require_typist_to_start() {
 library_disk() {
 	found=
 	for disk in $(diskutil list physical | awk '/^\/dev\/disk/ { print $1 }'); do
-		size=$(diskutil info -plist "$disk" | plutil -extract TotalSize raw -o - -)
+		size=$(disk_property "$disk" TotalSize)
 		[ "$size" = "$library_disk_bytes" ] || continue
 		[ -z "$found" ] || fail "found more than one 2 GB disk"
 		found=$disk
@@ -37,9 +51,10 @@ library_disk() {
 
 format_library_disk() {
 	disk=$(library_disk)
+	require_virtual_disk "$disk"
 	echo "setup: formatting $disk as $library_volume"
 	diskutil eraseDisk APFS "$library_volume" GPT "$disk"
-	mount_point=$(diskutil info -plist "$library_volume" | plutil -extract MountPoint raw -o - -)
+	mount_point=$(disk_property "$library_volume" MountPoint)
 	mdutil -i off "$mount_point" >/dev/null 2>&1 || true
 	touch "$mount_point/.metadata_never_index"
 	mkdir -p "$mount_point/.fseventsd"
@@ -60,6 +75,7 @@ start_agent() {
 	sh "$kit/install-agent.sh" "$launcher" "/Library/LaunchDaemons/$label.plist" "$log"
 }
 
+require_virtual_machine
 require_root_without_filevault
 require_typist_to_start
 format_library_disk

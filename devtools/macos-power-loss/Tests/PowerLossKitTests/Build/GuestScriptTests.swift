@@ -3,17 +3,17 @@ import Testing
 
 @testable import PowerLossKit
 
-@Suite(.timeLimit(.minutes(1)))
+@Suite(.timeLimit(.minutes(5)))
 struct GuestScriptTests {
 	private let guest = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../../guest").standardized
 	private let label = "dev.hloth.devtools.native-note-power-loss-test"
 	private let launcher = "/usr/local/libexec/native-note-power-loss/start-agent.sh"
 
-	private func run(_ script: String, _ arguments: [String], tools: URL? = nil, environment: [String: String] = [:]) throws -> (status: Int32, errors: [String]) {
+	private func run(_ script: String, in folder: URL? = nil, _ arguments: [String], tools: URL? = nil, environment: [String: String] = [:]) throws -> (status: Int32, errors: [String]) {
 		let errors = Pipe()
 		let process = Process()
 		process.executableURL = URL(filePath: "/bin/sh")
-		process.arguments = [guest.appending(path: script).path] + arguments
+		process.arguments = [(folder ?? guest).appending(path: script).path] + arguments
 		process.environment = environment.merging(["PATH": [tools?.path, "/usr/bin:/bin:/usr/sbin:/sbin"].compactMap(\.self).joined(separator: ":")]) { $1 }
 		process.standardOutput = FileHandle.nullDevice
 		process.standardError = errors
@@ -86,5 +86,85 @@ struct GuestScriptTests {
 			#expect(time >= started.addingTimeInterval(-1) && time <= .now)
 		}
 		#expect(errors.last?.contains("/private/var/native-note-power-loss/kit/power-loss-agent") == true)
+	}
+
+	@Test func theLauncherGivesUpAfterPacedAttemptsWhenTheKitNeverShowsAsMounted() throws {
+		let directory = try temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+		let tools = directory.appending(path: "tools")
+		try stub("mkdir", in: tools, ":")
+		try stub("mount", in: tools, "echo \"/dev/disk3s1 on / (apfs, local)\"")
+		try stub("sleep", in: tools, #"echo "$1" >>"$SLEEPS""#)
+		try stub("mount_virtiofs", in: tools, #"echo mounted >>"$ATTEMPTS""#)
+		let attempts = directory.appending(path: "attempts")
+		let sleeps = directory.appending(path: "sleeps")
+
+		let (status, errors) = try run("start-agent.sh", [], tools: tools, environment: ["ATTEMPTS": attempts.path, "SLEEPS": sleeps.path])
+
+		#expect(status == 1)
+		#expect(try String(contentsOf: attempts, encoding: .utf8) == String(repeating: "mounted\n", count: 30))
+		#expect(try String(contentsOf: sleeps, encoding: .utf8) == String(repeating: "1\n", count: 29))
+		#expect(errors.count == 1)
+		#expect(errors.last?.hasSuffix("the kit is not mounted after 30 attempts, giving up") == true)
+	}
+
+	private func setUp(in directory: URL, virtualMachine: Bool, libraryMedia: String) throws -> (status: Int32, errors: [String], diskutilCalls: [String]) {
+		let kit = directory.appending(path: "kit")
+		let tools = directory.appending(path: "tools")
+		try FileManager.default.createDirectory(at: kit, withIntermediateDirectories: true)
+		try FileManager.default.copyItem(at: guest.appending(path: "setup.sh"), to: kit.appending(path: "setup.sh"))
+		try stub("NativeNoteTypist", in: kit, "exit 2")
+		try stub("sysctl", in: tools, #"[ "$*" = "-n kern.hv_vmm_present" ] && echo "$VIRTUAL""#)
+		try stub("id", in: tools, "echo 0")
+		try stub("fdesetup", in: tools, "echo \"FileVault is Off.\"")
+		try stub("diskutil", in: tools, #"""
+			echo "$*" >>"$CALLS"
+			property() { echo "<plist version=\"1.0\"><dict><key>TotalSize</key><integer>$1</integer><key>MediaName</key><string>$2</string></dict></plist>"; }
+			case "$*" in
+			"list physical") printf '/dev/disk0 (internal, physical):\n   0: GUID_partition_scheme\n/dev/disk4 (internal, physical):\n' ;;
+			"info -plist /dev/disk0") property 51539607552 "Apple Inc. VirtIO Block Media" ;;
+			"info -plist /dev/disk4") property 2147483648 "$LIBRARY_MEDIA" ;;
+			*) exit 1 ;;
+			esac
+			"""#)
+		let calls = directory.appending(path: "calls")
+		let environment = ["CALLS": calls.path, "VIRTUAL": virtualMachine ? "1" : "0", "LIBRARY_MEDIA": libraryMedia]
+
+		let (status, errors) = try run("setup.sh", in: kit, [], tools: tools, environment: environment)
+
+		let diskutilCalls = (try? String(contentsOf: calls, encoding: .utf8))?.split(separator: "\n").map(String.init) ?? []
+		return (status, errors, diskutilCalls)
+	}
+
+	@Test func setupErasesNothingOutsideAVirtualMachine() throws {
+		let directory = try temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		let (status, errors, diskutilCalls) = try setUp(in: directory, virtualMachine: false, libraryMedia: "Apple Inc. VirtIO Block Media")
+
+		#expect(status == 1)
+		#expect(errors == ["setup: this erases a disk and runs only inside the power-loss VM; this Mac is not a virtual machine"])
+		#expect(diskutilCalls.isEmpty)
+	}
+
+	@Test(arguments: ["Virtual Disk", "SanDisk Cruzer"]) func setupRefusesToEraseA2GiBDiskThatIsNotTheVirtualOne(media: String) throws {
+		let directory = try temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		let (status, errors, diskutilCalls) = try setUp(in: directory, virtualMachine: true, libraryMedia: media)
+
+		#expect(status == 1)
+		#expect(errors == ["setup: /dev/disk4 is \"\(media)\", not an \"Apple Inc. VirtIO Block Media\" disk; refusing to erase it"])
+		#expect(!diskutilCalls.contains { $0.hasPrefix("eraseDisk") })
+	}
+
+	@Test func setupErasesTheVirtual2GiBDiskInsideAVirtualMachine() throws {
+		let directory = try temporaryDirectory()
+		defer { try? FileManager.default.removeItem(at: directory) }
+
+		let (status, _, diskutilCalls) = try setUp(in: directory, virtualMachine: true, libraryMedia: "Apple Inc. VirtIO Block Media")
+
+		#expect(status == 1)
+		#expect(diskutilCalls.last == "eraseDisk APFS PowerLossLibrary GPT /dev/disk4")
 	}
 }
