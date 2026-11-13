@@ -8,6 +8,7 @@ const CHANGE_HEADER: usize = 16 + 4 + 16 + 4;
 
 pub type View = BTreeMap<BlindedNoteId, (Version, [u8; 16])>;
 
+#[derive(Clone)]
 pub struct Model {
 	latest: Seq,
 	notes: BTreeMap<BlindedNoteId, (Seq, &'static Record)>,
@@ -39,6 +40,43 @@ impl Model {
 		self.notes[id]
 	}
 
+	pub fn version(&self, id: &BlindedNoteId) -> Version {
+		self.notes
+			.get(id)
+			.map_or(Version(0), |(_, current)| current.v)
+	}
+
+	pub fn blob_version(&self) -> Version {
+		self.blob.map_or(Version(0), |(stored, _)| stored)
+	}
+
+	pub fn seed_note(&mut self, record: &'static Record) -> Seq {
+		let seq = Seq(self.latest.0 + 1);
+		self.store(seq, record);
+		seq
+	}
+
+	pub fn seed_blob(&mut self, v: Version, blob: &'static [u8]) {
+		self.blob = Some((v, blob));
+	}
+
+	fn store(&mut self, seq: Seq, record: &'static Record) {
+		self.latest = seq;
+		if let Some((old, _)) = self.notes.insert(record.id, (seq, record)) {
+			self.by_seq.remove(&old);
+		}
+		self.by_seq.insert(seq, record);
+	}
+
+	fn after(&self, since: Seq) -> impl Iterator<Item = (&Seq, &&'static Record)> {
+		self.by_seq
+			.range((Bound::Excluded(since), Bound::Unbounded))
+	}
+
+	pub fn changes_after(&self, since: Seq) -> usize {
+		self.after(since).count()
+	}
+
 	pub fn view(&self) -> View {
 		self.notes
 			.iter()
@@ -51,10 +89,7 @@ impl Model {
 	}
 
 	pub fn judge(&self, write: &Record) -> WriteResult {
-		let stored = self
-			.notes
-			.get(&write.id)
-			.map_or(Version(0), |(_, current)| current.v);
+		let stored = self.version(&write.id);
 		let status = if write.payload.len() > NOTE_MAX {
 			Status::TooLarge
 		} else if follows(stored, write.v) {
@@ -79,11 +114,7 @@ impl Model {
 	pub fn apply(&mut self, write: &'static Record) -> WriteResult {
 		let result = self.judge(write);
 		if result.status == Status::Accepted {
-			self.latest = result.seq;
-			if let Some((old, _)) = self.notes.insert(write.id, (result.seq, write)) {
-				self.by_seq.remove(&old);
-			}
-			self.by_seq.insert(result.seq, write);
+			self.store(result.seq, write);
 		}
 		result
 	}
@@ -96,9 +127,7 @@ impl Model {
 		more: bool,
 		inner_len: usize,
 	) -> Vec<Seq> {
-		let mut pending = self
-			.by_seq
-			.range((Bound::Excluded(since), Bound::Unbounded));
+		let mut pending = self.after(since);
 		let mut delivered = Vec::new();
 		for change in changes {
 			let (&seq, &current) = pending
@@ -133,7 +162,7 @@ impl Model {
 	}
 
 	pub fn judge_put(&self, v: Version) -> Response {
-		let stored = self.blob.map_or(Version(0), |(stored, _)| stored);
+		let stored = self.blob_version();
 		if follows(stored, v) {
 			Response::Put {
 				status: Status::Accepted,

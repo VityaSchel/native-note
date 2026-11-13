@@ -5,11 +5,10 @@ use crate::support::{NOTE_MAX, open, server_key};
 use native_note_core::{
 	BlindedNoteId, DecodeError, Fault, Record, Rejection, Request, Seq, Version,
 };
+use native_note_testkit::model::Model;
 use proptest::collection::vec;
 use proptest::prelude::*;
 use proptest::sample::Index;
-use std::collections::BTreeMap;
-use std::ops::Bound;
 
 const API_KEY: [u8; 32] = [
 	0xf6, 0xfd, 0xe2, 0xa1, 0x54, 0x8a, 0xe1, 0xa7, 0xfd, 0x4b, 0xe6, 0x2f, 0x37, 0x9c, 0x19, 0x06,
@@ -225,152 +224,79 @@ fn seed_version() -> impl Strategy<Value = Option<u32>> {
 	])
 }
 
-#[derive(Clone, Default)]
-struct Model {
-	latest: u64,
-	notes: BTreeMap<u64, Record>,
-	blob: Option<(Version, Vec<u8>)>,
+enum Expected {
+	Sync {
+		since: Seq,
+		results: Vec<WriteResult>,
+	},
+	Whole(Response),
 }
 
-fn follows(stored: Version, v: Version) -> bool {
-	u64::from(v.0) == u64::from(stored.0) + 1
-}
-
-impl Model {
-	fn stored(&self, id: &BlindedNoteId) -> Version {
-		self.notes
-			.values()
-			.find(|note| note.id == *id)
-			.map_or(Version(0), |note| note.v)
-	}
-
-	fn blob_version(&self) -> Version {
-		self.blob.as_ref().map_or(Version(0), |(v, _)| *v)
-	}
-
-	fn write(&mut self, write: Record) -> WriteResult {
-		let stored = self.stored(&write.id);
-		let status = if write.payload.len() > NOTE_MAX {
-			Status::TooLarge
-		} else if follows(stored, write.v) {
-			Status::Accepted
-		} else {
-			Status::Conflict
-		};
-		if status != Status::Accepted {
-			return WriteResult {
-				status,
-				v: stored,
-				seq: Seq(0),
-			};
-		}
-		self.latest += 1;
-		let v = write.v;
-		self.notes.retain(|_, note| note.id != write.id);
-		self.notes.insert(self.latest, write);
-		WriteResult {
-			status,
-			v,
-			seq: Seq(self.latest),
-		}
-	}
-
-	fn changes(&self, since: u64) -> Vec<Record> {
-		self.notes
-			.range((Bound::Excluded(since), Bound::Unbounded))
-			.map(|(_, note)| note.clone())
-			.collect()
-	}
-
-	fn sync(&self, results: Vec<WriteResult>, changes: Vec<Record>) -> Response {
-		Response::Sync {
-			results,
-			changes,
-			next_seq: Seq(self.latest),
-			more: false,
-		}
-	}
-
-	fn get(&self) -> Response {
-		let (v, blob) = self.blob.clone().unwrap_or((Version(0), Vec::new()));
-		Response::Get { v, blob }
-	}
-
-	fn put(&mut self, v: Version, blob: Vec<u8>) -> Response {
-		let stored = self.blob_version();
-		if follows(stored, v) {
-			self.blob = Some((v, blob));
-			Response::Put {
-				status: Status::Accepted,
-				v,
-			}
-		} else {
-			Response::Put {
-				status: Status::Conflict,
-				v: stored,
-			}
-		}
-	}
-}
-
-struct Expected {
+struct Step {
 	request: Request,
-	response: Response,
+	expected: Expected,
 	calls: usize,
 	model: Model,
 }
 
-fn expect(model: &Model, op: Op) -> Expected {
+fn kept<T: ?Sized>(value: Box<T>) -> &'static T {
+	Box::leak(value)
+}
+
+fn step(model: &Model, op: Op) -> Step {
 	let mut next = model.clone();
 	match op {
 		Op::Sync { since, writes } => {
-			let since = match since {
+			let since = Seq(match since {
 				Since::Zero => 0,
-				Since::Latest => model.latest,
-				Since::Behind(by) => model.latest.saturating_sub(by),
+				Since::Latest => model.latest().0,
+				Since::Behind(by) => model.latest().0.saturating_sub(by),
 				Since::Any(since) => since,
-			};
+			});
 			let mut sent = Vec::new();
 			let mut results = Vec::new();
 			for write in writes {
 				let id = BlindedNoteId([write.id; 16]);
 				let record = Record {
 					id,
-					v: write.v.resolve(next.stored(&id)),
+					v: write.v.resolve(next.version(&id)),
 					write_id: write.write_id,
 					payload: match write.payload {
 						Payload::Small(payload) => payload,
 						Payload::OverNoteMax => vec![0x5a; NOTE_MAX + 1],
 					},
 				};
-				sent.push(record.clone());
-				results.push(next.write(record));
+				let result = next.judge(&record);
+				if result.status == Status::Accepted {
+					next.apply(kept(Box::new(record.clone())));
+				}
+				sent.push(record);
+				results.push(result);
 			}
 			let accepted = results
 				.iter()
 				.filter(|result| result.status == Status::Accepted)
 				.count();
-			let changes = next.changes(since);
-			Expected {
-				calls: 1 + sent.len() + accepted + changes.len() + 1,
-				response: next.sync(results, changes),
+			Step {
+				calls: 1 + sent.len() + accepted + next.changes_after(since) + 1,
+				expected: Expected::Sync { since, results },
 				request: Request::Sync {
-					since: Seq(since),
+					since,
 					writes: sent,
 				},
 				model: next,
 			}
 		}
-		Op::Get => Expected {
+		Op::Get => Step {
 			request: Request::Get,
-			response: model.get(),
+			expected: Expected::Whole(model.get()),
 			calls: 1,
 			model: next,
 		},
 		Op::Put { v, blob } => {
 			let v = v.resolve(model.blob_version());
-			let response = next.put(v, blob.clone());
-			Expected {
+			let response = next.put(v, kept(blob.clone().into_boxed_slice()));
+			Step {
 				request: Request::Put { v, blob },
 				calls: 1 + usize::from(matches!(
 					response,
@@ -379,11 +305,35 @@ fn expect(model: &Model, op: Op) -> Expected {
 						..
 					}
 				)),
-				response,
+				expected: Expected::Whole(response),
 				model: next,
 			}
 		}
 	}
+}
+
+fn check(model: &Model, expected: Expected, inner: &[u8]) -> Result<(), TestCaseError> {
+	let response = client::decode_response(inner);
+	match expected {
+		Expected::Whole(expected) => prop_assert_eq!(response, expected),
+		Expected::Sync {
+			since,
+			results: expected,
+		} => {
+			let Response::Sync {
+				results,
+				changes,
+				next_seq,
+				more,
+			} = response
+			else {
+				return Err(TestCaseError::fail(format!("not a sync: {response:?}")));
+			};
+			prop_assert_eq!(results, expected);
+			model.check_changes(since, &changes, next_seq, more, inner.len());
+		}
+	}
+	Ok(())
 }
 
 proptest! {
@@ -399,59 +349,60 @@ proptest! {
 		let mut model = Model::default();
 		for (index, v) in (0..IDS).zip(seeds) {
 			let Some(v) = v else { continue };
-			let record = Record {
+			let record = kept(Box::new(Record {
 				id: BlindedNoteId([index; 16]),
 				v: Version(v),
 				write_id: [index ^ 0xff; 16],
 				payload: vec![index; usize::from(index)],
-			};
-			model.latest += 1;
-			storage.seed_note(Seq(model.latest), record.clone());
-			model.notes.insert(model.latest, record);
+			}));
+			storage.seed_note(model.seed_note(record), record.clone());
 		}
 		if let Some(v) = blob_seed {
 			storage.seed_content_key(Version(v), vec![0x6b; 60]);
-			model.blob = Some((Version(v), vec![0x6b; 60]));
+			model.seed_blob(Version(v), &[0x6b; 60]);
 		}
 
 		let mut harness = Harness::new(API_KEY, storage);
-		for (step, (op, fault)) in steps.into_iter().enumerate() {
-			let expected = expect(&model, op);
+		for (index, (op, fault)) in steps.into_iter().enumerate() {
+			let step = step(&model, op);
 			let before = harness.storage.state().clone();
-			let fault = fault.map(|at| at.index(expected.calls + 2));
+			let fault = fault.map(|at| at.index(step.calls + 2));
 			if let Some(at) = fault {
 				harness.storage.fail_next_at(at);
 			}
-			let response = harness.call(&expected.request);
-			match fault.filter(|&at| at < expected.calls) {
+			let inner = harness.send(&client::encode_request(&step.request));
+			match fault.filter(|&at| at < step.calls) {
 				Some(at) => {
-					prop_assert_eq!(response, Response::Error, "step {}", step);
+					prop_assert_eq!(
+						client::decode_response(&inner),
+						Response::Error,
+						"step {}",
+						index
+					);
 					prop_assert_eq!(
 						harness.failures.pop(),
 						Some(Failure::Fault(Fault::Storage(Injected(at)))),
 						"step {}",
-						step
+						index
 					);
-					prop_assert_eq!(harness.storage.calls(), at + 1, "step {}", step);
-					prop_assert!(harness.storage.state() == &before, "step {}", step);
+					prop_assert_eq!(harness.storage.calls(), at + 1, "step {}", index);
+					prop_assert!(harness.storage.state() == &before, "step {}", index);
 				}
 				None => {
-					prop_assert_eq!(response, expected.response, "step {}", step);
-					prop_assert_eq!(harness.storage.calls(), expected.calls, "step {}", step);
-					model = expected.model;
+					model = step.model;
+					check(&model, step.expected, &inner)?;
+					prop_assert_eq!(harness.storage.calls(), step.calls, "step {}", index);
 				}
 			}
-			prop_assert!(harness.failures.is_empty(), "step {}", step);
+			prop_assert!(harness.failures.is_empty(), "step {}", index);
 		}
 
-		let everything = Request::Sync {
+		let everything = client::encode_request(&client::sync(0, &[]));
+		let expected = Expected::Sync {
 			since: Seq(0),
-			writes: Vec::new(),
+			results: Vec::new(),
 		};
-		prop_assert_eq!(
-			harness.call(&everything),
-			model.sync(Vec::new(), model.changes(0))
-		);
+		check(&model, expected, &harness.send(&everything))?;
 		prop_assert_eq!(harness.call(&Request::Get), model.get());
 	}
 }
