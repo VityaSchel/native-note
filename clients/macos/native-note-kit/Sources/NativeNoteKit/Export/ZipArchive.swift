@@ -1,4 +1,5 @@
 import Foundation
+import zlib
 
 nonisolated struct ZipEntry: Equatable, Sendable {
 	let name: String
@@ -83,14 +84,7 @@ nonisolated enum ZipArchive {
 	}
 
 	static func crc32(_ data: Data) -> UInt32 {
-		let table = crcTable
-		return ~data.withUnsafeBytes { bytes in
-			bytes.reduce(~UInt32.zero) { crc, byte in table[Int(UInt8(truncatingIfNeeded: crc) ^ byte)] ^ crc >> 8 }
-		}
-	}
-
-	private static let crcTable: [UInt32] = (0 ... 255).map { index in
-		(0 ..< 8).reduce(UInt32(index)) { crc, _ in crc & 1 == 1 ? 0xEDB8_8320 ^ crc >> 1 : crc >> 1 }
+		data.withUnsafeBytes { UInt32(truncatingIfNeeded: crc32_z(0, $0.bindMemory(to: Bytef.self).baseAddress, $0.count)) }
 	}
 
 	private static func centralDirectory(in archive: Data) throws -> (span: Range<Int>, entries: Int) {

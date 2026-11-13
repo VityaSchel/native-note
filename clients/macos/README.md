@@ -6,6 +6,7 @@ Dependencies:
 - LocalAuthentication
 - LocalAuthenticationEmbeddedUI
 - Security
+- zlib — the system library, for the export zip's CRC-32
 - [SQLCipher](https://github.com/sqlcipher/sqlcipher) — submodule at tag `v4.17.0`, built from source as an amalgamation, with FTS5 its only optional feature
 - [phc-winner-argon2](https://github.com/P-H-C/phc-winner-argon2) — revision `f57e61e`, built from source
 
