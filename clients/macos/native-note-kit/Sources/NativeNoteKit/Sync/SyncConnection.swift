@@ -21,17 +21,20 @@ nonisolated struct HTTPTransport: SyncTransport {
 		"Content-Type": "application/octet-stream",
 	]
 
-	private let url: URL
-	private let session: URLSession
-
-	init(url: URL) {
-		self.url = url
+	private static let sharedSession: URLSession = {
 		let configuration = URLSessionConfiguration.ephemeral
 		configuration.timeoutIntervalForRequest = 30
 		configuration.timeoutIntervalForResource = 120
 		configuration.httpShouldSetCookies = false
 		configuration.urlCache = nil
-		session = URLSession(configuration: configuration)
+		return URLSession(configuration: configuration)
+	}()
+
+	private let url: URL
+	let session = HTTPTransport.sharedSession
+
+	init(url: URL) {
+		self.url = url
 	}
 
 	func post(_ body: Data) async throws -> Data {

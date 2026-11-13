@@ -72,6 +72,13 @@ final class HeadCapture: @unchecked Sendable {
 }
 
 struct TransportHeaderTests {
+	@Test func everyTransportPostsThroughOneSession() throws {
+		let first = HTTPTransport(url: try #require(URL(string: "http://127.0.0.1:1/")))
+		let second = HTTPTransport(url: try #require(URL(string: "http://127.0.0.1:2/")))
+
+		#expect(first.session === second.session)
+	}
+
 	@Test func aRedirectIsReportedNotFollowed() async throws {
 		let capture = try HeadCapture(reply: "HTTP/1.1 301 Moved Permanently\r\nLocation: /elsewhere\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
 		defer { capture.stop() }
