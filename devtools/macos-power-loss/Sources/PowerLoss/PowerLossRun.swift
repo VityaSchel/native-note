@@ -63,7 +63,6 @@ struct PowerLossRun {
 		defer { server.stop() }
 		try await boot(nbd) { machine in
 			try await machine.waitForAgent(within: Self.bootTimeout)
-			try await machine.pushKit(from: layout.kit)
 			let session = try await machine.openAgent(.prepare(password: Self.password))
 			defer { session.close() }
 			let status = try await session.waitForExit(within: .seconds(600))

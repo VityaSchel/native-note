@@ -3,15 +3,13 @@ import Foundation
 
 public struct AgentService: Sendable {
 	public let typist: URL
-	public let kit: URL
 	public let libraryDirectory: @Sendable () throws -> URL
 	public let shutDown: @Sendable () -> Void
 
 	static let longestRequest = 4096
 
-	public init(typist: URL, kit: URL = LocalKit.folder, libraryDirectory: @escaping @Sendable () throws -> URL, shutDown: @escaping @Sendable () -> Void) {
+	public init(typist: URL, libraryDirectory: @escaping @Sendable () throws -> URL, shutDown: @escaping @Sendable () -> Void) {
 		self.typist = typist
-		self.kit = kit
 		self.libraryDirectory = libraryDirectory
 		self.shutDown = shutDown
 	}
@@ -32,9 +30,6 @@ public struct AgentService: Sendable {
 			case .shutdown:
 				replies.send(.done)
 				shutDown()
-			case .install(let byteCount):
-				try LocalKit.unpack(from: connection, byteCount: byteCount, into: kit)
-				replies.send(.done)
 			case .prepare, .type, .verify:
 				guard let (mode, password) = request.typistArguments else { return }
 				let library = try libraryDirectory()

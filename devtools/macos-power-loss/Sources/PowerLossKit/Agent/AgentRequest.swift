@@ -3,7 +3,6 @@ public enum AgentRequest: Equatable, Sendable {
 	case prepare(password: String)
 	case type(password: String, control: TypistControl? = nil)
 	case verify(password: String)
-	case install(byteCount: Int)
 	case shutdown
 
 	public static let port: UInt32 = 7040
@@ -22,9 +21,6 @@ public enum AgentRequest: Equatable, Sendable {
 			guard let control = TypistControl(rawValue: String(typing.dropFirst(Self.controlPrefix.count))) else { return nil }
 			self = .type(password: password, control: control)
 		case ("verify", let password?): self = .verify(password: password)
-		case ("install", let count?):
-			guard let byteCount = Int(count), byteCount > 0 else { return nil }
-			self = .install(byteCount: byteCount)
 		default: return nil
 		}
 	}
@@ -37,13 +33,12 @@ public enum AgentRequest: Equatable, Sendable {
 		case .type(let password, nil): "type \(password)"
 		case .type(let password, let control?): "\(Self.controlPrefix)\(control.rawValue) \(password)"
 		case .verify(let password): "verify \(password)"
-		case .install(let byteCount): "install \(byteCount)"
 		}
 	}
 
 	public var typistArguments: (mode: String, password: String)? {
 		switch self {
-		case .hello, .shutdown, .install: nil
+		case .hello, .shutdown: nil
 		case .prepare(let password): ("prepare", password)
 		case .type(let password, let control): (control?.typistMode ?? "acknowledge", password)
 		case .verify(let password): ("verify", password)

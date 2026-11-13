@@ -70,10 +70,10 @@ import Foundation
 		return nil
 	}
 
-	public func send(_ request: AgentRequest, payload: Data = Data()) throws {
+	public func send(_ request: AgentRequest) throws {
 		guard !hasEnded else { throw Failure.ended }
 		lastTraffic = .now
-		try writing.write(contentsOf: Data((request.line + "\n").utf8) + payload)
+		try writing.write(contentsOf: Data((request.line + "\n").utf8))
 	}
 
 	public func wait(within timeout: Duration, until condition: () -> Bool) async -> Bool {

@@ -30,7 +30,8 @@ func shutDownTheGuest() {
 }
 
 signal(SIGPIPE, SIG_IGN)
-let service = AgentService(typist: LocalKit.typist, libraryDirectory: LibraryVolume.libraryDirectory, shutDown: shutDownTheGuest)
+let agent = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
+let service = AgentService(typist: agent.deletingLastPathComponent().appending(path: "NativeNoteTypist"), libraryDirectory: LibraryVolume.libraryDirectory, shutDown: shutDownTheGuest)
 let listener = listen(on: AgentRequest.port)
 FileHandle.standardError.write(Data(AgentLog.listening(on: AgentRequest.port).utf8))
 while true {

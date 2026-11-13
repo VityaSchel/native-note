@@ -72,38 +72,6 @@ struct AgentServiceTests {
 		return String(decoding: received, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 	}
 
-	private func kit(typist: String) throws -> URL {
-		let kit = directory.appending(path: "kit-\(typist)")
-		try FileManager.default.createDirectory(at: kit, withIntermediateDirectories: true)
-		try Data(typist.utf8).write(to: kit.appending(path: "NativeNoteTypist"))
-		try Data("agent".utf8).write(to: kit.appending(path: "power-loss-agent"))
-		return kit
-	}
-
-	@Test func aKitSentAfterTheInstallRequestIsUnpackedWhereTheTypistRuns() throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
-		let service = AgentService(typist: local.appending(path: "NativeNoteTypist"), kit: local, libraryDirectory: { throw Failure() }, shutDown: {})
-		let archive = try LocalKit.archive(from: try kit(typist: "sent"))
-
-		let replies = try exchange(Data("install \(archive.count)\n".utf8) + archive, with: service)
-
-		#expect(replies == ["ok", ""])
-		#expect(try String(contentsOf: local.appending(path: "NativeNoteTypist"), encoding: .utf8) == "sent")
-	}
-
-	@Test func aKitWithoutTheTypistIsRefusedWithTheReason() throws {
-		defer { try? FileManager.default.removeItem(at: directory) }
-		let local = directory.appending(path: "Shared/NativeNotePowerLoss")
-		let service = AgentService(typist: local.appending(path: "NativeNoteTypist"), kit: local, libraryDirectory: { throw Failure() }, shutDown: {})
-		let archive = try LocalKit.archive(["power-loss-agent"], from: try kit(typist: "missing"))
-
-		let replies = try exchange(Data("install \(archive.count)\n".utf8) + archive, with: service)
-
-		#expect(replies == ["error the kit arrived without NativeNoteTypist", ""])
-		#expect(!FileManager.default.fileExists(atPath: local.path))
-	}
-
 	@Test func helloAnswersReady() throws {
 		defer { try? FileManager.default.removeItem(at: directory) }
 		let service = service(typist: try typist("exit 9")) { throw Failure() }

@@ -10,13 +10,12 @@ struct AgentRequestTests {
 		.type(password: "power loss"),
 		.type(password: "power loss", control: .earlyAck),
 		.verify(password: "a b  c"),
-		.install(byteCount: 4096),
 	])
 	func aRequestSurvivesItsOwnLine(_ request: AgentRequest) {
 		#expect(AgentRequest(line: request.line) == request)
 	}
 
-	@Test(arguments: ["", "hello there", "shutdown now", "type", "type ", "type-early-ack", "type-late-ack power loss", "type- power loss", "verify", "format disk0", "install", "install 0", "install -3", "install many"])
+	@Test(arguments: ["", "hello there", "shutdown now", "type", "type ", "type-early-ack", "type-late-ack power loss", "type- power loss", "verify", "format disk0", "install", "install 0", "install -3", "install many", "install 4096"])
 	func malformedRequestsAreRefused(_ line: String) {
 		#expect(AgentRequest(line: line) == nil)
 	}
@@ -33,7 +32,6 @@ struct AgentRequestTests {
 		#expect(AgentRequest.verify(password: "p").typistArguments! == ("verify", "p"))
 		#expect(AgentRequest.hello.typistArguments == nil)
 		#expect(AgentRequest.shutdown.typistArguments == nil)
-		#expect(AgentRequest.install(byteCount: 1).typistArguments == nil)
 	}
 
 	@Test func repliesAreToldApartFromTypistOutput() {
