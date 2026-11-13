@@ -184,6 +184,15 @@ struct BoundaryTests {
 		}
 	}
 
+	@Test func thePackageTheAppLinksHoldsNoDevelopmentTool() throws {
+		let kit = repository.appending(path: "clients/macos/native-note-kit")
+		let package = try String(contentsOf: kit.appending(path: "Package.swift"), encoding: .utf8)
+		let targets = try FileManager.default.contentsOfDirectory(at: kit.appending(path: "Sources"), includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+
+		#expect(!package.contains("executableTarget"))
+		#expect(Set(targets.map(\.lastPathComponent)) == ["NativeNoteKit", "SQLCipher"])
+	}
+
 	private func gitlink(of path: String) throws -> String? {
 		let git = Process()
 		git.executableURL = URL(filePath: "/usr/bin/env")

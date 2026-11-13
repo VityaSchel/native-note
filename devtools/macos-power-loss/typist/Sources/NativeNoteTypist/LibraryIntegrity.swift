@@ -1,7 +1,9 @@
 import Foundation
 
-nonisolated public enum LibraryIntegrity {
-	public static func check(libraryAt directory: URL, password: String) async throws -> String {
+@testable import NativeNoteKit
+
+nonisolated enum LibraryIntegrity {
+	static func check(libraryAt directory: URL, password: String) async throws -> String {
 		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
 		return try await BlockingWork.run {
 			let key = try Unlock.localDbKey(password: password, parameters: parameters)
@@ -10,7 +12,7 @@ nonisolated public enum LibraryIntegrity {
 		}
 	}
 
-	public static func walCheckpoints(libraryAt directory: URL) -> Int? {
+	static func walCheckpoints(libraryAt directory: URL) -> Int? {
 		guard let wal = FileHandle(forReadingAtPath: AppLock.databaseFile(in: directory).path + "-wal") else { return nil }
 		defer { try? wal.close() }
 		guard let header = try? wal.read(upToCount: 16), header.count == 16 else { return nil }

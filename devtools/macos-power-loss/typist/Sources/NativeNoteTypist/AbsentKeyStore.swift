@@ -1,6 +1,7 @@
 import CryptoKit
 import LocalAuthentication
-import NativeNoteKit
+
+@testable import NativeNoteKit
 
 nonisolated struct AbsentKeyStore: UnlockKeyStore {
 	var availability: BiometricAvailability { .unavailable }

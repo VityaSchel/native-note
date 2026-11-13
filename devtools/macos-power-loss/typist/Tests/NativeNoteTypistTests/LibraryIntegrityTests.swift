@@ -2,6 +2,7 @@ import Foundation
 import Testing
 
 @testable import NativeNoteKit
+@testable import enum NativeNoteTypist.LibraryIntegrity
 
 @Suite(.scratch)
 struct LibraryIntegrityTests {

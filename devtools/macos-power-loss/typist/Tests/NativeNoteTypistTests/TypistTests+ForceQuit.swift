@@ -1,4 +1,5 @@
 import Foundation
+import PowerLossKit
 import Testing
 
 @testable import NativeNoteKit
@@ -11,21 +12,9 @@ private enum ForceQuit {
 
 	static let saveWindow: UInt64 = 300_000_000
 	static let writeAllowance: UInt64 = 100_000_000
-	static let alphabet = Array("abcdefghijklmnopqrstuvwxyz")
 }
 
-extension LibraryEndToEndTests {
-	func typed(_ length: Int) -> String {
-		String((0 ..< length).map { ForceQuit.alphabet[$0 % ForceQuit.alphabet.count] })
-	}
-
-	func typist() throws -> URL {
-		let built = sequence(first: Bundle.module.bundleURL) { $0.pathComponents.count > 1 ? $0.deletingLastPathComponent() : nil }
-			.map { $0.appending(path: "NativeNoteTypist") }
-			.first { FileManager.default.isExecutableFile(atPath: $0.path) }
-		return try #require(built, "NativeNoteTypist is built beside the test bundle")
-	}
-
+extension TypistTests {
 	private func killMidTyping(in directory: URL, after typing: Duration) async throws -> (start: Int, keystrokes: [ForceQuit.Keystroke], killedAt: UInt64) {
 		let output = Pipe()
 		let process = Process()
@@ -71,7 +60,7 @@ extension LibraryEndToEndTests {
 			let body = try await disk.liveNotes().first?.body ?? ""
 			await disk.close()
 			#expect(try await connection(to: directory).scalar("PRAGMA integrity_check") == "ok")
-			#expect(body == typed(body.count))
+			#expect(body == TypedStream.text(length: body.count))
 			let durable = session.keystrokes.last { $0.typedAt + ForceQuit.saveWindow + ForceQuit.writeAllowance <= session.killedAt }?.length ?? session.start
 			#expect(body.count >= durable, "lost \(durable - body.count) keystrokes typed over \(ForceQuit.saveWindow / 1_000_000) ms before the kill")
 			#expect(body.count <= session.keystrokes.last?.length ?? session.start)

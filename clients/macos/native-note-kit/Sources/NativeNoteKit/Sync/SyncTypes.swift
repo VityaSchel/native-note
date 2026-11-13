@@ -43,7 +43,7 @@ nonisolated enum Commit: Sendable {
 	case exchange(Exchange)
 }
 
-public enum SyncProblem: Equatable, Sendable {
+enum SyncProblem: Equatable, Sendable {
 	case serverBehind
 	case unverifiableChange
 	case tooLarge(UUID)

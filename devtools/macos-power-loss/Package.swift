@@ -13,6 +13,7 @@ let package = Package(
 	products: [
 		.executable(name: "power-loss", targets: ["PowerLoss"]),
 		.executable(name: "power-loss-agent", targets: ["PowerLossAgent"]),
+		.library(name: "PowerLossKit", targets: ["PowerLossKit"]),
 	],
 	targets: [
 		.target(name: "PowerLossKit", swiftSettings: upcomingFeatures),

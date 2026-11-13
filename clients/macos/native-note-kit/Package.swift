@@ -55,14 +55,9 @@ let package = Package(
 			resources: [.copy("Resources/english.txt")],
 			swiftSettings: [.defaultIsolation(MainActor.self), .unsafeFlags(["-Osize"], .when(configuration: .release))] + upcomingFeatures
 		),
-		.executableTarget(
-			name: "NativeNoteTypist",
-			dependencies: ["NativeNoteKit"],
-			swiftSettings: [.defaultIsolation(MainActor.self)] + upcomingFeatures
-		),
 		.testTarget(
 			name: "NativeNoteKitTests",
-			dependencies: ["NativeNoteKit", "NativeNoteTypist"],
+			dependencies: ["NativeNoteKit"],
 			resources: [.copy("vectors"), .copy("fixtures")],
 			swiftSettings: upcomingFeatures
 		),

@@ -75,7 +75,7 @@ The package's sync tests build and run the server. Hosted coverage needs `ENABLE
 - Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.
 - Budgets: a force-quit loses at most the last 400 ms of typing; a keystroke on 1,000 notes costs at most 20 times one in a plain text view and 3 times one on 10 notes; a save takes at most 100 ms at the 95th percentile.
 - Views below `ContentView` take plain data, not `AppModel`.
-- Power loss: [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
+- Power loss, and the test of the force-quit budget: [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
 
 ## Rules
 

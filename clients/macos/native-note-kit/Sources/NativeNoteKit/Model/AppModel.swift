@@ -65,10 +65,6 @@ import Observation
 		selection.flatMap { id in notes.first { $0.id == id } }
 	}
 
-	public var libraryDirectory: URL {
-		directory
-	}
-
 	public var noteCount: Int {
 		notes.count
 	}
@@ -76,7 +72,7 @@ import Observation
 	let sync: LibrarySync
 	let biometricUnlock: BiometricUnlock
 	let scheduler: SaveScheduler
-	private let directory: URL
+	let directory: URL
 	private let makeParameters: @Sendable () throws -> UnlockParameters
 	private let calibrate: @Sendable () throws -> Argon2.Parameters
 	private let searchNotes: @Sendable (NoteStore, String) async throws -> [Note]
@@ -98,8 +94,8 @@ import Observation
 		self.init(directory: AppLock.directory)
 	}
 
-	public convenience init(libraryAt directory: URL, keyStore: (any UnlockKeyStore)? = nil, bindsToThisMac: Bool = true) {
-		self.init(directory: directory, makeParameters: bindsToThisMac ? Unlock.makeParameters : Unlock.makeUnboundParameters, keyStore: keyStore)
+	public convenience init(libraryAt directory: URL) {
+		self.init(directory: directory)
 	}
 
 	init(
@@ -258,7 +254,7 @@ import Observation
 		sync.soon()
 	}
 
-	public func deleteSelected() async {
+	func deleteSelected() async {
 		guard let id = selection else { return }
 		await delete(id)
 	}

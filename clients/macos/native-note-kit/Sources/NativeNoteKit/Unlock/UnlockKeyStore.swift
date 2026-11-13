@@ -3,13 +3,13 @@ import Foundation
 import LocalAuthentication
 import Security
 
-nonisolated public enum BiometricAvailability: Sendable, Equatable {
+nonisolated enum BiometricAvailability: Sendable, Equatable {
 	case available
 	case lockedOut
 	case unavailable
 }
 
-nonisolated public enum StoredKeyRead: Sendable, Equatable {
+nonisolated enum StoredKeyRead: Sendable, Equatable {
 	case key(SymmetricKey)
 	case missed
 	case lockedOut
@@ -17,7 +17,7 @@ nonisolated public enum StoredKeyRead: Sendable, Equatable {
 	case unavailable
 }
 
-nonisolated public protocol UnlockKeyStore: Sendable {
+nonisolated protocol UnlockKeyStore: Sendable {
 	var availability: BiometricAvailability { get }
 	func hasKey() -> Bool
 	func save(_ key: SymmetricKey) throws
@@ -26,7 +26,7 @@ nonisolated public protocol UnlockKeyStore: Sendable {
 }
 
 extension UnlockKeyStore {
-	nonisolated public var isAvailable: Bool {
+	nonisolated var isAvailable: Bool {
 		availability == .available
 	}
 }

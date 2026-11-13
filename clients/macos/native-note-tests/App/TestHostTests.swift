@@ -9,8 +9,8 @@ struct TestHostTests {
 	@Test func theTestHostNeverOpensTheRealLibrary() throws {
 		let model = AppDelegate().model
 
-		try #require(model.libraryDirectory == AppDelegate.testHostLibrary)
-		try #require(model.libraryDirectory.standardizedFileURL != AppLock.directory.standardizedFileURL)
+		try #require(model.directory == AppDelegate.testHostLibrary)
+		try #require(model.directory.standardizedFileURL != AppLock.directory.standardizedFileURL)
 		model.start()
 		#expect(model.phase == .needsSetup)
 	}

@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
-import NativeNoteKit
+
+@testable import NativeNoteKit
 
 enum Mode: String {
 	case type
@@ -29,6 +30,10 @@ func reportUnsaved(_ model: AppModel) {
 
 func digest(_ text: String) -> String {
 	SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+}
+
+nonisolated func parametersNotBoundToThisMac() throws -> UnlockParameters {
+	UnlockParameters(localSalt: Data.random(.bits128), argon: try Argon2.calibrateMemory(), enclaveKey: nil)
 }
 
 func noteToType(in model: AppModel) async -> UUID {
@@ -91,7 +96,7 @@ guard let acknowledgementLimit else {
 	exit(2)
 }
 
-let model = AppModel(libraryAt: library, keyStore: AbsentKeyStore(), bindsToThisMac: false)
+let model = AppModel(directory: library, makeParameters: parametersNotBoundToThisMac, keyStore: AbsentKeyStore())
 if mode == .verify {
 	let walCheckpoints = LibraryIntegrity.walCheckpoints(libraryAt: library)
 	model.start()
