@@ -20,6 +20,7 @@ Dependencies:
 - Lock closes the store once its saves land; a failing save keeps it open until the save lands or the next unlock
 - The `AppDelegate` owns `AppModel`, so `applicationShouldTerminate` can hold quit until pending saves land
 - Lock and quit clear what the editor's find bar put on the shared find pasteboard, unless something else was written since
+- A build without `keychain-access-groups` never queries the keychain for the Touch ID key: each query holds one of the roughly 145 `LAContext` slots macOS shares between all processes until its context deallocates
 - The test host runs with `.prohibited` activation, so tests never take focus or show in the Dock, and uses a private find pasteboard
 - Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee
 

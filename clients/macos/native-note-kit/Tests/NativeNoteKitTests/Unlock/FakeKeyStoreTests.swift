@@ -71,12 +71,12 @@ struct FakeKeyStoreTests {
 		let keys = try stocked()
 
 		await withTaskGroup(of: Void.self) { group in
-			for _ in 0 ..< 64 {
+			for _ in 0 ..< 16 {
 				group.addTask { _ = try? await keys.read(through: LAContext(), reason: "at once") }
 			}
 		}
 
-		#expect(keys.reasons == Array(repeating: "at once", count: 64))
-		#expect(Set(keys.contexts.map(ObjectIdentifier.init)).count == 64)
+		#expect(keys.reasons == Array(repeating: "at once", count: 16))
+		#expect(Set(keys.contexts.map(ObjectIdentifier.init)).count == 16)
 	}
 }

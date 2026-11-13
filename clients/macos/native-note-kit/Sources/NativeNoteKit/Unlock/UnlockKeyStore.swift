@@ -48,10 +48,13 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		account = "localDbKey:" + directory.standardizedFileURL.path
 	}
 
+	private static let holdsAccessGroup: Bool = {
+		guard let task = SecTaskCreateFromSelf(nil) else { return false }
+		return SecTaskCopyValueForEntitlement(task, accessGroupEntitlement as CFString, nil) != nil
+	}()
+
 	var availability: BiometricAvailability {
-		guard let task = SecTaskCreateFromSelf(nil), SecTaskCopyValueForEntitlement(task, Self.accessGroupEntitlement as CFString, nil) != nil else {
-			return .unavailable
-		}
+		guard Self.holdsAccessGroup else { return .unavailable }
 		var error: NSError?
 		let canEvaluate = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
 		return Self.availability(canEvaluate: canEvaluate, error: error)
@@ -71,12 +74,17 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 	}
 
 	func hasKey() -> Bool {
+		hasKey(matching: SecItemCopyMatching)
+	}
+
+	func hasKey(matching copyMatching: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus) -> Bool {
+		guard Self.holdsAccessGroup else { return false }
 		let context = LAContext()
 		context.interactionNotAllowed = true
 		var query = baseQuery
 		query[kSecReturnAttributes as String] = true
 		query[kSecUseAuthenticationContext as String] = context
-		let status = SecItemCopyMatching(query as CFDictionary, nil)
+		let status = copyMatching(query as CFDictionary, nil)
 		return status == errSecSuccess || status == errSecInteractionNotAllowed
 	}
 

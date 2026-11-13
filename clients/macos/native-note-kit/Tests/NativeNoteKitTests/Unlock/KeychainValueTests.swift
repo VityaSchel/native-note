@@ -172,4 +172,16 @@ struct KeychainValueTests {
 	@Test func anAppWithoutTheKeychainEntitlementCannotUseTouchID() {
 		#expect(KeychainUnlockKeyStore(directory: temporaryDirectory()).availability == .unavailable)
 	}
+
+	@Test func anAppWithoutTheKeychainEntitlementHoldsNoKeyAndAsksTheKeychainNothing() {
+		var asked = false
+
+		let found = KeychainUnlockKeyStore(directory: temporaryDirectory()).hasKey { _, _ in
+			asked = true
+			return errSecSuccess
+		}
+
+		#expect(!found)
+		#expect(!asked)
+	}
 }
