@@ -73,22 +73,25 @@ struct TestHostTests {
 		let defaults = UserDefaults.standard
 		let kept = defaults.object(forKey: EditorZoom.key)
 		defer { defaults.set(kept, forKey: EditorZoom.key) }
-		func choose(_ command: String) throws {
-			view.performActionForItem(at: view.index(of: try #require(menu(containing: command))))
-		}
 		func storedZoom() -> Double {
-			defaults.double(forKey: EditorZoom.key)
+			defaults.object(forKey: EditorZoom.key) as? Double ?? 1
 		}
-		defaults.set(EditorZoom.larger(1), forKey: EditorZoom.key)
-		try await settle {
-			try choose("Actual Size")
-			return storedZoom() == 1
+		func choose(_ command: String, until zoom: Double) async throws {
+			try await settle {
+				if storedZoom() != zoom {
+					view.delegate?.menuNeedsUpdate?(view)
+					view.performActionForItem(at: view.index(of: try #require(menu(containing: command))))
+				}
+				return storedZoom() == zoom
+			}
+			try #require(storedZoom() == zoom, "\(command)")
+		}
+		if storedZoom() != 1 {
+			try await choose("Actual Size", until: 1)
 		}
 
 		for (command, zoom) in [("Zoom In", 1.2), ("Zoom In", 1.44), ("Zoom Out", 1.2), ("Actual Size", 1.0)] {
-			try choose(command)
-			try await settle { storedZoom() == zoom }
-			try #require(storedZoom() == zoom, "\(command)")
+			try await choose(command, until: zoom)
 		}
 		NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: NSApp.mainMenu)
 

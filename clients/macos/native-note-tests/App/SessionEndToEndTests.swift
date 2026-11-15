@@ -44,7 +44,11 @@ struct SessionEndToEndTests {
 		try submit(password, in: window, confirming: true)
 		await window.pump(turns: 20_000) { model.phase == .unlocked }
 		try #require(model.phase == .unlocked, "\(String(describing: model.failure))")
-		await window.pump { window.accessibilityElements(.button).contains { $0.label == "Not Now" } }
+		await window.pump { window.accessibilityElements(.button).contains { $0.label == "Not Now" || $0.label == "Skip" } }
+		if model.isBiometricUnlockAvailable {
+			try #require(window.accessibilityElements(.button).first { $0.label == "Skip" }).press()
+			await window.pump { window.accessibilityElements(.button).contains { $0.label == "Not Now" } }
+		}
 		try #require(window.accessibilityElements(.button).first { $0.label == "Not Now" }).press()
 		await window.pump { !model.isOnboarding }
 
