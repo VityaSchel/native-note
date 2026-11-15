@@ -46,7 +46,19 @@ Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAc
 
 The encryption declaration and the App Transport Security justification for review are in [docs/EXPORT_COMPLIANCE.md](../../docs/EXPORT_COMPLIANCE.md).
 
-`com.apple.security.get-task-allow`, injected for non-distribution signing, lets any local process debug the app and read the content key from memory. Releases come only from [macos-release.sh](../../.forgejo/scripts/macos-release.sh): a clean checkout, exported with Developer ID, refused if it keeps `get-task-allow`, lacks the hardened runtime or misses an entitlement, and notarized as one app per architecture.
+`com.apple.security.get-task-allow`, injected for non-distribution signing, lets any local process debug the app and read the content key from memory. Releases come only from [macos-release.sh](../../.forgejo/scripts/macos-release.sh), which refuses an app that keeps `get-task-allow`, lacks the hardened runtime or misses an entitlement.
+
+### Release
+
+[macos-release.sh](../../.forgejo/scripts/macos-release.sh) builds a commit into one app per architecture, signed with Developer ID and notarized, and [macos-verify.sh](../../.forgejo/scripts/macos-verify.sh) rebuilds the checked-out commit to check published zips. Apart from the signature, the stapled ticket and the provisioning profile, a zip depends only on the commit and Xcode 27A266a on an Apple silicon Mac:
+
+- The commit is exported with `git archive` to `/private/tmp/native-note-release`, since Swift and the linker record absolute paths no flag removes; the SQLCipher amalgamation must match the commit's pinned hashes.
+- `xcodebuild` and `zip` run under `env -i` with `TZ=UTC`, `LC_ALL=C`, `SOURCE_DATE_EPOCH` at the commit time and no Git config. `BuildMachineOSBuild` is the SDK's build. The version and build number are the project's.
+- Each app is archived signed ad-hoc without a team. Files take the commit time and modes `755` and `644`; the zip holds sorted entries and no extra fields.
+- Before signing, a zip holding the builder's home path, user, host or computer name, Git identity, hardware UUID or serial number is refused, outside the bundle identifier, the repository URL and the copyright line.
+- Signing adds the team's application identifier, team identifier and keychain group to the archive's entitlements and embeds the team's Developer ID provisioning profile.
+
+`macos-verify.sh` grafts each published app's signature, `_CodeSignature`, `CodeResources` and `embedded.provisionprofile` onto the rebuild, requires the published entitlements to be the rebuild's plus exactly those three keys and the hardened runtime, then every file to match byte for byte and the published signature to verify. `actool` names the icon's fallback image after a random temporary file, so `Assets.car` is compared by its renditions. Who signed it and its notarization are checked with `spctl -a -vv`, not by the script.
 
 ### Storage
 
