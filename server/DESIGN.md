@@ -7,7 +7,7 @@ Dependencies:
 - `rusqlite` with `bundled`: SQLite, statically linked and version-pinned
 - `ring` 0.17: AES-256-GCM, HKDF-SHA256, and `SystemRandom` as the only CSPRNG
 
-Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. With `ring` the server's tree is 18 crates on Linux, its own two included, against 43 with RustCrypto's `aes-gcm`, `hkdf`, `sha2` and `getrandom`, and needs no compiler beyond the one bundled SQLite already needs. The [vector generator](../spec/README.md) keeps RustCrypto, so the vectors cross-check two implementations.
+Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. `ring` keeps the server's tree at 18 crates on Linux, its own two included, against 43 with RustCrypto's `aes-gcm`, `hkdf`, `sha2` and `getrandom`, and needs no compiler beyond the one bundled SQLite needs. The [vector generator](../spec/README.md) keeps RustCrypto, so the vectors cross-check two implementations.
 
 `native-note-core` depends on `ring` alone. Test and fuzz dependencies, which never reach the binary:
 
@@ -28,11 +28,11 @@ Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. With `ring` the server
 - `Envelope`, `Opened` and `Reply`, which hold whole sealed or padded frames, have no `Debug`.
 - The HTTP request head is parsed in the core, under the coverage gate and a fuzz target.
 - The non-test builds of both crates forbid panicking APIs and unchecked arithmetic by lint; [lib.rs](native-note-core/src/lib.rs) and [clippy.toml](clippy.toml) list the bans.
-- Coverage gate: every line, branch and region of `native-note-core/src` outside its tests runs under a deterministic test, property tests excluded, and at least 90% of `native-note-server/src`'s, measured with the nightly pinned in [server-coverage.sh](../.forgejo/scripts/server-coverage.sh), from per-record data, since `llvm-cov`'s summaries take the maximum over a function's copies instead of their union.
+- Coverage gate: every line, branch and region of `native-note-core/src` outside its tests runs under a deterministic test, property tests excluded, and at least 90% of `native-note-server/src`'s, measured with the nightly pinned in [server-coverage.sh](../.forgejo/scripts/server-coverage.sh).
 
 ## Server API
 
-The HTTP layer is hand-rolled and blocking on `std::net::TcpListener`: ~300 lines over 2 direct dependencies, against `axum` (~200 crates) or `hyper` + `tokio` (~50–60 crates).
+The HTTP layer is hand-rolled and blocking on `std::net::TcpListener`, adding no dependency.
 
 - One listener on the given address. `[::]` also accepts IPv4 where the host default `net.ipv6.bindv6only=0` allows it, since std cannot set `IPV6_V6ONLY`.
 - 8 threads each block in `accept` on that listener; the listen backlog is the only queue. A request holds about 10 MiB at its peak, so 8 bound the server near 80 MiB.
@@ -45,7 +45,7 @@ The HTTP layer is hand-rolled and blocking on `std::net::TcpListener`: ~300 line
 
 ## Server storage
 
-The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`. When the file is absent, the server generates a key, writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path, `/var/lib/native-note-server/api-key` under the [systemd unit](native-note-server.service), where a client that lost the key reads it again. A missing data directory is created at `0700`; an existing one keeps its mode.
+The [API key](../docs/PROTOCOL.md#api-key) is always `<data directory>/api-key`, mode `0600`. When the file is absent, the server generates a key, writes it to a temporary file at `0600`, fsyncs it, renames it into place and fsyncs the directory. The key is never printed; that run logs only the file's path. A missing data directory is created at `0700`; an existing one keeps its mode.
 
 Secrets are wrapped in `Secret<T>`, whose `Debug` prints `[redacted]` and which has no `PartialEq`. No zeroize and no constant-time helper: the GCM tag check inside `ring` is the only comparison of secret data.
 

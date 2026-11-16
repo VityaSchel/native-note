@@ -10,6 +10,7 @@
 - **Password KDF:** Argon2id, client only
   - Not PBKDF2: GPU-crackable without a secure enclave
 - **Hardware binding:** platform-specific
+- **Local database:** SQLCipher 4 defaults, AES-256-CBC with HMAC-SHA512 per page, under a raw 256-bit key
 - **Protocol format:** fixed-layout binary, one valid encoding per message
   - Not JSON: base64 is ~133% of binary and needs a parser
   - Not CBOR or MessagePack: not native
@@ -42,10 +43,6 @@ Offline-first. Notes are encrypted at rest under a mandatory unlock password; a 
 - Created At, Updated At
 - Body: plain text; the first line is the title
 
-### Exports
-
-A zip of markdown files, one per live note, with metadata in front matter, optionally encrypted whole under a passphrase rather than with zip's own encryption, which leaves file names readable.
-
 ## Threat model
 
 | Actor                         | Trust                                                                                      |
@@ -75,11 +72,11 @@ Documented risks and vulnerabilities:
 - **Argon2 and SQLCipher** are third-party C in the client, built from pinned source.
 - **Hand-rolled HTTP parser.** Constrained grammar, fuzzed; a reverse proxy is recommended for public deployments.
 - **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule.
-- **Payload length leaks note size in 4 KiB steps.** [Content](./PROTOCOL.md#content) is zero-filled to a multiple of 4096 B, so the server and its backups see how many blocks each version takes, but not which writes delete or how long a short note is.
+- **Payload length leaks note size in 4 KiB steps.** The server and its backups see how many [4 KiB blocks](./PROTOCOL.md#content) each version takes, not which writes delete or how long a short note is.
 - **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. A planted blob fails the tag on decrypt, so they can only make recovery unusable.
 - **Server data-directory compromise leaks the API key.** Reading `/var/lib/native-note-server/api-key` decrypts metadata and forges writes.
 - **No per-device revocation.** Losing a device means [replacing the API key](guides/setup-sync-server.md#connect-a-client) and entering it on the rest.
 - **A short password or pin without hardware binding** is brute-forceable offline in hours.
-- **No in-app unlock attempt limiting.** A counter would sit in storage the attacker owns, and an attacker goes after the database file, not the app. Erasing a library with a forgotten password needs only a confirmation; anyone in an unlocked session can delete its folder anyway.
+- **No in-app unlock attempt limiting.** An attacker goes after the database file, not the app. Erasing a library with a forgotten password needs only a confirmation, since anyone in an unlocked session can delete its folder anyway.
 - **Hardware binding does not add per-guess cost.** A disk image alone cannot be attacked offline at all, but code running on the machine reads `machineId` with one call and then guesses offline at Argon2id cost.
-- **The content key never rotates.** The recovery layer spares re-encrypting every note when the mnemonic leaks, but a leaked mnemonic still opens any older copy of the recovery blob, such as a server backup, and with it every note.
+- **The content key never rotates.** A leaked mnemonic opens any older copy of the recovery blob, such as a server backup, and with it every note, even after rotation.

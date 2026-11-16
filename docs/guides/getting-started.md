@@ -25,7 +25,7 @@ Turn Off Sync… in Settings keeps every note on the Mac; Set Up Sync… later f
 
 ## Losing a Mac
 
-[Replace the server's API key](setup-sync-server.md#connect-a-client), then on each Mac that still syncs choose Change Server… in Settings, keep the address and enter the new key. The lost Mac can no longer sync, but its notes stay readable to whoever knows its unlock password.
+[Replace the server's API key](setup-sync-server.md#connect-a-client), then enter it with Change Server… on each Mac that still syncs, keeping the address. The lost Mac can no longer sync, but its notes stay readable to whoever knows its unlock password.
 
 ## Losing everything
 

@@ -33,4 +33,4 @@ Claims in the README and the documents below are verified against the code befor
 
 ## Cryptography
 
-No custom primitives; platform crypto where available. The local database uses SQLCipher 4's defaults, AES-256-CBC with HMAC-SHA512 per page, under a raw 256-bit key. The server depends directly on `ring` and `rusqlite` alone, with SQLite bundled. The client adds Argon2 and SQLCipher, both built from pinned source; see [clients/macos/README.md](clients/macos/README.md).
+No custom primitives; platform crypto where available. Primitives: [docs/ARCHITECTURE.md § Cryptography](docs/ARCHITECTURE.md#cryptography). Dependencies: [server/DESIGN.md](server/DESIGN.md) and [clients/macos/README.md](clients/macos/README.md).

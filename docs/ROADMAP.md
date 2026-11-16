@@ -7,3 +7,5 @@
 - **Authenticated manifest against withholding.** A canonical list of `{blindedId, v}` for every live note, sealed under a content-key-derived key, with its own version counter.
 - **Convergence after a manual server restore**, for a client that finds the server [behind it](../clients/DESIGN.md#pull-verification).
 - **QR code and saved file for the recovery credential**, carrying the API key with the Recovery key.
+- **Mac App Store**, after its encryption questionnaire (standard algorithms beyond the OS's, through SQLCipher), a review justification for arbitrary loads to self-hosted `http` servers, and, for the French store, an ANSSI declaration.
+- **iOS, Android, Windows and Linux clients**, binding the local DB key with the Secure Enclave, Keystore or StrongBox, and TPM.

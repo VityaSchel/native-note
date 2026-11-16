@@ -3,7 +3,7 @@
 ## Layout
 
 ```
-docs/              cross-cutting design, sync protocol, roadmap
+docs/              cross-cutting design, protocol, roadmap, user guides
 spec/              conformance vectors, their generator, BIP39 wordlists
 server/            Rust server workspace, docs in its root
 clients/           shared client design, one directory per platform
@@ -73,13 +73,11 @@ The package's sync tests build and run the server. Hosted coverage needs `ENABLE
 
 - Every feature gets unit tests and headless end-to-end tests, which run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`.
 - Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.
-- Budgets: a force-quit loses at most the last 400 ms of typing; a keystroke on 1,000 notes costs at most 20 times one in a plain text view and 3 times one on 10 notes; a save takes at most 100 ms at the 95th percentile.
-- Views below `ContentView` take plain data, not `AppModel`.
-- Power loss, and the test of the force-quit budget: [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
+- Power loss and the [force-quit budget](clients/DESIGN.md#local-db): [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
 
 ## Rules
 
-- A spec change regenerates the vectors in the same commit. A new vector file is listed in the server's `tests/suite/support/vectors.rs` and the client's `VectorFile`.
+- A spec change regenerates the vectors in the same commit; `cargo test` in `spec/generator` fails on a stale or stray vector file. A new vector file is listed in the server's `tests/suite/support/vectors.rs` and the client's `VectorFile`.
 - No floating dependencies: pin an exact version backed by a lockfile checksum, a commit revision or a content hash.
 - A new server dependency needs a written justification in [server/DESIGN.md](server/DESIGN.md).
 - Every claim in the README and docs matches the code; a mismatch is a defect.
@@ -101,7 +99,7 @@ Never `nativeNote`. The bundle ID is `dev.hloth.nativenote` on every platform, s
 - Comment only what the code cannot say, with a spec citation or reference link.
 - Split files past roughly 300–400 lines.
 - Rust: `rustfmt` with hard tabs. Clippy warnings are errors.
-- Swift: no `try!` outside tests. Database writes never run on `@MainActor`.
+- Swift: no `try!` outside tests.
 - Dates as `YYYY-MM-DD`. US English. Metric units.
 
 ## Security

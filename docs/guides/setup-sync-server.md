@@ -35,7 +35,7 @@ The first start writes the API key to the `api-key` file in the data directory:
 sudo cat /var/lib/native-note-server/api-key
 ```
 
-In Native Note, choose Set Up on the Sync Your Notes step of setup, or Set Up Sync… in Settings once setup is finished, and enter the server's address and the API key.
+Enter the server's address and this key in Native Note, per [Getting started](getting-started.md).
 
 To replace the API key, remove the `api-key` file and restart the server, then on each Mac choose Change Server… in Settings, keep the address and enter the new key.
 
