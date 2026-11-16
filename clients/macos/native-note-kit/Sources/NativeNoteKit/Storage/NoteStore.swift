@@ -21,7 +21,7 @@ actor NoteStore {
 
 	private init(url: URL, key: SymmetricKey, create: Bool) throws {
 		let connection = try SQLiteConnection(url: url, rawKey: key, create: create)
-		try Schema.migrate(connection)
+		try Schema.prepare(connection)
 		self.url = url
 		opened = connection
 	}

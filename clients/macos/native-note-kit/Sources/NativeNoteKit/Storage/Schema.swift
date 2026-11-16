@@ -1,24 +1,19 @@
 import Foundation
 
 nonisolated enum Schema {
-	static let migrations = [version1, version2, version3]
+	static let version = 1
 
-	static func migrate(_ connection: SQLiteConnection) throws {
-		let applied = Int(try connection.scalar("PRAGMA user_version").flatMap(Int.init) ?? 0)
-		guard applied <= migrations.count else {
-			throw SQLiteError.newerSchema(found: applied, known: migrations.count)
-		}
-		guard applied < migrations.count else { return }
-
+	static func prepare(_ connection: SQLiteConnection) throws {
+		let found = Int(try connection.scalar("PRAGMA user_version").flatMap(Int.init) ?? 0)
+		guard found <= version else { throw SQLiteError.newerSchema(found: found, known: version) }
+		guard found < version else { return }
 		try connection.transaction {
-			for (index, migration) in migrations.enumerated() where index >= applied {
-				try connection.execute(migration)
-			}
-			try connection.execute("PRAGMA user_version = \(migrations.count)")
+			try connection.execute(definition)
+			try connection.execute("PRAGMA user_version = \(version)")
 		}
 	}
 
-	private static let version1 = """
+	static let definition = """
 		CREATE TABLE note (
 			uuid      BLOB    PRIMARY KEY NOT NULL,
 			body      TEXT    NOT NULL,
@@ -27,7 +22,8 @@ nonisolated enum Schema {
 			deleted   INTEGER NOT NULL DEFAULT 0,
 			dirty     INTEGER NOT NULL DEFAULT 0,
 			v         INTEGER NOT NULL DEFAULT 0,
-			seq       INTEGER
+			pulled    INTEGER NOT NULL DEFAULT 0,
+			ext       BLOB    NOT NULL DEFAULT x''
 		) STRICT;
 
 		CREATE INDEX note_updatedAt ON note (updatedAt DESC);
@@ -52,14 +48,5 @@ nonisolated enum Schema {
 			k TEXT PRIMARY KEY NOT NULL,
 			v BLOB NOT NULL
 		) STRICT;
-		"""
-
-	private static let version2 = """
-		ALTER TABLE note ADD COLUMN pulled INTEGER NOT NULL DEFAULT 0;
-		"""
-
-	private static let version3 = """
-		ALTER TABLE note ADD COLUMN ext BLOB NOT NULL DEFAULT x'';
-		ALTER TABLE note DROP COLUMN seq;
 		"""
 }
