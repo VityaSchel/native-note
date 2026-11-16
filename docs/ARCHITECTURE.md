@@ -71,7 +71,7 @@ Documented risks and vulnerabilities:
 - **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes, except those that also crossed TLS.
 - **Argon2 and SQLCipher** are third-party C in the client, built from pinned source.
 - **Hand-rolled HTTP parser.** Constrained grammar, fuzzed; a reverse proxy is recommended for public deployments.
-- **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule.
+- **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule. Blinded IDs show how many notes exist, deleted ones included, and which change in the same request.
 - **Payload length leaks note size in 4 KiB steps.** The server and its backups see how many [4 KiB blocks](./PROTOCOL.md#content) each version takes, not which writes delete or how long a short note is.
 - **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. A planted blob fails the tag on decrypt, so they can only make recovery unusable.
 - **Server data-directory compromise leaks the API key.** Reading `/var/lib/native-note-server/api-key` decrypts metadata and forges writes.

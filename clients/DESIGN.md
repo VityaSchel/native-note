@@ -6,7 +6,7 @@ SQLCipher in WAL mode with `synchronous=FULL`, `fullfsync` and `checkpoint_fullf
 
 - A note saves at most ~300 ms after its first unsaved edit, and at once on leaving the note, lock, the app resigning active, sleep and quit.
 - Budgets: a force-quit loses at most the last 400 ms of typing; a keystroke on 1,000 notes costs at most 20 times one in a plain text view and 3 times one on 10 notes; a save takes at most 100 ms at the 95th percentile.
-- A new note is marked for sync only at its first edit. A new note left empty is discarded, on lock and quit too: removed if no server has seen it, kept if a pull has written it since the list last showed it, tombstoned otherwise; one discarded during its first push is tombstoned [when that push lands](#conflicts).
+- A new note is marked for sync only at its first edit. A new note left empty, or holding only whitespace, is discarded, on lock and quit too: removed if no server has seen it, kept if a pull has written it since the list last showed it, tombstoned otherwise; one discarded during its first push is tombstoned [when that push lands](#conflicts).
 - A local save never bumps `v` and never writes to a tombstone. Undoing a delete restores the text as a new note with the deleted one's timestamps and `ext`, until the library locks.
 - A failed save retries with the latest text, across lock and unlock, and is reported once until no save fails. Lock does not wait for it and shows the failure on the lock screen.
 - Quit with an unsaved edit asks first.
@@ -46,7 +46,7 @@ END;
 CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 ```
 
-Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `ext` holds the note's [`ext`](../docs/PROTOCOL.md#content) byte for byte: a pull writes it, a push sends it, a local edit never changes it, and a new, imported or deleted note holds it empty. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, the recovery blob's pinned `v`, and the IDs of notes first pushed since the last pull that left `more` clear.
+Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `ext` holds the note's [`ext`](../docs/PROTOCOL.md#content) byte for byte: a pull writes it, a push sends it, a local edit never changes it, a new or imported note holds it empty, deleting a note empties it, and a conflict copy or a restored note keeps its source's. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, the recovery blob's pinned `v`, and the IDs of notes first pushed since the last pull that left `more` clear.
 
 Search matches whole words, and the last word as a prefix from two characters, ranked by relevance. A search survives lock and reruns on unlock.
 
@@ -65,7 +65,7 @@ Argon2id is version `0x13` with no secret or associated data, `m` in KiB. A pass
 
 `localDbKey` is a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, never a passphrase; it opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
 
-The app keeps no copy of `localDbKey` while unlocked; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and scratch buffers holding key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
+The app keeps no copy of `localDbKey` while unlocked, except while turning on biometrics waits for the touch that reads it back; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and scratch buffers holding key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
 
 #### `hardwareBinding`
 
@@ -85,7 +85,7 @@ Without secure hardware, `machineId` is omitted, the UI warns, and Argon2id alon
 
 #### Unlock parameters
 
-`localSalt` and `argonParams` are public and stored outside the database. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, to the largest value whose in-process run takes at most 0.4 s, capped at 2 GiB; a password change never lowers it.
+`localSalt` and `argonParams` are public and stored outside the database. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, in multiples of `8p` KiB, to the largest of up to four timed in-process runs that takes at most 0.4 s, capped at 2 GiB; a password change never lowers it.
 
 #### Changing the password
 
@@ -125,7 +125,7 @@ Applies only with a sync server. The recovery credential is the [Recovery key](.
 
 Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key):
 
-- A `put` whose response is lost is sent again unchanged.
+- A `get` or `put` whose response is lost is sent again unchanged, up to three attempts in all.
 - A `put` whose answer never arrives intact, as when a proxy forwards it and then fails, or arrives as a `fault`, is settled by a `get`: a blob that opens under the Recovery key still in memory means it landed. When that `get` fails, or a conflict's `get` fails, the outcome is unknown and the words stay in memory for a retry.
 - A `put` counts as not sent only when every attempt failed to reach the server, and as not stored when the server answered `malformed` or `unsupported`. A `put` given up on can still land later, since nothing in it expires.
 - A conflict whose fetched blob [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key in memory routes setup to the join, and makes rotation report that another device rotated.
@@ -139,7 +139,7 @@ Cancel stops setup, join and Change Server while nothing is stored, and is off w
 3. Show the 24 words hidden until revealed, every hidden word drawn as the same placeholder, then require three random words typed back. The revealed words cannot be selected, so they reach the pasteboard only through copying the words, which puts the numbered list on this device's pasteboard only, marked concealed and transient, and clears it on cancel, lock or quit unless something else was copied over it.
 4. `put` the Content key encrypted under the Recovery key and, once that `put` has landed, store the Content key, API key, URL and pin in `meta`, and enable sync.
 
-**Turn Off Sync and Change Server:** Turn Off Sync forgets only the server address and API key; the Content key, the pin, the last pulled `seq` with its mark, the first-push IDs and every note's version stay. Set Up Sync on such a library, or Change Server on a syncing one, checks the server: one that holds this library takes it back with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones and first-push IDs dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge.
+**Turn Off Sync and Change Server:** Turn Off Sync forgets only the server address and API key; the Content key, the pin, the last pulled `seq` with its mark, the first-push IDs and every note's version stay. Set Up Sync on such a library, or Change Server on a syncing one, checks the server: one that holds this library takes it back with no words; an empty one gets it under a new recovery phrase, with every note pushed as new and tombstones and first-push IDs dropped, while the old server keeps its sealed copy; one that holds another library is refused, since two libraries cannot merge, once this device has pulled a change to tell them apart by; before that, any server holding a recovery blob at or above the pin takes it back.
 
 **A replaced API key:** Change Server with the same address takes the new key. The server holds this library when it answers under the new key with a recovery blob at or above the pin and, once this device has pulled, with the write its last pull ended on, by blinded ID at that `v` or later, whether or not it opens, so a write forged with a leaked key cannot block the change. A mistyped key, a server holding another library or one restored from an older backup leaves the old address, key and sync as they were.
 
@@ -154,13 +154,13 @@ Cancel stops setup, join and Change Server while nothing is stored, and is off w
 
 ## Sync
 
-A sync runs 30 s after the last edit, when the app becomes or stops being active, after unlock, and on a manual sync, one at a time; requests made during a sync share the next one. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. Saves that fall due meanwhile wait, and an edit typed on a note a pull replaced moves to that note's copy. An acknowledged push never adds a note to the list.
+A sync runs 30 s after the last edit, delete, undone delete or import, when the app becomes or stops being active, after unlock, and on a manual sync, one at a time; requests made during a sync share the next one. It pushes every dirty note, as many per request as fit the [body limit](../docs/PROTOCOL.md#limits), and pulls until `more` is clear. Each response applies in one transaction with its `since`. Saves that fall due meanwhile wait, and an edit typed on a note a pull replaced moves to that note's copy. An acknowledged push never adds a note to the list.
 
 A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text.
 
 An [`error`](../docs/PROTOCOL.md#response-error) fails the sync or setup step and is reported by its `reason`, `unsupported` as needing a newer app; an unknown `reason` reads as `fault`.
 
-The server URL may be plain `http`, since everything past the URL is sealed. A stored address that is not an `http` or `https` URL with a host is reported as an error, and sync does not start. Requests carry only fixed headers, the same on every device, so nothing outside the envelope tells devices, builds or languages apart.
+The server URL may be plain `http`, since everything past the URL is sealed. A stored address that is not an `http` or `https` URL with a host is reported as an error, and sync does not start. Requests carry only fixed headers, the same on every device, so nothing outside the envelope tells devices, builds or languages apart. Redirects are not followed, any status but 200 fails the request, nothing is cached, no cookie is kept, and a request gives up after 30 s without data or 120 s in all.
 
 ## Pull verification
 
@@ -176,7 +176,7 @@ A change that fails a check is reported and not applied, so only a pulled tombst
 
 Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note, with a new UUID, the unpushed `createdAt`, `updatedAt` and `ext`, and dirty at `v = 0`, and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text, and the original keeps it locally and is marked clean; a dirty tombstone there is marked clean without a push.
 
-A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored after a lost response or a response that failed to commit: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. An `accepted` write whose note is no longer held becomes a dirty tombstone at that `v`, pushed in the same sync. Unacknowledged `writeId`s live in memory until a pull resolves each; after a relaunch, a lost response takes the copy path, where matching bodies make no copy, and a pulled `v = 1` for a first-push ID in `meta` whose note is no longer held becomes the same tombstone.
+A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored after a lost response or a response that failed to commit: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. An `accepted` write whose note is no longer held becomes a dirty tombstone at that `v`, pushed in the same sync. Unacknowledged `writeId`s live in memory until a pull resolves each or sync stops, on lock, Turn Off Sync or Change Server; after that or a relaunch, a lost response takes the copy path, where matching bodies make no copy, and a pulled `v = 1` for a first-push ID in `meta` whose note is no longer held becomes the same tombstone.
 
 A conflicted push stays dirty until its pull arrives. A note whose push `conflict` carried a `v` still above its local `v` once the sync reaches the head, because that version was skipped or never arrived, is reported. A failed sync retries at the next scheduled sync. A note whose payload would exceed the [note limit](../docs/PROTOCOL.md#limits) stays dirty and unpushed, and is reported.
 
@@ -210,4 +210,4 @@ body
 
 The fields come in this order and spelling only: `id` lowercase and hyphenated; `created` and `updated` as ISO 8601 in UTC with milliseconds on the proleptic Gregorian calendar, where year `0000` is 1 BC, and, for a year outside 0000–9999, a sign and the year zero-padded to six digits.
 
-Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase, one that starts with `NNEXPORT` and then any other byte is refused as written by a newer version, and any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, in one transaction, and skips every `id` it holds, live or deleted.
+Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase, one that starts with `NNEXPORT` and then any other byte is refused as written by a newer version, and any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, differing entry counts in the end record, a central directory its records do not fill exactly, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, in one transaction, and skips every `id` it holds, live or deleted.

@@ -16,7 +16,7 @@ sudo systemctl enable --now native-note-server
 The unit listens on `[::]:8080` and keeps its data in `/var/lib/native-note-server/`. Without systemd, pass the listen address and the data directory:
 
 ```sh
-native-note-server [::]:8080 /srv/native-note
+native-note-server '[::]:8080' /srv/native-note
 ```
 
 Behind a reverse proxy, which must speak HTTP/1.1 to the server and accept request bodies of at least 2 MiB + 28 B (in nginx, `proxy_http_version 1.1;` and `client_max_body_size 3m;`), bind the server to loopback with `sudo systemctl edit native-note-server`, then restart it:

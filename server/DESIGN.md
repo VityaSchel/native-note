@@ -7,7 +7,7 @@ Dependencies:
 - `rusqlite` with `bundled`: SQLite, statically linked and version-pinned
 - `ring` 0.17: AES-256-GCM, HKDF-SHA256, and `SystemRandom` as the only CSPRNG
 
-Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. `ring` keeps the server's tree at 18 crates on Linux, its own two included, against 43 with RustCrypto's `aes-gcm`, `hkdf`, `sha2` and `getrandom`, and needs no compiler beyond the one bundled SQLite needs. The [vector generator](../spec/README.md) keeps RustCrypto, so the vectors cross-check two implementations.
+Rust 1.95 std has no AEAD, HKDF, SQLite or stable CSPRNG. `ring` keeps the server's tree at 18 crates on Linux, its own two included, under half the count with RustCrypto's `aes-gcm`, `hkdf`, `sha2` and `getrandom`, and needs no compiler beyond the one bundled SQLite needs. The [vector generator](../spec/README.md) keeps RustCrypto, so the vectors cross-check two implementations.
 
 `native-note-core` depends on `ring` alone. Test and fuzz dependencies, which never reach the binary:
 
@@ -93,7 +93,7 @@ CREATE TABLE content_key (
 native-note-server <listen address> <data directory>
 ```
 
-Both arguments are required and positional, read with `std::env::args_os`. No flags, config file or environment variables. Wrong arguments exit `2`, any other startup failure `1`.
+Both arguments are required and positional, read with `std::env::args_os`. No flags, config file or environment variables. Wrong arguments, a listen address that is not an IP address and port among them, exit `2`; any other startup failure exits `1`.
 
 The [systemd unit](native-note-server.service) runs `/usr/local/bin/native-note-server` (mode `0755`, owner `root:root`) as a `DynamicUser`, passes `/var/lib/native-note-server/` (its `StateDirectory`, mode `0700`) as the data directory, sets `LimitCORE=0`, and sandboxes the service to an exposure of 1.1 in `systemd-analyze security`.
 

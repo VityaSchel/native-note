@@ -96,7 +96,7 @@ The server stamps every accepted write with a `seq`, inside the same transaction
 
 ## Transport
 
-The sealed envelope authenticates each request and hides its metadata. No device IDs, so an observer cannot tell devices apart or count them. TLS is optional.
+The sealed envelope authenticates each request and hides its metadata. No device IDs and fixed headers, so nothing but the source address tells devices apart or counts them. TLS is optional.
 
 A replayed write is rejected by `v == storedV + 1`, since the server has already advanced. A write that never reached the server carries no expiry, so one held back and delivered later is still accepted while its `v` is next. A replayed pull returns a response sealed to a key the attacker does not hold.
 
@@ -154,7 +154,7 @@ A write that fails both checks gets `too_large`.
 
 On every status except `accepted`, `v` is the server's current version.
 
-The server applies a `sync`'s writes in the order submitted, then reads `changes`, so accepted writes come back in the same response. A `sync` is applied atomically: after `error` none of its writes are stored, so a retry is safe.
+The server applies a `sync`'s writes in the order submitted, then reads `changes`, so accepted writes come back in the same response. A `sync` is applied atomically: after `error` none of its writes are stored. A `500` or a lost response can follow the commit, so a retry can meet its own writes, which the client knows by their `writeId`.
 
 `changes` holds the current write of each note whose `seq` is above `since`, in `seq` order. `nextSeq` is the server's latest `seq`, or the last change's `seq` when `more` is set, and the client's next pull starts from it. A response that sets `more` carries at least one change, and the client pulls again right away.
 
@@ -178,11 +178,11 @@ A `put` follows the same [version rule](#notes) as notes and answers `accepted` 
 error response   0xff ‖ reason(1)
 ```
 
-A request that unseals but fails to unpad or decode, or hits a fault after unsealing, gets `error`:
+A request that unseals but fails to unpad or decode, or hits a storage fault, gets `error`:
 
 | `reason`      | Byte | Cause                                                                                             |
 | ------------- | ---- | ------------------------------------------------------------------------------------------------- |
-| `malformed`   | 0x01 | The request fails to unpad, or to decode after its action byte                                    |
+| `malformed`   | 0x01 | The request fails to unpad, is empty, or fails to decode after its action byte                    |
 | `unsupported` | 0x02 | An action the server does not know or no longer accepts                                           |
 | `fault`       | 0x03 | A storage failure, a full disk, an exhausted `seq`, or a first pending change too large to answer |
 

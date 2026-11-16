@@ -57,7 +57,7 @@ A case whose name starts with `reject` is a negative test.
 
 **`envelope.json`**'s `errorFor*` cases carry a request `frame` that opens but fails to unpad or decode, and the server's `response` to it: `responseInner` padded and sealed under `responseNonce`, with the frame's nonce as AAD, and its `reason`.
 
-**`sync.json`**: a request's write order is the client's choice, and a step's `writes` come in the order its `request` carries them.
+**`sync.json`**: a request's write order is the client's choice, and a step's `writes` come in the order its `request` carries them. `outcome` sums up the `response`: its `results` and how many `changes` it carries. `copyUuid` is the UUID a step's conflict copy takes, pushed in a later step. `replays` names the step whose sealed request arrives again byte for byte, from no `device`.
 
 **`recovery.json`** exchanges name the `device` that sends them. A `put` carries the `recoveryKey`, `contentKey` and `nonce` that seal its blob; a `get` that returns a blob carries the `recoveryKey` the client holds and whether the blob `opens` under it.
 

@@ -69,7 +69,7 @@ xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 
 (cd native-note-kit && swift test)
 ```
 
-The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`, built from a clean tree with the version set in the project, needs the team's Developer ID certificate and provisioning profile and the `native-note` notarytool profile: `.forgejo/scripts/macos-release.sh [<tag>]`. To check published zips against the checked-out commit: `.forgejo/scripts/macos-verify.sh <zip>...`, per [clients/macos/README.md § Release](clients/macos/README.md#release).
+The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`, built from a clean tree with the version set in the project, needs Xcode 27A266a, the team's Developer ID certificate and provisioning profile and the `native-note` notarytool profile: `.forgejo/scripts/macos-release.sh [<tag>]`. To check published zips against the checked-out commit, with the same Xcode: `.forgejo/scripts/macos-verify.sh <zip>...`, per [clients/macos/README.md § Release](clients/macos/README.md#release).
 
 - Every feature gets unit tests and headless end-to-end tests, which run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`.
 - Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.
