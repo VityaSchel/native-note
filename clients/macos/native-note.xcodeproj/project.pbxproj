@@ -374,7 +374,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote;
 				PRODUCT_MODULE_NAME = NativeNote;
 				PRODUCT_NAME = "Native Note";
@@ -420,7 +420,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote;
 				PRODUCT_MODULE_NAME = NativeNote;
 				PRODUCT_NAME = "Native Note";
@@ -441,7 +441,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote.tests;
 				PRODUCT_MODULE_NAME = NativeNoteTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -461,7 +461,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.hloth.nativenote.tests;
 				PRODUCT_MODULE_NAME = NativeNoteTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

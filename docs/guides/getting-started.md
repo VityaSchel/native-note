@@ -1,6 +1,6 @@
 # Getting started
 
-There is no release yet. Build and install the Mac app per [CONTRIBUTING.md](../../CONTRIBUTING.md#macos-client); it runs on macOS 26.
+Download the zip for your Mac, `arm64` for Apple silicon or `x86_64` for Intel, from [Releases](https://git.hloth.dev/hloth/native-note/releases), unzip it and move Native Note to Applications. It runs on macOS 26. To build it yourself, see [CONTRIBUTING.md](../../CONTRIBUTING.md#macos-client).
 
 1. Set an unlock password. It encrypts the notes on this Mac and cannot be recovered: a forgotten password means erasing the library, and only a synced library or an export comes back.
 2. On a Mac with Touch ID, Set Up Touch ID asks for one touch; Skip leaves it to Settings.

@@ -41,6 +41,8 @@ echo "$zig_sha256  $work/$zig.tar.xz" | sha256 -c - >/dev/null
 tar -xJf "$work/$zig.tar.xz" -C "$work"
 
 cd "$root/server"
+version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)"
+[[ -n "$version" ]] || { echo "no workspace version in server/Cargo.toml" >&2; exit 1; }
 sysroot="$(rustc --print sysroot)"
 commit="$(rustc -vV | sed -n 's/^commit-hash: //p')"
 cargo_home="${CARGO_HOME:-$HOME/.cargo}"
@@ -75,9 +77,9 @@ for target in "${targets[@]}"; do
 	mkdir -p "$package"
 	install -m 0755 "$work/target/$target/release/native-note-server" "$package/native-note-server"
 	install -m 0644 "$root/server/native-note-server.service" "$package/native-note-server.service"
-	pack_reproducibly "$out/native-note-server-$target.tar.gz" "$package" native-note-server native-note-server.service
+	pack_reproducibly "$out/native-note-server-$version-$target.tar.gz" "$package" native-note-server native-note-server.service
 done
 echo "built on $(rustc -vV | sed -n 's/^host: //p')"
 cd "$out"
-tarballs=("${targets[@]/#/native-note-server-}")
+tarballs=("${targets[@]/#/native-note-server-$version-}")
 sha256 "${tarballs[@]/%/.tar.gz}"
