@@ -3,7 +3,7 @@
 Download the zip for your Mac, `arm64` for Apple silicon or `x86_64` for Intel, from [Releases](https://git.hloth.dev/hloth/native-note/releases), unzip it and move Native Note to Applications. It runs on macOS 26. To build it yourself, see [CONTRIBUTING.md](../../CONTRIBUTING.md#macos-client); to check a release against the source, [REPRODUCIBILITY.md](../../REPRODUCIBILITY.md#macos-app).
 
 1. Set an unlock password. It encrypts the notes on this Mac and cannot be recovered: a forgotten password means erasing the library, and only a synced library or an export comes back.
-2. On a Mac with Touch ID, Set Up Touch ID asks for one touch; Skip leaves it to Settings.
+2. On a Mac with Touch ID, Set Up Touch ID asks for one touch; Skip leaves it to Settings. Adding or removing a fingerprint turns Touch ID unlock off until you turn it on again.
 3. To sync, run a [sync server](setup-sync-server.md), choose Set Up and enter its address and API key. Not Now leaves Set Up Sync… in Settings for later.
 4. Choose Reveal, write down the 24 recovery words, then type back the three Native Note asks for. Native Note never keeps them; with them and the API key, the notes can be restored.
 

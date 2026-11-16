@@ -24,7 +24,7 @@ Dependencies:
 - The test host runs with `.prohibited` activation, so tests never take focus or show in the Dock, and uses a private find pasteboard
 - Never set `PRAGMA temp_store`: `SQLITE_TEMP_STORE=2` makes memory the default, not a guarantee
 
-Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics).
+Touch ID unlock keeps `localDbKey` in the data-protection keychain under `kSecAccessControlBiometryCurrentSet` + `kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly`, one item per library folder, per [clients/DESIGN.md](../DESIGN.md#unlocking-with-biometrics). Reading even that item's attributes needs a touch, so the enrollment's `LAContext.domainState.biometry.stateHash` sits in a second item, `dev.hloth.nativenote.unlock.enrollment`, with no access control; it is compared on every return to the app while `canEvaluatePolicy` succeeds.
 
 The prompt is [`LAAuthenticationView`](https://developer.apple.com/documentation/localauthenticationembeddedui/laauthenticationview), created with a fresh `LAContext` per attempt and in the window before that context evaluates the key's access control. The key is read through the same context with interaction not allowed, then the context is invalidated, whatever the outcome. The view is never hidden, since the OS refuses a touch through a hidden view: it stays at full opacity behind the opaque password field.
 

@@ -20,6 +20,7 @@ nonisolated enum StoredKeyRead: Sendable, Equatable {
 nonisolated protocol UnlockKeyStore: Sendable {
 	var availability: BiometricAvailability { get }
 	func hasKey() -> Bool
+	func forgetIfEnrollmentChanged() -> Bool
 	func save(_ key: SymmetricKey) throws
 	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead
 	func delete() throws
@@ -90,6 +91,27 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 		return status == errSecSuccess || status == errSecInteractionNotAllowed
 	}
 
+	func forgetIfEnrollmentChanged() -> Bool {
+		guard Keychain.holdsAccessGroup, let saved = savedEnrollment(), !saved.isEmpty,
+			let current = Self.currentEnrollment(), current != saved
+		else { return false }
+		return (try? delete()) != nil
+	}
+
+	func savedEnrollment() -> Data? {
+		var query = enrollmentQuery
+		query[kSecReturnData as String] = true
+		var result: AnyObject?
+		guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess else { return nil }
+		return result as? Data
+	}
+
+	static func currentEnrollment() -> Data? {
+		let context = LAContext()
+		guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil) else { return nil }
+		return context.domainState.biometry.stateHash
+	}
+
 	func save(_ key: SymmetricKey) throws {
 		let access = try Self.accessControl()
 		try delete()
@@ -100,6 +122,11 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 			let status = SecItemAdd(item as CFDictionary, nil)
 			guard status == errSecSuccess else { throw KeychainFailure(status: status) }
 		}
+		var enrollment = enrollmentQuery
+		enrollment[kSecValueData as String] = Self.currentEnrollment() ?? Data()
+		enrollment[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+		let status = SecItemAdd(enrollment as CFDictionary, nil)
+		guard status == errSecSuccess else { throw KeychainFailure(status: status) }
 	}
 
 	static func withItemValue<T>(of key: SymmetricKey, _ body: (CFMutableData) throws -> T) rethrows -> T {
@@ -169,8 +196,10 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 	}
 
 	func delete() throws {
-		let status = SecItemDelete(baseQuery as CFDictionary)
-		guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainFailure(status: status) }
+		for query in [baseQuery, enrollmentQuery] {
+			let status = SecItemDelete(query as CFDictionary)
+			guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainFailure(status: status) }
+		}
 	}
 
 	private var baseQuery: [String: Any] {
@@ -178,6 +207,16 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 			kSecClass as String: kSecClassGenericPassword,
 			kSecAttrService as String: "dev.hloth.nativenote.unlock",
 			kSecAttrAccount as String: account,
+			kSecUseDataProtectionKeychain as String: true,
+		]
+	}
+
+	private var enrollmentQuery: [String: Any] {
+		[
+			kSecClass as String: kSecClassGenericPassword,
+			kSecAttrService as String: "dev.hloth.nativenote.unlock.enrollment",
+			kSecAttrAccount as String: account,
+			kSecAttrSynchronizable as String: false,
 			kSecUseDataProtectionKeychain as String: true,
 		]
 	}

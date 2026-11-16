@@ -226,6 +226,25 @@ struct SettingsViewTests {
 		#expect(toggle.state == .on)
 	}
 
+	@Test func changedFingerprintsTurnTheSwitchOffWhileSettingsStaysOpen() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await Workspace(alarm: alarm).unlockedWithTouchID(keys)
+		model.appBecameActive()
+		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300)
+		defer { offscreen.close() }
+		let toggle = try #require(offscreen.views(of: NSSwitch.self).first)
+		try #require(toggle.state == .on)
+
+		model.appResignedActive()
+		keys.changeEnrollment()
+		model.appBecameActive()
+		await offscreen.pump { toggle.state == .off }
+
+		#expect(toggle.state == .off)
+		#expect(!model.isBiometricUnlockEnabled)
+		#expect(keys.storedKey == nil)
+	}
+
 	@Test func lockingWhileTurningOnTouchIDClosesTheSheetAndLeavesItOff() async throws {
 		let keys = FakeKeyStore()
 		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)

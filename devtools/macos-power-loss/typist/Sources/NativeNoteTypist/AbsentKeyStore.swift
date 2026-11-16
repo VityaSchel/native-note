@@ -8,6 +8,8 @@ nonisolated struct AbsentKeyStore: UnlockKeyStore {
 
 	func hasKey() -> Bool { false }
 
+	func forgetIfEnrollmentChanged() -> Bool { false }
+
 	func save(_ key: SymmetricKey) throws {}
 
 	func read(through context: LAContext, reason: String) async throws -> StoredKeyRead { .unavailable }

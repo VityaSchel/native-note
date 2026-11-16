@@ -95,6 +95,51 @@ struct BiometricUnlockTests {
 		#expect(relaunched.phase == .unlocked)
 	}
 
+	@Test func changedFingerprintsTurnTouchIDOffWhenTheAppComesBack() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await library.unlockedWithTouchID(keys)
+
+		keys.changeEnrollment()
+		model.appResignedActive()
+		model.appBecameActive()
+
+		#expect(!model.isBiometricUnlockEnabled)
+		#expect(keys.storedKey == nil)
+		await model.lock()
+		#expect(model.touchID == .hidden)
+		#expect(keys.contexts.isEmpty)
+	}
+
+	@Test func changedFingerprintsStopTheLockScreenListeningWhenTheAppComesBack() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await library.lockedWithTouchID(keys)
+		model.appResignedActive()
+
+		keys.changeEnrollment()
+		model.appBecameActive()
+
+		#expect(model.touchID == .hidden)
+		#expect(keys.storedKey == nil)
+		await model.submit(password: workspacePassword)
+		#expect(model.phase == .unlocked)
+		#expect(!model.isBiometricUnlockEnabled)
+	}
+
+	@Test func fingerprintsAreComparedOnlyWhileTouchIDCanBeUsed() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await library.unlockedWithTouchID(keys)
+
+		keys.becomes(.unavailable)
+		keys.changeEnrollment()
+		model.appBecameActive()
+		#expect(keys.storedKey != nil)
+
+		keys.becomes(.available)
+		model.appBecameActive()
+		#expect(keys.storedKey == nil)
+		#expect(!model.isBiometricUnlockEnabled)
+	}
+
 	@Test func nothingListensBeforeTheLibraryIsLoaded() async throws {
 		let keys = FakeKeyStore()
 		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))

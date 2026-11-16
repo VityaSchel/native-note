@@ -28,6 +28,7 @@ import Observation
 	}
 
 	func refresh() {
+		if confirmation == nil { _ = keyStore.forgetIfEnrollmentChanged() }
 		isEnabled = confirmation == nil && keyStore.hasKey()
 		biometrics = keyStore.availability
 		settle()

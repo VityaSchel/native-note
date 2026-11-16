@@ -102,7 +102,7 @@ The unlock screen offers to erase the library, behind a confirmation. Erasing de
 
 #### Unlocking with biometrics
 
-Optional, off by default. `localDbKey` is stored in the platform key store bound to the current biometric enrollment, which the OS invalidates when the enrolled set changes. The OS, not the app, decides a match.
+Optional, off by default. `localDbKey` is stored in the platform key store bound to the current biometric enrollment, which the OS invalidates when the enrolled set changes. The OS, not the app, decides a match. Beside it the app keeps the enrollment's state hash; whenever the app becomes active and biometrics can be used, a hash that differs forgets the key and turns biometric unlock off, in Settings too. The hash can also change once across a major OS update.
 
 The prompt is in the app's window, never a system alert.
 

@@ -32,6 +32,8 @@ final class FakeKeyStore: UnlockKeyStore {
 		var whileLoading: (@Sendable () async -> Void)?
 		var whileDeleting: (@Sendable () -> Void)?
 		var availability: BiometricAvailability
+		var enrollment = Data([1])
+		var keyEnrollment: Data?
 	}
 
 	private let state: Mutex<State>
@@ -69,6 +71,10 @@ final class FakeKeyStore: UnlockKeyStore {
 		}
 	}
 
+	func changeEnrollment() {
+		state.withLock { $0.enrollment.append(1) }
+	}
+
 	func failWrites() {
 		state.withLock { $0.failsWrites = true }
 	}
@@ -81,10 +87,19 @@ final class FakeKeyStore: UnlockKeyStore {
 
 	func hasKey() -> Bool { storedKey != nil }
 
+	func forgetIfEnrollmentChanged() -> Bool {
+		state.withLock {
+			guard $0.key != nil, $0.availability == .available, let saved = $0.keyEnrollment, saved != $0.enrollment else { return false }
+			$0.key = nil
+			return true
+		}
+	}
+
 	func save(_ key: SymmetricKey) throws {
 		try state.withLock {
 			guard !$0.failsWrites else { throw KeychainFailure(status: errSecNotAvailable) }
 			$0.key = key
+			$0.keyEnrollment = $0.enrollment
 		}
 	}
 

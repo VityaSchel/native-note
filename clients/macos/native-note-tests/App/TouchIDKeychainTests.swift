@@ -22,6 +22,8 @@ private final class TouchAcceptedKeychain: UnlockKeyStore {
 
 	func hasKey() -> Bool { keychain.hasKey() }
 
+	func forgetIfEnrollmentChanged() -> Bool { keychain.forgetIfEnrollmentChanged() }
+
 	func save(_ key: SymmetricKey) throws {
 		try keychain.save(key)
 		saved.withLock { $0 = key }
@@ -78,6 +80,31 @@ struct TouchIDKeychainTests {
 
 		try keys.delete()
 		#expect(!keys.hasKey())
+	}
+
+	@Test func theFingerprintsTheKeyWasSavedUnderAreKeptBesideItAndChangingThemForgetsIt() throws {
+		let directory = temporaryDirectory()
+		let keys = KeychainUnlockKeyStore(directory: directory)
+		defer { try? keys.delete() }
+
+		try keys.save(SymmetricKey(data: Data(repeating: 3, count: 32)))
+
+		let enrollment = try #require(KeychainUnlockKeyStore.currentEnrollment())
+		#expect(keys.savedEnrollment() == enrollment)
+		#expect(!keys.forgetIfEnrollmentChanged())
+		#expect(keys.hasKey())
+
+		let account: [String: Any] = [
+			kSecClass as String: kSecClassGenericPassword,
+			kSecAttrService as String: "dev.hloth.nativenote.unlock.enrollment",
+			kSecAttrAccount as String: "localDbKey:" + directory.standardizedFileURL.path,
+			kSecUseDataProtectionKeychain as String: true,
+		]
+		#expect(SecItemUpdate(account as CFDictionary, [kSecValueData as String: Data(repeating: 9, count: enrollment.count)] as CFDictionary) == errSecSuccess)
+
+		#expect(keys.forgetIfEnrollmentChanged())
+		#expect(!keys.hasKey())
+		#expect(keys.savedEnrollment() == nil)
 	}
 
 	@Test func savingAgainReplacesTheKey() throws {
