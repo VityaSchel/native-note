@@ -106,6 +106,7 @@ import Observation
 	private var keptForUndo: [UUID: Note] = [:]
 	private var createdThisSession: Set<UUID> = []
 	private var discards: [UUID: Task<Void, Never>] = [:]
+	private var creations: [UUID: Task<Void, Never>] = [:]
 
 	public convenience init() {
 		self.init(directory: AppLock.directory)
@@ -197,6 +198,7 @@ import Observation
 		await scheduler.flushAll()
 		await syncing?.value
 		_ = await changingPassword?.value
+		await finishCreations()
 		await finishDiscards()
 		guard let closing else { return }
 		if unsavedReason == nil { await closing.close() } else { retiring = closing }
@@ -212,6 +214,7 @@ import Observation
 		changingPassword?.cancel()
 		cancelTurningOnTouchID()
 		let syncing = sync.stop()
+		await finishCreations()
 		if let selection, emptyNewNote(selection) != nil { self.selection = nil }
 		await scheduler.flushAll()
 		await syncing?.value
@@ -224,9 +227,20 @@ import Observation
 	}
 
 	public func createNote() async {
+		guard let store else { return }
 		let now = Date().epochMilliseconds
 		let note = Note(id: UUID(), body: "", createdAt: now, updatedAt: now, dirty: false)
+		let creating = Task {
+			await create(note, in: store)
+			creations[note.id] = nil
+		}
+		creations[note.id] = creating
+		await creating.value
+	}
+
+	private func create(_ note: Note, in store: NoteStore) async {
 		guard await write("The new note could not be created.", { try await $0.save(note) }) else { return }
+		guard store === self.store else { return await discard(note, from: store) }
 		if !search.isEmpty { search = "" }
 		notes.insert(note, at: 0)
 		createdThisSession.insert(note.id)
@@ -249,6 +263,12 @@ import Observation
 			try await store.discardUnsynced(id: note.id, shownAt: note.v, at: Date().epochMilliseconds)
 		} catch {
 			if store === self.store { report(error, as: "The empty note could not be removed.") }
+		}
+	}
+
+	private func finishCreations() async {
+		while let creating = creations.values.first {
+			await creating.value
 		}
 	}
 

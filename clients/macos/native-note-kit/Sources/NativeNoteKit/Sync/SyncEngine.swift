@@ -44,15 +44,16 @@ final class SyncEngine {
 				total.problems.append(.serverBehind)
 				return total
 			}
-			for sealed in batch { unacknowledged[sealed.write.writeId] = nil }
+			let answered = Set(batch.map(\.write.writeId))
+			let awaiting = unacknowledged.filter { !answered.contains($0.key) }
 			conflicts += zip(batch, results).filter { $1.status == .conflict }.map { ($0.note.id, $1.v) }
 			let (pulled, unread) = await Self.open(changes, with: cipher)
 			let pullMark = changes.last.map { PullMark(blindedId: $0.blindedId, v: $0.v) }
-			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, pullMark: pullMark, reachedHead: !hasMore)
+			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: awaiting, pullMark: pullMark, reachedHead: !hasMore)
 			var applied = try await apply(.exchange(exchange))
 			applied.problems += unread
 			let resolved = Set(pulled.map(\.content.id))
-			unacknowledged = unacknowledged.filter { !resolved.contains($0.value.note.id) }
+			unacknowledged = awaiting.filter { !resolved.contains($0.value.note.id) }
 			let tombstonesToPush = applied.changed.values.filter { $0.deleted && $0.dirty && deletedWhilePushed.insert($0.id).inserted }
 			sent.subtract(tombstonesToPush.map(\.id))
 			total.merge(applied)

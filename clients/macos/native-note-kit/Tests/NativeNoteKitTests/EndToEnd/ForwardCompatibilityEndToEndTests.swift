@@ -48,7 +48,7 @@ private struct NewerMac {
 struct ForwardCompatibilityEndToEndTests {
 	private let corpus = RealisticCorpus.bodies(count: 120)
 	private let newerChange = "A change on the server was made by a newer version of Native Note. Update Native Note to read it."
-	private let stuck = "A note can't sync until Native Note is updated: the server holds a newer version of it."
+	private let stuck = "A note can't sync: the server holds a newer version of it that this Mac could not apply."
 
 	private func launch(in directory: URL, password: String) async throws -> AppModel {
 		let model = AppModel(directory: directory, syncDelay: .seconds(3600))

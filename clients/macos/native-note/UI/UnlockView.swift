@@ -108,7 +108,7 @@ struct UnlockView: View {
 			}
 			.capsuleField(trailingInset: 7)
 		}
-		.animation(.linear(duration: ShakeEffect.duration)) { $0.modifier(ShakeEffect(animatableData: reduceMotion ? 0 : CGFloat(shake.count))) }
+		.animation(reduceMotion ? nil : .linear(duration: ShakeEffect.duration)) { $0.modifier(ShakeEffect(animatableData: CGFloat(shake.count))) }
 	}
 
 	private var opensWithTouchID: Bool {

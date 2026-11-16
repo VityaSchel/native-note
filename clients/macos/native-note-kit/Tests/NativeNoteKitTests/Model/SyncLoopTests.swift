@@ -208,7 +208,7 @@ struct SyncLoopTests {
 		let problems = [
 			"A change on the server was made by a newer version of Native Note. Update Native Note to read it.",
 			"A change on the server could not be read with this library's key, so it was skipped.",
-			"A note can't sync until Native Note is updated: the server holds a newer version of it.",
+			"A note can't sync: the server holds a newer version of it that this Mac could not apply.",
 		]
 		#expect(model.syncStatus.phase == .idle)
 		#expect(model.syncStatus.problems == problems)

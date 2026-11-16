@@ -115,6 +115,23 @@ struct SelectionTests {
 		#expect(try await observer(of: directory).note(id: empty) == nil)
 	}
 
+	@Test func aNewNoteCreatedAsTheLibraryLocksIsGoneAfterQuitting() async throws {
+		let (model, directory) = try await unlockedModel(alarm: alarm)
+		try await fill(model, with: ["kept"])
+		let creating = Task { await model.createNote() }
+		await Task.yield()
+
+		await model.lock()
+		await creating.value
+
+		#expect(model.notes.isEmpty && model.selection == nil)
+		await model.close()
+		let relaunched = AppModel.testing(in: directory)
+		relaunched.start()
+		await relaunched.unlock(password: workspacePassword)
+		#expect(relaunched.notes.map(\.body) == ["kept"])
+	}
+
 	private func aNewNoteTypedInAndCleared(in model: AppModel) async throws -> (kept: UUID, cleared: Note) {
 		try await fill(model, with: ["kept"])
 		let kept = try #require(model.selection)

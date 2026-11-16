@@ -38,6 +38,29 @@ struct SyncFailureTests {
 		#expect(try await b.live() == [id: "second"])
 	}
 
+	@Test func anEditAfterAnAcceptedPushFailedToCommitStaysDirtyAndPushesAtTheNextVersion() async throws {
+		struct CommitFailed: Error {}
+		let server = try SyncServer()
+		let a = try await SyncDevice(server)
+		let b = try await SyncDevice(server)
+		let id = try await a.write("first")
+		await #expect(throws: CommitFailed.self) {
+			try await a.engine.sync { commit in
+				if case .exchange = commit { throw CommitFailed() }
+				return try await a.store.commit(commit)
+			}
+		}
+		try await a.write("second", to: id)
+
+		let applied = try await a.sync()
+		try await a.sync()
+		try await b.sync()
+
+		#expect(applied.copies.isEmpty)
+		#expect(try await a.note(id)?.v == 2)
+		#expect(try await b.live() == [id: "second"])
+	}
+
 	@Test func afterARelaunchALostResponseTakesTheCopyPathWhereMatchingTextMakesNoCopy() async throws {
 		let server = try SyncServer()
 		let a = try await SyncDevice(server)

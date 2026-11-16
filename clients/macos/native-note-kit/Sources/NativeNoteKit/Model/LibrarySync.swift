@@ -309,7 +309,7 @@ protocol SyncedLibrary: AnyObject {
 		case .unverifiableChange: "A change on the server could not be read with this library's key, so it was skipped."
 		case .newerChange: "A change on the server was made by a newer version of Native Note. Update Native Note to read it."
 		case .tooLarge: "A note is larger than 1 MB, so it stays on this Mac until it is shorter."
-		case .stuckConflict: "A note can't sync until Native Note is updated: the server holds a newer version of it."
+		case .stuckConflict: "A note can't sync: the server holds a newer version of it that this Mac could not apply."
 		}
 	}
 }
