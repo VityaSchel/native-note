@@ -181,7 +181,7 @@ struct SavePathTests {
 		let seeding = try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: try await workspaceKey())
 		try await seeding.save(seeded)
 		await seeding.close()
-		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 		model.start()
 		await model.unlock(password: workspacePassword)
 

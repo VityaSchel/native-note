@@ -8,7 +8,7 @@ import Testing
 struct ReplacedAPIKeyTests {
 	private func syncingLibrary(_ server: SyncServer) async throws -> (AppModel, URL, TestTransport) {
 		let transport = TestTransport(server)
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in transport }, syncDelay: .seconds(3600)) }
+		let (model, directory) = try await unlockedModel { AppModel.testing(in: $0, transport: transport) }
 		_ = try await setUpSync(model, server)
 		try await fill(model, with: ["before the key changed"])
 		await model.syncNow()
@@ -56,7 +56,7 @@ struct ReplacedAPIKeyTests {
 		#expect(try await storedKey(model) == Data(try #require(EnvelopeKey.apiKey(fromHex: replacement)).withUnsafeBytes { Data($0) }))
 		await model.lock()
 
-		let relaunched = AppModel(directory: directory, makeTransport: { _ in transport }, syncDelay: .seconds(3600))
+		let relaunched = AppModel.testing(in: directory, transport: transport)
 		relaunched.start()
 		await relaunched.unlock(password: workspacePassword)
 		await relaunched.syncNow()
@@ -102,7 +102,7 @@ struct ReplacedAPIKeyTests {
 		let replacement = try replaceKey(of: server) {
 			for file in try serverFiles(server) { try FileManager.default.removeItem(at: file) }
 		}
-		let (other, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in TestTransport(server) }, syncDelay: .seconds(3600)) }
+		let (other, _) = try await unlockedModel { AppModel.testing(in: $0, transport: TestTransport(server)) }
 		_ = try await setUpSync(other, server)
 		try await fill(other, with: ["another library", "and its second note"])
 		await other.syncNow()
@@ -121,7 +121,7 @@ struct ReplacedAPIKeyTests {
 		server.kill()
 		for file in try serverFiles(server) { try FileManager.default.copyItem(at: file, to: backup.appending(path: file.lastPathComponent)) }
 		try server.start()
-		let next = try #require(await model.prepareRotation())
+		let next = try await model.prepareRotation().get()
 		try #require(await model.finishRotation(answers: answers(next)) == nil)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server) {
@@ -196,7 +196,7 @@ struct ReplacedAPIKeyTests {
 	@Test func lockingCancelsAServerChangeInFlightAndKeepsTheOldKey() async throws {
 		let server = try SyncServer()
 		let stalling = Stalling(TestTransport(server))
-		let (model, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in stalling }, syncDelay: .seconds(3600)) }
+		let (model, _) = try await unlockedModel { AppModel.testing(in: $0, transport: stalling) }
 		_ = try await setUpSync(model, server)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server)
@@ -219,7 +219,7 @@ struct ReplacedAPIKeyTests {
 	@Test func cancellingAServerChangeInFlightKeepsTheOldKey() async throws {
 		let server = try SyncServer()
 		let stalling = Stalling(TestTransport(server))
-		let (model, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in stalling }, syncDelay: .seconds(3600)) }
+		let (model, _) = try await unlockedModel { AppModel.testing(in: $0, transport: stalling) }
 		_ = try await setUpSync(model, server)
 		let held = try await storedKey(model)
 		let replacement = try replaceKey(of: server)

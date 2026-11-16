@@ -70,9 +70,22 @@ struct SettingsViewTests {
 		#expect(SettingsView(model: .previewing([])).isAvailable)
 	}
 
+	@Test func aMacWithoutALibraryAsksToFinishSetupRatherThanToUnlock() {
+		let model = AppModel.testing(in: temporaryDirectory())
+		model.start()
+		let settings = SettingsView(model: model)
+		let offscreen = OffscreenWindow(settings, width: 440, height: 300)
+		defer { offscreen.close() }
+
+		#expect(model.screen == .onboarding)
+		#expect(!settings.isAvailable)
+		#expect(offscreen.accessibilityElements().contains { $0.label == SettingsView.setupMessage || $0.value == SettingsView.setupMessage })
+		#expect(!offscreen.accessibilityElements().contains { $0.label == SettingsView.lockedMessage || $0.value == SettingsView.lockedMessage })
+	}
+
 	@Test func aLibraryStillBeingSetUpShowsNoSettings() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		let model = AppModel.testing(in: directory)
 		model.start()
 		await model.submit(password: workspacePassword)
 		try #require(model.phase == .unlocked && model.isOnboarding)

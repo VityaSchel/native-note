@@ -99,7 +99,7 @@ import Observation
 			return nil
 		} catch {
 			try? keyStore.delete()
-			return .unexpected("Touch ID unlock could not be turned on. \(Self.reason(for: error))")
+			return .unexpected("Touch ID unlock could not be turned on. \(AppModel.Failure.reason(for: error))")
 		}
 	}
 
@@ -115,7 +115,7 @@ import Observation
 			try keyStore.delete()
 			return nil
 		} catch {
-			return .unexpected("Touch ID unlock could not be turned off. \(Self.reason(for: error))")
+			return .unexpected("Touch ID unlock could not be turned off. \(AppModel.Failure.reason(for: error))")
 		}
 	}
 
@@ -226,9 +226,5 @@ import Observation
 		if !isActive { return .paused(.inBackground) }
 		if case .listening = state { return state }
 		return .listening(LAContext())
-	}
-
-	private static func reason(for error: Error) -> String {
-		(error as? KeychainFailure)?.message ?? error.localizedDescription
 	}
 }

@@ -112,7 +112,7 @@ struct TypistTests {
 		#expect(try await runTypist(["prepare", directory.path, workspacePassword]).status == 0)
 
 		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)).enclaveKey == nil)
-		let relaunched = AppModel(directory: directory, keyStore: FakeKeyStore())
+		let relaunched = AppModel.testing(in: directory)
 		relaunched.start()
 		await relaunched.submit(password: workspacePassword)
 		#expect(relaunched.phase == .unlocked)

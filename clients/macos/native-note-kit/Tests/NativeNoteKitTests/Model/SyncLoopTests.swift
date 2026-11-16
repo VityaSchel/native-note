@@ -57,8 +57,8 @@ struct SyncLoopTests {
 
 	private func library(through transport: any SyncTransport, idle: Duration = .seconds(3600), holding bodies: [String] = []) async throws -> AppModel {
 		try await Workspace(holding: bodies) { [alarm] directory, keys in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys, makeTransport: { _ in transport }, syncDelay: idle)
-		}.unlocked(FakeKeyStore()).0
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, keyStore: keys, transport: transport, syncDelay: idle)
+		}.unlocked().0
 	}
 
 	private func startSync(of model: AppModel, apiKey: SymmetricKey) async throws {
@@ -185,7 +185,7 @@ struct SyncLoopTests {
 
 		await syncing.syncNow()
 
-		#expect(syncing.syncStatus.phase == .failed("The server did not accept this Mac's API key, or a proxy in front of it changed the request."))
+		#expect(syncing.syncStatus.phase == .failed("The server did not accept this API key, or a proxy in front of it changed the request. A proxy must forward HTTP/1.1 to the server's root path."))
 		let settingUp = try await library(through: transport)
 		#expect(await settingUp.prepareSync(server: address, apiKey: text(apiKey)) == .failure(.refused))
 		#expect(try await settingUp.store?.syncSettings() == nil)

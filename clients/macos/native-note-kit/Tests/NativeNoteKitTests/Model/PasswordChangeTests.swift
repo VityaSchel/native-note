@@ -16,19 +16,19 @@ struct PasswordChangeTests {
 
 	private func library(calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { UnlockParameters.fast.argon }) -> Workspace {
 		Workspace(holding: ["Shopping", "Trip"]) { [alarm] directory, keys in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), calibrate: calibrate, keyStore: keys)
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, calibrate: calibrate, keyStore: keys)
 		}
 	}
 
 	private func relaunch(_ directory: URL, password: String) async -> AppModel {
-		let model = AppModel(directory: directory, keyStore: FakeKeyStore())
+		let model = AppModel.testing(in: directory)
 		model.start()
 		await model.submit(password: password)
 		return model
 	}
 
 	@Test func theNewPasswordUnlocksAndTheOldOneNoLonger() async throws {
-		let (model, directory) = try await library().unlocked(FakeKeyStore())
+		let (model, directory) = try await library().unlocked()
 		let bodies = Set(model.notes.map(\.body))
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
@@ -43,7 +43,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func aWrongCurrentPasswordChangesNothing() async throws {
-		let (model, directory) = try await library().unlocked(FakeKeyStore())
+		let (model, directory) = try await library().unlocked()
 		let parameters = try Data(contentsOf: AppLock.currentFile(in: directory))
 
 		#expect(await model.changePassword(from: "a guess", to: "a new password") == .wrongPassword)
@@ -56,7 +56,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func aLockedLibraryKeepsItsPassword() async throws {
-		let (model, directory) = try await library().unlocked(FakeKeyStore())
+		let (model, directory) = try await library().unlocked()
 		let parameters = try Data(contentsOf: AppLock.currentFile(in: directory))
 		await model.lock()
 
@@ -66,7 +66,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func aSecondChangeStartsFromTheFirst() async throws {
-		let (model, directory) = try await library().unlocked(FakeKeyStore())
+		let (model, directory) = try await library().unlocked()
 
 		#expect(await model.changePassword(from: workspacePassword, to: "second password") == nil)
 		#expect(await model.changePassword(from: "second password", to: "third password") == nil)
@@ -76,7 +76,7 @@ struct PasswordChangeTests {
 	}
 
 	@Test func anEditWaitingToSaveLandsUnderTheNewPassword() async throws {
-		let (model, directory) = try await library().unlocked(FakeKeyStore())
+		let (model, directory) = try await library().unlocked()
 		model.edit(try #require(model.selection), "typed before the change")
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
@@ -106,7 +106,7 @@ struct PasswordChangeTests {
 	@Test func lockingDuringTheChangeKeepsTheOldPassword() async throws {
 		let gate = Gate()
 		defer { gate.open() }
-		let (model, directory) = try await library(calibrate: gate.holdCalibration).unlocked(FakeKeyStore())
+		let (model, directory) = try await library(calibrate: gate.holdCalibration).unlocked()
 
 		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
 		try await gate.untilHolding()
@@ -124,7 +124,7 @@ struct PasswordChangeTests {
 	@Test func aSecondChangeWhileOneRunsIsRefused() async throws {
 		let gate = Gate()
 		defer { gate.open() }
-		let (model, directory) = try await library(calibrate: { gate.isHolding ? UnlockParameters.fast.argon : gate.holdCalibration() }).unlocked(FakeKeyStore())
+		let (model, directory) = try await library(calibrate: { gate.isHolding ? UnlockParameters.fast.argon : gate.holdCalibration() }).unlocked()
 
 		let first = Task { await model.changePassword(from: workspacePassword, to: "second password") }
 		try await gate.untilHolding()

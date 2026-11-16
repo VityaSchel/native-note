@@ -4,49 +4,6 @@ import Testing
 
 @testable import NativeNoteKit
 
-@MainActor
-func syncingModel(_ server: SyncServer, alarm: Alarm? = nil, idle: Duration = .milliseconds(50)) async throws -> (AppModel, TestTransport) {
-	let transport = TestTransport(server)
-	let (model, _) = try await unlockedModel { directory in
-		AppModel(
-			directory: directory,
-			scheduler: alarm.map { SaveScheduler(sleep: $0.sleep) } ?? SaveScheduler(),
-			makeTransport: { _ in transport },
-			syncDelay: idle
-		)
-	}
-	return (model, transport)
-}
-
-@MainActor
-func apiKeyText(_ server: SyncServer) throws -> String {
-	try String(contentsOf: server.data.appending(path: "api-key"), encoding: .utf8)
-}
-
-@MainActor
-func answers(_ phrase: AppModel.RecoveryPhrase) -> [String] {
-	phrase.positionsToConfirm.map { phrase.words[$0] }
-}
-
-func newLibrary(_ start: Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure>) throws -> AppModel.RecoveryPhrase {
-	guard case let .newLibrary(phrase) = try start.get() else { throw AppModel.SyncSetupFailure.serverHasLibrary }
-	return phrase
-}
-
-@MainActor
-func setUpSync(_ model: AppModel, _ server: SyncServer) async throws -> AppModel.RecoveryPhrase {
-	let phrase = try newLibrary(await model.prepareSync(server: server.url.absoluteString, apiKey: apiKeyText(server)))
-	try #require(await model.finishSync(answers: answers(phrase)) == nil)
-	return phrase
-}
-
-@MainActor
-func storedBlob(_ server: SyncServer) async throws -> (v: UInt32, blob: Data) {
-	let connection = SyncConnection(apiKey: try server.apiKey, transport: HTTPTransport(url: server.url))
-	guard case let .get(v, blob) = try await connection.send(.get) else { throw SyncError.protocolViolation }
-	return (v, blob)
-}
-
 @MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct AppModelSyncTests {
 	@Test func settingUpPutsTheContentKeyUnderThePhraseAtVersionOneAndStartsSyncing() async throws {
@@ -68,21 +25,27 @@ struct AppModelSyncTests {
 	}
 
 	@Test func aStoredServerAddressThatCannotBeReadIsReportedNotTakenForSyncOff() async throws {
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0, keyStore: FakeKeyStore(), syncDelay: .seconds(3600)) }
-		let settings = SyncSettings(server: try #require(URL(string: "http://127.0.0.1:9/")), apiKey: SymmetricKey(size: .bits256), contentKey: sharedContentKey)
-		try await #require(model.store).enableSync(settings, pin: 1)
-		await model.lock()
-		try await connection(to: directory).execute("UPDATE meta SET v = CAST('nowhere' AS BLOB) WHERE k = 'server'")
-
-		await model.unlock(password: workspacePassword)
+		let model = try await libraryWithUnreadableServerAddress()
 
 		let reason = "The saved server address cannot be read. Enter the server again in Settings."
 		#expect(model.phase == .unlocked)
 		#expect(model.failure == .failed(reason, title: "Sync could not start."))
 		#expect(await model.adoptCurrentPhrase(entry(["any", "words"])) == .failed(reason))
+	}
+
+	@Test func aPhraseChangeOnAServerAddressThatCannotBeReadSaysWhyWithoutAnAlert() async throws {
+		let model = try await libraryWithUnreadableServerAddress()
 		model.dismissFailure()
-		#expect(await model.prepareRotation() == nil)
-		#expect(model.failure == .failed(reason, title: "The recovery phrase could not be changed."))
+
+		#expect(await model.prepareRotation() == .failure(.failed("The saved server address cannot be read. Enter the server again in Settings.")))
+		#expect(model.failure == nil)
+	}
+
+	@Test func aPhraseChangeWithoutSyncSaysSyncIsNotSetUp() async throws {
+		let (model, _) = try await unlockedModel { .testing(in: $0) }
+
+		#expect(await model.prepareRotation() == .failure(.notSetUp))
+		#expect(model.failure == nil)
 	}
 
 	@Test func setupRefusesBadInputAndAWrongKeyAndJoinsAServerThatAlreadyHoldsALibrary() async throws {
@@ -118,7 +81,7 @@ struct AppModelSyncTests {
 		#expect(await model.finishSync(answers: answers(phrase)) == nil)
 		#expect(try await model.store?.pin() == 1)
 
-		let next = try #require(await model.prepareRotation())
+		let next = try await model.prepareRotation().get()
 		transport.failNext(.replyReplaced)
 		#expect(await model.finishRotation(answers: answers(next)) == nil)
 
@@ -153,10 +116,10 @@ struct AppModelSyncTests {
 		let settings = try #require(try await a.store?.syncSettings())
 		try await #require(b.store).enableSync(settings, pin: 1)
 
-		let bPhrase = try #require(await b.prepareRotation())
+		let bPhrase = try await b.prepareRotation().get()
 		#expect(await b.finishRotation(answers: answers(bPhrase)) == nil)
 		#expect(try await b.store?.pin() == 2)
-		let aPhrase = try #require(await a.prepareRotation())
+		let aPhrase = try await a.prepareRotation().get()
 		#expect(await a.finishRotation(answers: answers(aPhrase)) == .rotatedElsewhere)
 
 		#expect(await a.adoptCurrentPhrase(entry(aPhrase.words)) == .phraseDoesNotOpen)
@@ -165,7 +128,7 @@ struct AppModelSyncTests {
 		var numbered = PhraseEntry()
 		_ = numbered.set(bPhrase.words.enumerated().map { "\($0.offset + 1). \($0.element)," }.joined(separator: " "), at: 0)
 		#expect(await a.adoptCurrentPhrase(numbered) == nil)
-		let again = try #require(await a.prepareRotation())
+		let again = try await a.prepareRotation().get()
 		#expect(await a.finishRotation(answers: answers(again)) == nil)
 		let stored = try await storedBlob(server)
 		#expect(stored.v == 3)

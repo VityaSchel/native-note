@@ -8,7 +8,7 @@ let workspacePassword = "correct horse"
 
 @MainActor
 struct Workspace {
-	typealias Make = @MainActor (URL, (any UnlockKeyStore)?) -> AppModel
+	typealias Make = @MainActor (URL, any UnlockKeyStore) -> AppModel
 
 	private let bodies: [String]
 	private let make: Make
@@ -19,10 +19,10 @@ struct Workspace {
 	}
 
 	init(holding bodies: [String] = [], alarm: Alarm) {
-		self.init(holding: bodies) { AppModel(directory: $0, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: $1) }
+		self.init(holding: bodies) { .testing(in: $0, scheduler: alarm.scheduler, keyStore: $1) }
 	}
 
-	func unlocked(_ keys: (any UnlockKeyStore)? = nil, holding bodies: [String]? = nil) async throws -> (AppModel, URL) {
+	func unlocked(_ keys: any UnlockKeyStore = FakeKeyStore(), holding bodies: [String]? = nil) async throws -> (AppModel, URL) {
 		let directory = temporaryDirectory()
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()

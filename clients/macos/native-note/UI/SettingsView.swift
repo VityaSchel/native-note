@@ -5,7 +5,7 @@ struct SettingsView: View {
 	let model: AppModel
 
 	var isAvailable: Bool {
-		model.phase == .unlocked && !model.isOnboarding
+		model.screen == .library
 	}
 
 	var body: some View {
@@ -22,7 +22,7 @@ struct SettingsView: View {
 				)
 				.fixedSize(horizontal: false, vertical: true)
 			} else {
-				ContentUnavailableView(model.isOnboarding ? Self.setupMessage : Self.lockedMessage, systemImage: "lock")
+				ContentUnavailableView(model.screen == .onboarding ? Self.setupMessage : Self.lockedMessage, systemImage: "lock")
 					.frame(height: Self.lockedHeight)
 			}
 		}

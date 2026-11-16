@@ -49,13 +49,13 @@ struct AppModelJoinTests {
 		let key = try apiKeyText(server)
 		let (first, _) = try await syncingModel(server)
 		_ = try await setUpSync(first, server)
-		let rotated = try #require(await first.prepareRotation())
+		let rotated = try await first.prepareRotation().get()
 		#expect(await first.finishRotation(answers: answers(rotated)) == nil)
 		let (second, _) = try await syncingModel(server)
 
 		#expect(await second.joinSync(server: server.url.absoluteString, apiKey: key, phrase: entry(rotated.words)) == nil)
 		#expect(try await second.store?.pin() == 2)
-		let next = try #require(await second.prepareRotation())
+		let next = try await second.prepareRotation().get()
 		#expect(await second.finishRotation(answers: answers(next)) == nil)
 
 		#expect(try await storedBlob(server).v == 3)

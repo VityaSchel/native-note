@@ -14,9 +14,9 @@ struct LibrarySearchTests {
 
 	private var libraryHoldingSearches: Workspace {
 		Workspace { [alarm, held] directory, keys in
-			AppModel(
-				directory: directory,
-				scheduler: SaveScheduler(sleep: alarm.sleep),
+			AppModel.testing(
+				in: directory,
+				scheduler: alarm.scheduler,
 				searchNotes: { store, text in
 					try await held.sleep(for: .zero)
 					return try await store.search(text)

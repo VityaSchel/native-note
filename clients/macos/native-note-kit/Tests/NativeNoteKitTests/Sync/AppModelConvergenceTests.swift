@@ -14,7 +14,7 @@ struct AppModelConvergenceTests {
 	private func library(_ server: SyncServer, settings: SyncSettings?) async throws -> (AppModel, TestTransport) {
 		let transport = TestTransport(server)
 		let (model, _) = try await unlockedModel { directory in
-			AppModel(directory: directory, scheduler: SaveScheduler(delay: .milliseconds(15)), makeTransport: { _ in transport }, syncDelay: .seconds(3600))
+			AppModel.testing(in: directory, scheduler: SaveScheduler(delay: .milliseconds(15)), transport: transport)
 		}
 		if let settings {
 			let store = try #require(model.store)

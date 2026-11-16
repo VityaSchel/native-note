@@ -24,7 +24,7 @@ struct APIKeyHolderTests {
 		#expect(await newMac.joinSync(server: server.url.absoluteString, apiKey: key, phrase: entry(phrase.words)) == .phraseDoesNotOpen)
 		#expect(try await newMac.store?.syncSettings() == nil)
 		#expect(await owner.adoptCurrentPhrase(entry(phrase.words)) == .phraseDoesNotOpen)
-		let next = try #require(await owner.prepareRotation())
+		let next = try await owner.prepareRotation().get()
 		#expect(await owner.finishRotation(answers: answers(next)) == .rotatedElsewhere)
 		#expect(try await owner.store?.syncSettings()?.contentKey == held.contentKey)
 		#expect(try await owner.store?.pin() == 1)

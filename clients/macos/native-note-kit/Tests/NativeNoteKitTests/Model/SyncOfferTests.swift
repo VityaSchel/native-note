@@ -13,14 +13,7 @@ struct SyncOfferTests {
 
 	private func freshMac(_ server: SyncServer? = nil) -> (AppModel, URL) {
 		let directory = temporaryDirectory()
-		let model = AppModel(
-			directory: directory,
-			makeParameters: { .fast },
-			calibrate: { UnlockParameters.fast.argon },
-			keyStore: FakeKeyStore(),
-			makeTransport: { _ in server.map { TestTransport($0) as any SyncTransport } ?? Offline() },
-			syncDelay: .seconds(3600)
-		)
+		let model = AppModel.testing(in: directory, transport: server.map { TestTransport($0) as any SyncTransport } ?? Offline())
 		model.start()
 		return (model, directory)
 	}

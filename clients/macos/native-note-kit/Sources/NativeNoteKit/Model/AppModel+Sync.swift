@@ -51,6 +51,8 @@ extension AppModel: SyncedLibrary {
 		case failed(String)
 
 		static let wordlistMissing = Self.failed("The recovery wordlist is missing.")
+		public static let notSetUp = Self.failed("Sync is not set up on this Mac.")
+		static let rotationInterrupted = Self.failed("Start changing the phrase again.")
 
 		public var message: String {
 			switch self {
@@ -93,7 +95,7 @@ extension AppModel: SyncedLibrary {
 		await sync.finish(answers: answers)
 	}
 
-	public func prepareRotation() async -> RecoveryPhrase? {
+	public func prepareRotation() async -> Result<RecoveryPhrase, SyncSetupFailure> {
 		await sync.prepareRotation()
 	}
 

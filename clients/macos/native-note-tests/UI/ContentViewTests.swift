@@ -54,7 +54,7 @@ struct ContentViewTests {
 
 	@Test func aFirstLaunchWalksWelcomePasswordTouchIDAndSyncInTheWindowThenOpensTheLibrary() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		let model = AppModel.testing(in: directory)
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560, catchesSheets: true)
 		defer { offscreen.close() }
 		await offscreen.pump { model.phase == .needsSetup }
@@ -77,13 +77,13 @@ struct ContentViewTests {
 
 	@Test func aRelaunchAfterThePasswordStepUnlocksStraightIntoTheLibrary() async throws {
 		let directory = temporaryDirectory()
-		let first = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		let first = AppModel.testing(in: directory)
 		first.start()
 		await first.submit(password: workspacePassword)
 		try #require(first.isOnboarding)
 		await first.lock()
 
-		let relaunched = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		let relaunched = AppModel.testing(in: directory)
 		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: relaunched)), width: 980, height: 560)
 		defer { offscreen.close() }
 		await offscreen.pump { relaunched.phase == .locked }
@@ -410,7 +410,7 @@ struct ContentViewTests {
 	@Test func returningToTheLockedAppUnlocksWithATouch() async throws {
 		let keys = FakeKeyStore()
 		let (model, _) = try await unlockedModel { [alarm] directory in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys)
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, keyStore: keys)
 		}
 		try await fill(model, with: ["kayak"])
 		try await turnOnTouchID(model)

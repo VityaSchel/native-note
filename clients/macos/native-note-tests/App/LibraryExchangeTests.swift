@@ -11,7 +11,7 @@ struct LibraryExchangeTests {
 
 	private var library: Workspace {
 		Workspace { [alarm] directory, keys in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), exportParameters: .init(m: 1024, t: 1, p: 1), keyStore: keys)
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, exportParameters: .init(m: 1024, t: 1, p: 1), keyStore: keys)
 		}
 	}
 
@@ -148,7 +148,7 @@ struct LibraryExchangeTests {
 
 	@Test func commandsWaitForTheFirstRunSyncStep() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast }, calibrate: { UnlockParameters.fast.argon }, keyStore: FakeKeyStore())
+		let model = AppModel.testing(in: directory)
 		model.start()
 		let exchange = LibraryExchange(model: model)
 

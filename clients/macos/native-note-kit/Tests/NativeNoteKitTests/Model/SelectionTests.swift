@@ -108,7 +108,7 @@ struct SelectionTests {
 
 		await model.close()
 
-		let relaunched = AppModel(directory: directory, keyStore: FakeKeyStore())
+		let relaunched = AppModel.testing(in: directory)
 		relaunched.start()
 		await relaunched.unlock(password: workspacePassword)
 		#expect(relaunched.notes.map(\.body) == ["kept"])

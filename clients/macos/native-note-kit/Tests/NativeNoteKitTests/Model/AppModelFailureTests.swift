@@ -1,4 +1,5 @@
 import Foundation
+import Security
 import Testing
 
 @testable import NativeNoteKit
@@ -26,6 +27,7 @@ struct AppModelFailureTests {
 		(LibraryArchive.Failure.tooLarge, "The file is too large to be a Native Note export."),
 		(ZipArchive.Failure.tooLarge, "The library is too large to export as one zip."),
 		(CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: "/tmp/gone.zip"]), "The file “gone.zip” couldn’t be opened because there is no such file."),
+		(KeychainFailure(status: errSecNotAvailable), KeychainFailure(status: errSecNotAvailable).message),
 	])
 	func everyStorageAndUnlockErrorReadsAsASentence(error: any Error, reason: String) {
 		#expect(AppModel.Failure(error) == .unexpected(reason))

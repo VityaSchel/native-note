@@ -45,14 +45,13 @@ actor NoteStore {
 	@discardableResult
 	func save(_ note: Note) throws -> Saved {
 		try connection.transaction {
-			let held = try connection.prepare("SELECT v, pulled FROM note WHERE uuid = ?1")
+			let held = try connection.prepare("SELECT 1 FROM note WHERE uuid = ?1")
 			try held.bind(1, note.id.bytes)
 			guard try held.step() else {
 				try put(note, pulled: false)
 				return .saved
 			}
-			let pulledAfterEditBegan = held.int(0) != Int64(note.v) && held.int(1) != 0
-			if pulledAfterEditBegan {
+			if try wasPulled(note.id, after: note.v) {
 				let copy = note.unsyncedCopy()
 				try put(copy, pulled: false)
 				return .copied(copy.id)
@@ -174,12 +173,16 @@ actor NoteStore {
 			let neverPushed = try connection.prepare("DELETE FROM note WHERE uuid = ?1 AND v = 0 RETURNING uuid")
 			try neverPushed.bind(1, id.bytes)
 			guard try !neverPushed.step() else { return }
-			let pulledSinceShown = try connection.prepare("SELECT 1 FROM note WHERE uuid = ?1 AND pulled = 1 AND v != ?2")
-			try pulledSinceShown.bind(1, id.bytes)
-			try pulledSinceShown.bind(2, Int64(v))
-			guard try !pulledSinceShown.step() else { return }
+			guard try !wasPulled(id, after: v) else { return }
 			try markDeleted(id: id, at: moment)
 		}
+	}
+
+	private func wasPulled(_ id: UUID, after shown: UInt32) throws -> Bool {
+		let statement = try connection.prepare("SELECT 1 FROM note WHERE uuid = ?1 AND pulled = 1 AND v != ?2")
+		try statement.bind(1, id.bytes)
+		try statement.bind(2, Int64(shown))
+		return try statement.step()
 	}
 
 	func markDeleted(id: UUID, at moment: Int64) throws {

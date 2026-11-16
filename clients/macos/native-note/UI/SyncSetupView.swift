@@ -7,7 +7,7 @@ struct SyncControls {
 	var prepareSync: (String, String) async -> Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure> = { _, _ in .failure(.invalidServer) }
 	var finishSync: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var joinSync: (String, String, PhraseEntry) async -> AppModel.SyncSetupFailure? = { _, _, _ in nil }
-	var prepareRotation: () async -> AppModel.RecoveryPhrase? = { nil }
+	var prepareRotation: () async -> Result<AppModel.RecoveryPhrase, AppModel.SyncSetupFailure> = { .failure(.notSetUp) }
 	var finishRotation: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var adoptCurrentPhrase: (PhraseEntry) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var turnOffSync: () async -> Bool = { false }
@@ -72,7 +72,7 @@ struct SyncSetupView: View {
 			.task {
 				guard form.step == .preparing else { return }
 				form.begin()
-				form.show(await controls.prepareRotation())
+				form.rotationPrepared(await controls.prepareRotation())
 			}
 	}
 
@@ -225,7 +225,7 @@ struct SyncSetupView: View {
 				if let failure = await controls.adoptCurrentPhrase(phrase) {
 					form.finished(failure)
 				} else {
-					form.show(await controls.prepareRotation())
+					form.rotationPrepared(await controls.prepareRotation())
 				}
 			}
 		}

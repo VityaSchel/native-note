@@ -173,7 +173,7 @@ struct AppDelegateTests {
 
 	private var library: Workspace {
 		Workspace { [alarm, shaking] directory, keys in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), keyStore: keys, shakeTimer: shaking.sleep)
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, keyStore: keys, shakeTimer: shaking.sleep)
 		}
 	}
 
@@ -197,7 +197,7 @@ struct AppDelegateTests {
 	@Test func aLibraryThatOpensLockedListensOnceTheAppIsActive() async throws {
 		let keys = FakeKeyStore()
 		let (_, directory) = try await library.lockedWithTouchID(keys)
-		let relaunched = AppModel(directory: directory, keyStore: keys)
+		let relaunched = AppModel.testing(in: directory, keyStore: keys)
 		let delegate = AppDelegate(model: relaunched, confirmQuitLosingEdits: QuitPrompt().ask)
 		relaunched.start()
 
@@ -301,7 +301,7 @@ struct AppDelegateTests {
 
 	@Test func goingAwayBeforeSetupLeavesTheFirstRunAlone() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(libraryAt: directory)
+		let model = AppModel.testing(in: directory)
 		model.start()
 		let notice = Self.privateScreenLockNotice()
 		let delegate = AppDelegate(model: model, confirmQuitLosingEdits: QuitPrompt().ask, workspace: NotificationCenter(), screenLocked: notice)

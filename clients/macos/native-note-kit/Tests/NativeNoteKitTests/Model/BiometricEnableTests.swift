@@ -48,7 +48,7 @@ struct BiometricEnableTests {
 
 	private var library: Workspace {
 		Workspace(holding: ["Shopping", "Trip"]) { [alarm] directory, keys in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), calibrate: { UnlockParameters.fast.argon }, keyStore: keys)
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, keyStore: keys)
 		}
 	}
 

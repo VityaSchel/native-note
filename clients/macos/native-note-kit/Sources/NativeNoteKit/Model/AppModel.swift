@@ -11,6 +11,13 @@ import Observation
 		case unlocked
 	}
 
+	public enum Screen: Equatable {
+		case loading
+		case onboarding
+		case locked
+		case library
+	}
+
 	private struct FailingSave {
 		let note: Note
 		let reason: String
@@ -21,6 +28,16 @@ import Observation
 	}
 
 	public private(set) var isOnboarding = false
+
+	public var screen: Screen {
+		switch phase {
+		case .loading: .loading
+		case .needsSetup: .onboarding
+		case .locked: .locked
+		case .unlocked: isOnboarding ? .onboarding : .library
+		}
+	}
+
 	var notes: [Note] = []
 	public private(set) var failure: Failure?
 	public private(set) var isImporting = false
@@ -504,7 +521,7 @@ import Observation
 		return ImportSummary(added: added.count, skipped: incoming.count - added.count)
 	}
 
-	nonisolated private static func search(_ store: NoteStore, for text: String) async throws -> [Note] {
+	nonisolated static func search(_ store: NoteStore, for text: String) async throws -> [Note] {
 		try await store.search(text)
 	}
 

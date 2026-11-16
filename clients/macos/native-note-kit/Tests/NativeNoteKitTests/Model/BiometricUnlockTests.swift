@@ -25,9 +25,9 @@ struct BiometricUnlockTests {
 
 	private var library: Workspace {
 		Workspace(holding: ["Shopping", "Trip"]) { [alarm, shaking, duringSearch] directory, keys in
-			AppModel(
-				directory: directory,
-				scheduler: SaveScheduler(sleep: alarm.sleep),
+			AppModel.testing(
+				in: directory,
+				scheduler: alarm.scheduler,
 				searchNotes: { store, text in
 					await duringSearch.run()
 					return try await store.search(text)
@@ -74,7 +74,7 @@ struct BiometricUnlockTests {
 		let (_, directory) = try await library.lockedWithTouchID(keys)
 		keys.becomes(.unavailable)
 
-		let relaunched = AppModel(directory: directory, keyStore: keys)
+		let relaunched = AppModel.testing(in: directory, keyStore: keys)
 		relaunched.start()
 		relaunched.appBecameActive()
 
@@ -85,7 +85,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		let (_, directory) = try await library.lockedWithTouchID(keys)
 
-		let relaunched = AppModel(directory: directory, keyStore: keys)
+		let relaunched = AppModel.testing(in: directory, keyStore: keys)
 		relaunched.start()
 		#expect(relaunched.touchID == .paused(.inBackground))
 		relaunched.appBecameActive()
@@ -98,7 +98,7 @@ struct BiometricUnlockTests {
 	@Test func nothingListensBeforeTheLibraryIsLoaded() async throws {
 		let keys = FakeKeyStore()
 		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
-		let model = AppModel(directory: temporaryDirectory(), keyStore: keys)
+		let model = AppModel.testing(in: temporaryDirectory(), keyStore: keys)
 
 		model.appBecameActive()
 
@@ -424,7 +424,7 @@ struct BiometricUnlockTests {
 		let (_, directory) = try await library.lockedWithTouchID(keys)
 		keys.becomes(.lockedOut)
 
-		let relaunched = AppModel(directory: directory, keyStore: keys)
+		let relaunched = AppModel.testing(in: directory, keyStore: keys)
 		relaunched.start()
 		relaunched.appBecameActive()
 
@@ -762,7 +762,7 @@ struct BiometricUnlockTests {
 		let keys = FakeKeyStore()
 		keys.plant(SymmetricKey(data: Data(repeating: 0x42, count: 32)))
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
+		let model = AppModel.testing(in: directory, keyStore: keys)
 		model.start()
 		model.appBecameActive()
 		#expect(model.isBiometricUnlockEnabled)
@@ -780,9 +780,9 @@ struct BiometricUnlockTests {
 	@Test func aSetUpThatFindsAnotherLibraryKeepsItsKey() async throws {
 		let keys = FakeKeyStore()
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
+		let model = AppModel.testing(in: directory, keyStore: keys)
 		model.start()
-		let other = try await Unlock.setUp(password: "other instance", in: directory, makeParameters: { .fast })
+		let other = try await Unlock.setUp(password: "other instance", in: directory)
 		await other.store.close()
 		let otherKey = try await Task.detached { try Unlock.localDbKey(password: "other instance", parameters: .fast) }.value
 		try keys.save(otherKey)

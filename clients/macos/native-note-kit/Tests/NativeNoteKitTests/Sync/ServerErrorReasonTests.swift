@@ -27,7 +27,7 @@ struct ServerErrorReasonTests {
 		let transport = RewrittenRequests(server: server) { inner in
 			request == "an action the server does not know" ? Data([0x7f]) + inner.dropFirst() : inner + Data([0])
 		}
-		let (syncing, _) = try await unlockedModel { AppModel(directory: $0, keyStore: FakeKeyStore(), makeTransport: { _ in transport }, syncDelay: .seconds(3600)) }
+		let (syncing, _) = try await unlockedModel { AppModel.testing(in: $0, transport: transport) }
 		try await fill(syncing, with: ["stays here"])
 		let store = try #require(syncing.store)
 		try await store.enableSync(SyncSettings(server: server.url, apiKey: try server.apiKey, contentKey: sharedContentKey), pin: 1)
@@ -38,7 +38,7 @@ struct ServerErrorReasonTests {
 		#expect(syncing.syncStatus.phase == .failed(message))
 		#expect(try await store.pendingPushes().map(\.body) == ["stays here"])
 		#expect(try await store.since() == 0)
-		let (settingUp, _) = try await unlockedModel { AppModel(directory: $0, keyStore: FakeKeyStore(), makeTransport: { _ in transport }, syncDelay: .seconds(3600)) }
+		let (settingUp, _) = try await unlockedModel { AppModel.testing(in: $0, transport: transport) }
 		#expect(await settingUp.prepareSync(server: server.url.absoluteString, apiKey: try apiKeyText(server)) == .failure(.failed(message)))
 		#expect(try await settingUp.store?.syncSettings() == nil)
 		#expect(try await storedBlob(server).v == 0)

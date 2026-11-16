@@ -60,24 +60,22 @@ struct ContentView: View {
 
 	@ViewBuilder
 	private var screen: some View {
-		if model.phase == .needsSetup || (model.phase == .unlocked && model.isOnboarding) {
+		switch model.screen {
+		case .loading:
+			ProgressView().onAppear { model.start() }
+		case .onboarding:
 			onboarding
-		} else {
-			switch model.phase {
-				case .loading:
-					ProgressView().onAppear { model.start() }
-				case .needsSetup, .locked:
-					UnlockView(
-						failure: model.failure,
-						submit: model.submit(password:),
-						dismissFailure: model.dismissFailure,
-						touchID: TouchIDControls(model),
-						shake: model.shake,
-						eraseLibrary: { Task { await model.eraseLibrary() } }
-					)
-				case .unlocked:
-					library
-			}
+		case .locked:
+			UnlockView(
+				failure: model.failure,
+				submit: model.submit(password:),
+				dismissFailure: model.dismissFailure,
+				touchID: TouchIDControls(model),
+				shake: model.shake,
+				eraseLibrary: { Task { await model.eraseLibrary() } }
+			)
+		case .library:
+			library
 		}
 	}
 

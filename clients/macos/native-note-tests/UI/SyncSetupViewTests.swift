@@ -49,7 +49,7 @@ struct SyncSetupViewTests {
 			},
 			prepareRotation: {
 				calls.rotations += 1
-				return phrase
+				return .success(phrase)
 			},
 			finishRotation: { answers in
 				calls.finished.append(answers)
@@ -692,6 +692,20 @@ struct SyncSetupViewTests {
 		#expect(calls.rotations == 2)
 		#expect(calls.done == 0)
 	}
+
+	@Test(.scratch) func aPhraseChangeOnAServerAddressThatCannotBeReadShowsWhyInTheSheetAlone() async throws {
+		let model = try await libraryWithUnreadableServerAddress()
+		model.dismissFailure()
+		let reason = "The saved server address cannot be read. Enter the server again in Settings."
+
+		let offscreen = OffscreenWindow(SyncSetupView(mode: .rotate, controls: SyncControls(model), done: {}), width: 440, height: 560)
+		defer { offscreen.close() }
+		await offscreen.pump { offscreen.texts().contains(reason) }
+
+		#expect(offscreen.texts().contains(reason))
+		#expect(!offscreen.texts().contains("Sync is not set up on this Mac."))
+		#expect(model.failure == nil)
+	}
 }
 
 @MainActor
@@ -739,13 +753,23 @@ struct SyncSetupFormTests {
 	@Test func rotationStartsPreparingAndRoutesAnotherDevicesRotationToTheCurrentPhrase() {
 		var form = SyncSetupForm(mode: .rotate)
 		#expect(form.step == .preparing && !form.canContinue && form.confirmTitle == "Change Phrase")
-		form.show(phrase)
+		form.rotationPrepared(.success(phrase))
 		form.confirm()
 		form.begin()
 		form.finished(.rotatedElsewhere)
 		#expect(form.step == .currentPhrase && form.message == AppModel.SyncSetupFailure.rotatedElsewhere.message)
-		form.show(nil)
+		form.rotationPrepared(.failure(.notSetUp))
 		#expect(form.message == "Sync is not set up on this Mac.")
+	}
+
+	@Test func aRotationThatCannotStartShowsItsOwnReason() {
+		var form = SyncSetupForm(mode: .rotate)
+		form.begin()
+
+		form.rotationPrepared(.failure(.failed("The saved server address cannot be read. Enter the server again in Settings.")))
+
+		#expect(form.step == .preparing && !form.working)
+		#expect(form.message == "The saved server address cannot be read. Enter the server again in Settings.")
 	}
 
 	@Test func aNewPhraseIsHiddenAgainWhileGoingBackToTheSameOneStaysRevealed() {

@@ -7,7 +7,7 @@ import Testing
 @MainActor @Suite(.scratch, .syncServer, .timeLimit(.minutes(1)))
 struct SyncOffAndMoveTests {
 	private func mac() async throws -> (AppModel, URL) {
-		try await unlockedModel { AppModel(directory: $0, makeTransport: { HTTPTransport(url: $0) }, syncDelay: .seconds(3600)) }
+		try await unlockedModel { AppModel.testing(in: $0) }
 	}
 
 	private func syncingMac(_ server: SyncServer, notes: [String]) async throws -> (AppModel, URL, AppModel.RecoveryPhrase) {

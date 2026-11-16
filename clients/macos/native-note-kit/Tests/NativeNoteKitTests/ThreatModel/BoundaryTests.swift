@@ -65,7 +65,7 @@ struct BoundaryTests {
 		let old = try await setUpSync(owner, server)
 		let held = try #require(try await owner.store?.syncSettings())
 		let backup = try await storedBlob(server)
-		let next = try #require(await owner.prepareRotation())
+		let next = try await owner.prepareRotation().get()
 		try #require(await owner.finishRotation(answers: answers(next)) == nil)
 
 		let oldKey = try #require(Mnemonic.key(from: old.words))
@@ -89,7 +89,7 @@ struct BoundaryTests {
 	}
 
 	@Test func aDeletedNoteLeavesNoPlaintextOnDisk() async throws {
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0) }
+		let (model, directory) = try await unlockedModel { AppModel.testing(in: $0) }
 		try await fill(model, with: ["quartzite zephyr deleted", "kept"])
 		await model.delete(try #require(model.notes.first { $0.body.hasPrefix("quartzite") }).id)
 
@@ -101,7 +101,7 @@ struct BoundaryTests {
 	}
 
 	@Test func anyNumberOfWrongPasswordsLeavesTheRightOneWorking() async throws {
-		let (model, _) = try await unlockedModel { AppModel(directory: $0, shakeTimer: { _ in }) }
+		let (model, _) = try await unlockedModel { AppModel.testing(in: $0, shakeTimer: { _ in }) }
 		await model.lock()
 
 		for attempt in 0 ..< 25 {
@@ -114,7 +114,7 @@ struct BoundaryTests {
 	}
 
 	@Test func aLibraryWithoutHardwareBindingCanBeGuessedFromItsFilesAlone() async throws {
-		let (model, directory) = try await unlockedModel { AppModel(directory: $0) }
+		let (model, directory) = try await unlockedModel { AppModel.testing(in: $0) }
 		try await fill(model, with: ["guessable"])
 		await model.lock()
 		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))

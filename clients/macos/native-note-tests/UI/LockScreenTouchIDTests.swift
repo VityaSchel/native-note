@@ -16,9 +16,9 @@ struct LockScreenTouchIDTests {
 
 	private func library(holdingSearch: Bool = false) -> Workspace {
 		Workspace(holding: ["kayak", "canoe"]) { [alarm, shaking, opening] directory, keys in
-			AppModel(
-				directory: directory,
-				scheduler: SaveScheduler(sleep: alarm.sleep),
+			AppModel.testing(
+				in: directory,
+				scheduler: alarm.scheduler,
 				searchNotes: { store, text in
 					if holdingSearch { await opening.wait() }
 					return try await store.search(text)

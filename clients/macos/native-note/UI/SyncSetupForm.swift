@@ -71,12 +71,8 @@ struct SyncSetupForm {
 		message = nil
 	}
 
-	mutating func show(_ phrase: AppModel.RecoveryPhrase?) {
+	private mutating func show(_ phrase: AppModel.RecoveryPhrase) {
 		working = false
-		guard let phrase else {
-			message = "Sync is not set up on this Mac."
-			return
-		}
 		answers = ["", "", ""]
 		wordsRevealed = false
 		step = .words(phrase)
@@ -84,6 +80,13 @@ struct SyncSetupForm {
 
 	mutating func revealWords() {
 		wordsRevealed = true
+	}
+
+	mutating func rotationPrepared(_ rotation: Result<AppModel.RecoveryPhrase, AppModel.SyncSetupFailure>) {
+		switch rotation {
+		case let .success(phrase): show(phrase)
+		case let .failure(failure): fail(failure)
+		}
 	}
 
 	mutating func prepared(_ result: Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure>) {

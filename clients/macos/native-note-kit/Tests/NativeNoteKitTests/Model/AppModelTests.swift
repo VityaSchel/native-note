@@ -9,7 +9,7 @@ struct AppModelTests {
 
 	@Test func walksSetUpEditLockAndUnlock() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel.testing(in: directory)
 
 		model.start()
 		#expect(model.phase == .needsSetup)
@@ -40,11 +40,31 @@ struct AppModelTests {
 		#expect(model.notes.first?.body == "Shopping\nquartz and bread")
 	}
 
+	@Test func theScreenFollowsEveryPhaseAndOnboarding() async throws {
+		let model = AppModel.testing(in: temporaryDirectory())
+		#expect(model.phase == .loading && model.screen == .loading)
+
+		model.start()
+		#expect(model.phase == .needsSetup && model.screen == .onboarding)
+
+		await model.submit(password: workspacePassword)
+		#expect(model.phase == .unlocked && model.isOnboarding && model.screen == .onboarding)
+
+		model.finishOnboarding()
+		#expect(model.phase == .unlocked && model.screen == .library)
+
+		await model.lock()
+		#expect(model.phase == .locked && model.screen == .locked)
+
+		await model.submit(password: workspacePassword)
+		#expect(model.phase == .unlocked && !model.isOnboarding && model.screen == .library)
+	}
+
 	@Test func startsLockedWhenParametersAlreadyExist() async throws {
 		let directory = temporaryDirectory()
 		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
 
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel.testing(in: directory)
 		model.start()
 
 		#expect(model.phase == .locked)
@@ -52,7 +72,7 @@ struct AppModelTests {
 
 	@Test func submitSetsUpOnFirstRunAndUnlocksAfterwards() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel.testing(in: directory)
 		model.start()
 		#expect(model.phase == .needsSetup)
 
@@ -70,7 +90,7 @@ struct AppModelTests {
 
 	@Test func unlockingWithoutParametersSaysSo() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 
 		await model.unlock(password: workspacePassword)
 
@@ -84,7 +104,7 @@ struct AppModelTests {
 		foreign.enclaveKey = Data(repeating: 0x11, count: 8)
 		try AppLock.write(foreign, to: AppLock.currentFile(in: directory))
 		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
-		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 		model.start()
 
 		await model.unlock(password: workspacePassword)
@@ -95,9 +115,9 @@ struct AppModelTests {
 
 	@Test func setUpFindingParametersFromElsewhereLocks() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel.testing(in: directory)
 		model.start()
-		try await Unlock.setUp(password: "other instance", in: directory, makeParameters: { .fast }).store.close()
+		try await Unlock.setUp(password: "other instance", in: directory).store.close()
 
 		await model.submit(password: "correct horse")
 		#expect(model.phase == .locked)
@@ -112,7 +132,7 @@ struct AppModelTests {
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 		try Data("not a property list".utf8).write(to: AppLock.currentFile(in: directory))
 		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
-		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 
 		model.start()
 		#expect(model.phase == .locked)
@@ -137,7 +157,7 @@ struct AppModelTests {
 		let directory = temporaryDirectory()
 		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
 		try FileManager.default.createDirectory(at: AppLock.databaseFile(in: directory), withIntermediateDirectories: true)
-		let model = AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep))
+		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 		model.start()
 
 		await model.unlock(password: workspacePassword)
@@ -158,7 +178,7 @@ struct AppModelTests {
 
 	@Test func deletingRemovesTheNoteFromTheList() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel.testing(in: directory)
 		await model.setUp(password: "correct horse")
 		await model.createNote()
 
@@ -170,7 +190,7 @@ struct AppModelTests {
 
 	@Test func deletingAnotherNoteKeepsTheSelection() async throws {
 		let directory = temporaryDirectory()
-		let model = AppModel(directory: directory, makeParameters: { .fast })
+		let model = AppModel.testing(in: directory)
 		await model.setUp(password: "correct horse")
 		await model.createNote()
 		let other = try #require(model.selection)

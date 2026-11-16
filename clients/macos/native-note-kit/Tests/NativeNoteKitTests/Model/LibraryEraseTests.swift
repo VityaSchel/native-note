@@ -9,7 +9,7 @@ struct LibraryEraseTests {
 
 	private var library: Workspace {
 		Workspace(holding: ["Shopping", "Trip"]) { [alarm] directory, keys in
-			AppModel(directory: directory, scheduler: SaveScheduler(sleep: alarm.sleep), makeParameters: { .fast }, keyStore: keys)
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, keyStore: keys)
 		}
 	}
 
@@ -36,7 +36,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func aNewLibraryStartsEmptyAfterAnErase() async throws {
-		let (model, _) = try await library.unlocked(FakeKeyStore())
+		let (model, _) = try await library.unlocked()
 		await model.lock()
 		await model.eraseLibrary()
 
@@ -50,7 +50,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func erasingIsOnlyForTheLockScreen() async throws {
-		let (model, directory) = try await library.unlocked(FakeKeyStore())
+		let (model, directory) = try await library.unlocked()
 
 		await model.eraseLibrary()
 
@@ -60,7 +60,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func erasingWhileASaveKeepsFailingLeavesNothingBehind() async throws {
-		let (model, directory) = try await library.unlocked(FakeKeyStore())
+		let (model, directory) = try await library.unlocked()
 		try await connection(to: directory).execute(
 			"CREATE TRIGGER poison BEFORE UPDATE ON note WHEN new.body LIKE '%poison%' BEGIN SELECT RAISE(ABORT, 'poisoned'); END"
 		)
@@ -80,7 +80,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func erasingDuringARekeyRemovesBothParameterFiles() async throws {
-		let (model, directory) = try await library.unlocked(FakeKeyStore())
+		let (model, directory) = try await library.unlocked()
 		await model.lock()
 		try AppLock.write(.fast, to: AppLock.pendingRekeyFile(in: directory))
 
@@ -91,7 +91,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func anEraseThatCannotDeleteAFileSaysSoAndStillReachesSetup() async throws {
-		let (model, directory) = try await library.unlocked(FakeKeyStore())
+		let (model, directory) = try await library.unlocked()
 		let database = AppLock.databaseFile(in: directory)
 		defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: database.path) }
 		await model.lock()
@@ -116,7 +116,7 @@ struct LibraryEraseTests {
 		await model.flushPendingSaves()
 		await model.lock()
 
-		let relaunched = AppModel(directory: directory, makeParameters: { .fast }, keyStore: keys)
+		let relaunched = AppModel.testing(in: directory, keyStore: keys)
 		relaunched.start()
 		await relaunched.submit(password: "a fresh password")
 
@@ -124,7 +124,7 @@ struct LibraryEraseTests {
 	}
 
 	@Test func aSaveStillRunningWhenTheEraseStartsLeavesNoAlertBehind() async throws {
-		let (model, directory) = try await library.unlocked(FakeKeyStore())
+		let (model, directory) = try await library.unlocked()
 		try await connection(to: directory).execute(
 			"CREATE TRIGGER poison BEFORE UPDATE ON note WHEN new.body LIKE '%poison%' BEGIN SELECT RAISE(ABORT, 'poisoned'); END"
 		)

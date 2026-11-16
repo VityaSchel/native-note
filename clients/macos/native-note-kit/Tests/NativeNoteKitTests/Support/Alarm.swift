@@ -19,6 +19,10 @@ actor Alarm {
 		{ try await self.sleep(for: $0) }
 	}
 
+	@MainActor var scheduler: SaveScheduler {
+		SaveScheduler(sleep: sleep)
+	}
+
 	func sleep(for duration: Duration) async throws {
 		started += 1
 		requested.append(duration)

@@ -15,7 +15,7 @@ struct HTTPStatusTests {
 	}
 
 	private func model(answering status: Int) async throws -> AppModel {
-		try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in Answering(status: status) }, syncDelay: .seconds(3600)) }.0
+		try await unlockedModel { AppModel.testing(in: $0, transport: Answering(status: status)) }.0
 	}
 
 	@Test(arguments: [
@@ -46,5 +46,21 @@ struct HTTPStatusTests {
 			return
 		}
 		#expect(message.contains(words), "\(message)")
+	}
+
+	@Test(arguments: [400, 413, 502, 302, 405])
+	func syncAndSetupWordAStatusAlike(status: Int) async throws {
+		let model = try await model(answering: status)
+		guard case let .failure(setup) = await model.prepareSync(server: "http://notes.example", apiKey: String(repeating: "a", count: 64)) else {
+			Issue.record("setup went ahead")
+			return
+		}
+		let store = try #require(model.store)
+		try await store.enableSync(SyncSettings(server: try #require(URL(string: "http://notes.example")), apiKey: .init(size: .bits256), contentKey: .init(size: .bits256)), pin: 1)
+		await model.sync.start(store)
+
+		await model.syncNow()
+
+		#expect(model.syncStatus.phase == .failed(setup.message))
 	}
 }

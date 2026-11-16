@@ -77,7 +77,7 @@ protocol SyncedLibrary: AnyObject {
 			status.phase = .idle
 		} catch {
 			guard store === self.store else { return }
-			status.phase = .failed(Self.describe(error))
+			status.phase = .failed(Self.syncFailure(error).message)
 		}
 	}
 
@@ -176,18 +176,18 @@ protocol SyncedLibrary: AnyObject {
 		return nil
 	}
 
-	func prepareRotation() async -> RecoveryPhrase? {
-		guard let store else { return nil }
+	func prepareRotation() async -> Result<RecoveryPhrase, SetupFailure> {
+		guard let store else { return .failure(.rotationInterrupted) }
 		do {
-			return try await store.syncSettings().flatMap(newPhrase)
+			guard let settings = try await store.syncSettings() else { return .failure(.notSetUp) }
+			return newPhrase(for: settings).map { .success($0) } ?? .failure(.wordlistMissing)
 		} catch {
-			if store === self.store { library?.report(error, as: "The recovery phrase could not be changed.") }
-			return nil
+			return .failure(Self.setupFailure(error))
 		}
 	}
 
 	func finishRotation(answers: [String]) async -> SetupFailure? {
-		guard let store, let session = recovery else { return .failed("Start changing the phrase again.") }
+		guard let store, let session = recovery else { return .rotationInterrupted }
 		guard Self.matches(answers, session.phrase) else { return .wordsDoNotMatch }
 		do {
 			let pin = try await flow(session.settings).put(session.settings.contentKey, under: session.recoveryKey, pin: try await store.pin())
@@ -200,9 +200,9 @@ protocol SyncedLibrary: AnyObject {
 	}
 
 	func adoptCurrentPhrase(_ phrase: PhraseEntry) async -> SetupFailure? {
-		guard let store else { return .failed("Sync is not set up.") }
+		guard let store else { return .notSetUp }
 		do {
-			guard let settings = try await store.syncSettings() else { return .failed("Sync is not set up.") }
+			guard let settings = try await store.syncSettings() else { return .notSetUp }
 			guard let recoveryKey = phrase.key else { return .phraseDoesNotOpen }
 			guard let pin = try await flow(settings).pin(opening: settings.contentKey, under: recoveryKey) else { return .phraseDoesNotOpen }
 			try await store.setPin(pin)
@@ -281,15 +281,25 @@ protocol SyncedLibrary: AnyObject {
 		switch error {
 		case let failure as SetupFailure: failure
 		case is NoteStore.SyncAlreadySetUp: .alreadySetUp
-		case SyncError.refused(400), SyncError.unopenable: .refused
-		case let SyncError.refused(status): .answered(status: status)
 		case RecoveryFlow.Failure.noLibrary: .serverHasNoLibrary
 		case RecoveryFlow.Failure.serverHasLibrary: .serverHasLibrary
 		case RecoveryFlow.Failure.rotatedElsewhere: .rotatedElsewhere
 		case RecoveryFlow.Failure.serverBehind: .serverBehind
 		case RecoveryFlow.Failure.outcomeUnknown: .outcomeUnknown
+		default: syncFailure(error)
+		}
+	}
+
+	private static func syncFailure(_ error: Error) -> SetupFailure {
+		switch error {
+		case SyncError.refused(400), SyncError.unopenable: .refused
+		case let SyncError.refused(status): .answered(status: status)
+		case SyncError.requestMalformed: .failed("The server could not read Native Note's request.")
+		case SyncError.unsupported: .failed("This server needs a newer version of Native Note.")
+		case SyncError.serverFault: .failed("The server could not store the changes. Its disk may be full.")
+		case SyncError.protocolViolation: .failed("The server sent a reply Native Note does not understand.")
 		case let error as URLError: .unreachable(error.localizedDescription)
-		default: .failed(describe(error))
+		default: .failed(AppModel.Failure.reason(for: error))
 		}
 	}
 
@@ -300,19 +310,6 @@ protocol SyncedLibrary: AnyObject {
 		case .newerChange: "A change on the server was made by a newer version of Native Note. Update Native Note to read it."
 		case .tooLarge: "A note is larger than 1 MB, so it stays on this Mac until it is shorter."
 		case .stuckConflict: "A note can't sync until Native Note is updated: the server holds a newer version of it."
-		}
-	}
-
-	private static func describe(_ error: Error) -> String {
-		switch error {
-		case SyncError.refused(400), SyncError.unopenable: "The server did not accept this Mac's API key, or a proxy in front of it changed the request."
-		case let SyncError.refused(status): AppModel.statusMessage(status)
-		case SyncError.requestMalformed: "The server could not read Native Note's request."
-		case SyncError.unsupported: "This server needs a newer version of Native Note."
-		case SyncError.serverFault: "The server could not store the changes. Its disk may be full."
-		case SyncError.protocolViolation: "The server sent a reply Native Note does not understand."
-		case let error as URLError: "The server could not be reached. \(error.localizedDescription)"
-		default: AppModel.Failure.reason(for: error)
 		}
 	}
 }

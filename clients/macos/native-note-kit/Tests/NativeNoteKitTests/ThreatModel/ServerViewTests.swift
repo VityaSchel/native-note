@@ -36,7 +36,7 @@ struct ServerViewTests {
 	private func library(_ server: SyncServer) async throws -> Library {
 		let recorder = RecordingTransport(server)
 		let (model, _) = try await unlockedModel { directory in
-			AppModel(directory: directory, makeTransport: { _ in recorder }, syncDelay: .seconds(3600))
+			AppModel.testing(in: directory, transport: recorder)
 		}
 		try await fill(model, with: bodies)
 		let ids = model.notes.map(\.id)

@@ -45,7 +45,7 @@ struct LockDuringSyncTests {
 
 	@Test func lockingCancelsASyncInFlightBeforeTheLibraryCloses() async throws {
 		let transport = Hanging()
-		let (model, _) = try await unlockedModel { AppModel(directory: $0, makeTransport: { _ in transport }, syncDelay: .seconds(3600)) }
+		let (model, _) = try await unlockedModel { AppModel.testing(in: $0, transport: transport) }
 		try await fill(model, with: ["waiting to push"])
 		let store = try #require(model.store)
 		transport.store = store
