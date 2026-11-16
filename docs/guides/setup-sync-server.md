@@ -58,7 +58,7 @@ sudo install -d -m 0700 /backup
 sudo sqlite3 /var/lib/native-note-server/native-note.sqlite ".backup '/backup/native-note.sqlite'"
 ```
 
-`VACUUM INTO '/backup/native-note.sqlite'` works too. A backup holds sealed notes, not the API key; keep a copy of `api-key` apart from it, since a server restored with another key refuses every Mac.
+`VACUUM INTO '/backup/native-note.sqlite'` works too. A backup holds sealed notes, not the API key or the `seq` file; keep a copy of `api-key` apart from it, since a server restored with another key refuses every Mac.
 
 ## Restore
 
@@ -70,4 +70,4 @@ sudo chown --reference=/var/lib/native-note-server /var/lib/native-note-server/n
 sudo systemctl start native-note-server
 ```
 
-A Mac that synced after the backup was taken reports the server as behind it and keeps its notes; bringing it back in step with a restored server is [not supported yet](../ROADMAP.md). A Mac set up after the restore gets the backup's notes.
+The `seq` file stays in the data directory and is not restored with the database, so the server numbers new writes above every `seq` it handed out. A Mac that synced after the backup was taken keeps its notes and gets every write made after the restore; it reports the server as behind it on meeting a note older there than its own, and does not converge with the restored server yet ([roadmap](../ROADMAP.md)). A Mac set up after the restore gets the backup's notes.

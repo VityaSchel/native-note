@@ -249,3 +249,54 @@ fn a_damaged_database_or_a_taken_address_stops_startup() {
 	);
 	assert_ne!(serve_at(fresh.path(), runtime(&log)).port(), 0);
 }
+
+#[test]
+fn a_seq_file_is_decimal_digits_and_a_newline_and_anything_else_stops_startup() {
+	let scratch = Scratch::new("startup-seq");
+	fs::write(scratch.join("api-key"), KEY_TEXT).expect("writes the key");
+	let path = scratch.join("seq");
+	for text in [
+		"",
+		"\n",
+		"150",
+		"150\n\n",
+		" 150\n",
+		"150 \n",
+		"150\r\n",
+		"+150\n",
+		"-1\n",
+		"0x96\n",
+		"1.5\n",
+		"18446744073709551616\n",
+	] {
+		fs::write(&path, text).expect("writes");
+		assert_eq!(
+			opened(scratch.path()),
+			(Err((Stage::Seq, Cause::Malformed)), Vec::new()),
+			"{text:?}"
+		);
+		assert!(!scratch.join("native-note.sqlite").exists(), "{text:?}");
+	}
+	fs::remove_file(&path).expect("removes");
+	fs::create_dir(&path).expect("puts a directory in its place");
+	assert!(matches!(
+		opened(scratch.path()).0,
+		Err((Stage::Seq, Cause::Io(_)))
+	));
+	fs::remove_dir(&path).expect("removes");
+
+	fs::write(&path, "x\n").expect("writes");
+	let log = Arc::new(Recorder::default());
+	let args = ["127.0.0.1:0".into(), scratch.path().as_os_str().to_owned()];
+	assert_eq!(run(args, runtime(&log)), ExitCode::FAILURE);
+	assert_eq!(
+		log.lines(),
+		["level=error event=startup_failed stage=seq cause=malformed"]
+	);
+
+	for text in ["0\n", "150\n", "0150\n", "18446744073709551615\n"] {
+		fs::write(&path, text).expect("writes");
+		assert_eq!(opened(scratch.path()), (Ok(()), Vec::new()), "{text:?}");
+		assert_eq!(fs::read_to_string(&path).expect("reads"), text);
+	}
+}

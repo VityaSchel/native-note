@@ -1,5 +1,6 @@
 use crate::key;
 use crate::log::{Cause, Event, Failure, Log, Stage, Stderr};
+use crate::seq_file::SeqFile;
 use crate::store::Store;
 use native_note_core::http::{self, HEAD_MAX, Status};
 use native_note_core::{Envelope, EnvelopeKey, Reason, Rejection, Reply, Request};
@@ -72,7 +73,8 @@ impl Server {
 		let api_key =
 			key::load_or_create(data, runtime.fill, &*runtime.log).map_err(at(Stage::ApiKey))?;
 		let key = EnvelopeKey::derive(&api_key).ok_or((Stage::ApiKey, Cause::Malformed))?;
-		let store = Store::open(&data.join(DATABASE)).map_err(at(Stage::Database))?;
+		let seq_file = SeqFile::load(data).map_err(at(Stage::Seq))?;
+		let store = Store::open(&data.join(DATABASE), seq_file).map_err(at(Stage::Database))?;
 		let listener = TcpListener::bind(address).map_err(at(Stage::Listen))?;
 		let address = listener.local_addr().map_err(at(Stage::Listen))?;
 		Ok(Server {

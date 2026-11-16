@@ -114,7 +114,7 @@ fn a_storage_failure_at_any_call_of_any_action_rolls_the_whole_request_back() {
 	];
 	let mut injected = 0;
 	for (index, request) in requests.iter().enumerate() {
-		let before = state(&store.0);
+		let before = state(&store.connection);
 		let calls = storage_calls(&mut store, request);
 		assert!(calls > 0, "request {index}");
 		for fail_at in 0..calls {
@@ -133,8 +133,12 @@ fn a_storage_failure_at_any_call_of_any_action_rolls_the_whole_request_back() {
 				Some(Failure::Storage(Cause::Sqlite(ErrorCode::SystemIoFailure))),
 				"request {index}, call {fail_at}"
 			);
-			assert_eq!(state(&store.0), before, "request {index}, call {fail_at}");
-			assert!(store.0.is_autocommit());
+			assert_eq!(
+				state(&store.connection),
+				before,
+				"request {index}, call {fail_at}"
+			);
+			assert!(store.connection.is_autocommit());
 			injected += 1;
 		}
 		assert_eq!(
@@ -142,7 +146,11 @@ fn a_storage_failure_at_any_call_of_any_action_rolls_the_whole_request_back() {
 			call(&mut replica, request),
 			"request {index}"
 		);
-		assert_eq!(state(&store.0), state(&replica.0), "request {index}");
+		assert_eq!(
+			state(&store.connection),
+			state(&replica.connection),
+			"request {index}"
+		);
 	}
 	assert!(injected >= 40, "{injected} failures injected");
 }
@@ -156,21 +164,21 @@ fn a_full_disk_mid_request_rolls_it_back_and_a_retry_with_room_succeeds() {
 		&sync(0, &[write(1, 1, 4000), write(2, 1, 4000)]),
 	);
 	let pages: i64 = store
-		.0
+		.connection
 		.pragma_query_value(None, "page_count", |row| row.get(0))
 		.expect("counts pages");
 	store
-		.0
+		.connection
 		.pragma_update(None, "max_page_count", pages)
 		.expect("caps the database");
-	let before = state(&store.0);
+	let before = state(&store.connection);
 	let request = sync(2, &[write(3, 1, 50), write(4, 1, NOTE_MAX)]);
 	assert_eq!(
 		store.answer(&request).err(),
 		Some(Failure::Storage(Cause::Sqlite(ErrorCode::DiskFull)))
 	);
-	assert_eq!(state(&store.0), before);
-	assert!(store.0.is_autocommit());
+	assert_eq!(state(&store.connection), before);
+	assert!(store.connection.is_autocommit());
 	assert_eq!(
 		call(&mut store, &Request::Get),
 		Response::Get {
@@ -180,7 +188,7 @@ fn a_full_disk_mid_request_rolls_it_back_and_a_retry_with_room_succeeds() {
 	);
 
 	store
-		.0
+		.connection
 		.pragma_update(None, "max_page_count", pages + 1024)
 		.expect("makes room");
 	let Response::Sync { results, .. } = call(&mut store, &request) else {

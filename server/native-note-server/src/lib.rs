@@ -23,8 +23,10 @@
 	)
 )]
 
+mod durable;
 mod key;
 mod log;
+mod seq_file;
 mod serve;
 mod store;
 

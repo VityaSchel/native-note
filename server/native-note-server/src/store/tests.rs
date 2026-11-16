@@ -1,5 +1,6 @@
 use super::{MIGRATIONS, Store};
 use crate::log::{Cause, Failure};
+use crate::seq_file::SeqFile;
 use native_note_core::{BlindedNoteId, EnvelopeKey, Record, Reply, Request, Secret, Seq, Version};
 use native_note_testkit::NOTE_MAX;
 use native_note_testkit::client::{self, Response, Status, sync};
@@ -9,6 +10,7 @@ use native_note_testkit::scratch::{Scratch, mode};
 use ring::digest::{SHA256, digest};
 use rusqlite::{Connection, ErrorCode, OpenFlags};
 use std::fs;
+use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -77,9 +79,14 @@ fn pulled(changes: Vec<Record>, next_seq: u64) -> Response {
 	}
 }
 
+fn open_at(path: &Path) -> Result<Store, Cause> {
+	let data = path.parent().expect("a data directory");
+	Store::open(path, SeqFile::load(data).expect("reads the seq file"))
+}
+
 fn opened(scratch: &Scratch) -> (Store, std::path::PathBuf) {
 	let path = scratch.join("native-note.sqlite");
-	(Store::open(&path).expect("opens"), path)
+	(open_at(&path).expect("opens"), path)
 }
 
 #[test]
@@ -94,7 +101,7 @@ fn a_new_database_is_owner_only_strict_wal_with_full_sync_at_the_latest_schema()
 	] {
 		assert_eq!(mode(&scratch.join(file)), 0o600, "{file}");
 	}
-	let connection = &store.0;
+	let connection = &store.connection;
 	let pragma = |name: &str| -> String {
 		connection
 			.pragma_query_value(None, name, |row| row.get::<_, rusqlite::types::Value>(0))
@@ -139,10 +146,10 @@ fn reopening_keeps_every_note_and_the_blob_and_runs_no_migration_twice() {
 			blob: vec![7; 60],
 		},
 	);
-	let before = state(&store.0);
+	let before = state(&store.connection);
 	drop(store);
-	let mut store = Store::open(&path).expect("reopens");
-	assert_eq!(state(&store.0), before);
+	let mut store = open_at(&path).expect("reopens");
+	assert_eq!(state(&store.connection), before);
 	assert_eq!(call(&mut store, &sync(0, &[])), pulled(first.to_vec(), 2));
 	assert_eq!(
 		call(&mut store, &Request::Get),
@@ -158,12 +165,12 @@ fn a_database_from_a_newer_schema_is_refused_unchanged() {
 	let scratch = Scratch::new("newer");
 	let (store, path) = opened(&scratch);
 	store
-		.0
+		.connection
 		.pragma_update(None, "user_version", MIGRATIONS.len() as i64 + 1)
 		.expect("sets the version");
 	drop(store);
 	let bytes = fs::read(&path).expect("reads");
-	assert_eq!(Store::open(&path).err(), Some(Cause::NewerSchema));
+	assert_eq!(open_at(&path).err(), Some(Cause::NewerSchema));
 	assert_eq!(fs::read(&path).expect("reads"), bytes);
 }
 
@@ -174,7 +181,7 @@ fn a_database_that_fails_its_integrity_check_is_refused_unchanged() {
 	let writes: Vec<_> = (0..40).map(|id| write(id, 1, 200)).collect();
 	call(&mut store, &sync(0, &writes));
 	let (index_page, page_size): (i64, i64) = store
-		.0
+		.connection
 		.query_row(
 			"SELECT rootpage, (SELECT page_size FROM pragma_page_size) FROM sqlite_schema WHERE name = 'sqlite_autoindex_note_2'",
 			[],
@@ -193,7 +200,7 @@ fn a_database_that_fails_its_integrity_check_is_refused_unchanged() {
 		.expect("tightens a check the stored notes break");
 	drop(violated);
 	let bytes = fs::read(&path).expect("reads");
-	assert_eq!(Store::open(&path).err(), Some(Cause::Damaged));
+	assert_eq!(open_at(&path).err(), Some(Cause::Damaged));
 	assert_eq!(fs::read(&path).expect("reads"), bytes);
 
 	let mut bytes = bytes;
@@ -201,14 +208,14 @@ fn a_database_that_fails_its_integrity_check_is_refused_unchanged() {
 	bytes[start..start + 16].fill(0);
 	fs::write(&path, &bytes).expect("damages the index");
 	assert_eq!(
-		Store::open(&path).err(),
+		open_at(&path).err(),
 		Some(Cause::Sqlite(ErrorCode::DatabaseCorrupt))
 	);
 	assert_eq!(fs::read(&path).expect("reads"), bytes);
 
 	fs::write(&path, payload(8192, 5)).expect("overwrites");
 	assert_eq!(
-		Store::open(&path).err(),
+		open_at(&path).err(),
 		Some(Cause::Sqlite(ErrorCode::NotADatabase))
 	);
 	assert_eq!(fs::read(&path).expect("reads"), payload(8192, 5));
@@ -219,7 +226,7 @@ fn a_database_that_cannot_be_created_is_an_io_failure() {
 	let scratch = Scratch::new("missing");
 	let path = scratch.join("absent").join("native-note.sqlite");
 	assert_eq!(
-		Store::open(&path).err(),
+		open_at(&path).err(),
 		Some(Cause::Io(std::io::ErrorKind::NotFound))
 	);
 }
@@ -338,29 +345,29 @@ fn a_seq_past_what_sqlite_holds_or_a_stored_value_out_of_range_answers_a_storage
 	let scratch = Scratch::new("ranges");
 	let (mut store, _) = opened(&scratch);
 	store
-		.0
+		.connection
 		.execute(
 			"INSERT INTO note VALUES (?1, 1, ?2, ?3, x'')",
 			rusqlite::params![[1_u8; 16], i64::MAX, [2_u8; 16]],
 		)
 		.expect("seeds the last seq");
-	let before = state(&store.0);
+	let before = state(&store.connection);
 	assert_eq!(
 		store.answer(&sync(0, &[write(9, 1, 8)])).err(),
 		Some(Failure::Storage(Cause::Conversion))
 	);
-	assert_eq!(state(&store.0), before);
+	assert_eq!(state(&store.connection), before);
 	assert_eq!(
 		call(&mut store, &sync(i64::MAX as u64, &[])),
 		pulled(Vec::new(), i64::MAX as u64)
 	);
 
 	store
-		.0
+		.connection
 		.execute("UPDATE note SET v = ?1", [i64::from(u32::MAX) + 1])
 		.expect("stores a v past u32");
 	store
-		.0
+		.connection
 		.execute(
 			"INSERT INTO content_key VALUES (1, ?1, x'00')",
 			[i64::from(u32::MAX) + 1],
@@ -377,19 +384,19 @@ fn a_seq_past_what_sqlite_holds_or_a_stored_value_out_of_range_answers_a_storage
 		);
 	}
 	store
-		.0
+		.connection
 		.execute("DELETE FROM content_key", [])
 		.expect("drops the blob");
 	store
-		.0
+		.connection
 		.execute("UPDATE note SET v = 1, seq = 1", [])
 		.expect("restores the note");
 	store
-		.0
+		.connection
 		.execute("INSERT INTO content_key VALUES (1, ?1, x'00')", [-1])
 		.expect_err("the schema refuses a v below 1");
 	store
-		.0
+		.connection
 		.execute(
 			"INSERT INTO note VALUES (x'00', 1, 2, ?1, x'')",
 			[[0_u8; 16]],
@@ -435,4 +442,128 @@ fn a_request_waits_for_another_connection_holding_the_write_lock() {
 	);
 	assert!(started.elapsed() >= Duration::from_millis(200));
 	holder.join().expect("the holder finishes");
+}
+
+fn new_notes(ids: std::ops::Range<u8>) -> Vec<Record> {
+	ids.map(|id| write(id, 1, 16)).collect()
+}
+
+fn recorded(scratch: &Scratch) -> String {
+	fs::read_to_string(scratch.join("seq")).expect("reads the seq file")
+}
+
+#[test]
+fn a_database_restored_from_a_backup_numbers_new_writes_above_every_seq_it_handed_out() {
+	let scratch = Scratch::new("restore");
+	let backup = Scratch::new("restore-backup");
+	let (mut store, path) = opened(&scratch);
+	assert!(!scratch.join("seq").exists());
+	let before = new_notes(0..100);
+	call(&mut store, &sync(0, &before));
+	let copy = backup.join("native-note.sqlite");
+	store
+		.connection
+		.execute("VACUUM INTO ?1", [copy.to_str().expect("UTF-8")])
+		.expect("backs up at seq 100");
+	call(&mut store, &sync(100, &new_notes(100..150)));
+	assert_eq!(recorded(&scratch), "150\n");
+	assert_eq!(mode(&scratch.join("seq")), 0o600);
+	drop(store);
+
+	for file in ["native-note.sqlite-wal", "native-note.sqlite-shm"] {
+		fs::remove_file(scratch.join(file)).ok();
+	}
+	fs::copy(&copy, &path).expect("restores the backup");
+	let mut store = open_at(&path).expect("opens the restored database");
+	assert_eq!(call(&mut store, &sync(150, &[])), pulled(Vec::new(), 150));
+
+	let after = [write(200, 1, 16), write(0, 2, 16)];
+	assert_eq!(
+		call(&mut store, &sync(150, &after)),
+		Response::Sync {
+			results: vec![result(Status::Accepted, 1), result(Status::Accepted, 2)],
+			changes: after.to_vec(),
+			next_seq: Seq(152),
+			more: false,
+		}
+	);
+	assert_eq!(recorded(&scratch), "152\n");
+	assert_eq!(
+		call(&mut store, &sync(150, &[])),
+		pulled(after.to_vec(), 152)
+	);
+	assert_eq!(
+		call(&mut store, &sync(151, &[])),
+		pulled(after[1..].to_vec(), 152)
+	);
+	let mut everything = before[1..].to_vec();
+	everything.extend(after);
+	assert_eq!(call(&mut store, &sync(0, &[])), pulled(everything, 152));
+}
+
+#[test]
+fn the_highest_seq_reaches_its_file_before_commit_and_a_failed_write_rolls_the_request_back() {
+	let scratch = Scratch::new("seq-file");
+	let (mut store, _) = opened(&scratch);
+	call(&mut store, &sync(0, &[write(1, 1, 64)]));
+	assert_eq!(recorded(&scratch), "1\n");
+
+	fs::create_dir(scratch.join("seq.new")).expect("blocks the temporary file");
+	let before = state(&store.connection);
+	assert_eq!(
+		store.answer(&sync(1, &[write(2, 1, 64)])).err(),
+		Some(Failure::Storage(Cause::Io(
+			std::io::ErrorKind::AlreadyExists
+		)))
+	);
+	assert_eq!(state(&store.connection), before);
+	assert!(store.connection.is_autocommit());
+	assert_eq!(recorded(&scratch), "1\n");
+
+	let unstamped = [
+		sync(0, &[]),
+		sync(0, &[write(1, 1, 8), write(3, 1, NOTE_MAX + 1)]),
+		Request::Put {
+			v: Version(1),
+			blob: vec![1; 60],
+		},
+		Request::Get,
+	];
+	for request in &unstamped {
+		store.answer(request).expect("answers without a new seq");
+	}
+	assert_eq!(recorded(&scratch), "1\n");
+
+	fs::remove_dir(scratch.join("seq.new")).expect("clears the way");
+	assert_eq!(
+		call(&mut store, &sync(1, &[write(2, 1, 64)])),
+		Response::Sync {
+			results: vec![result(Status::Accepted, 1)],
+			changes: vec![write(2, 1, 64)],
+			next_seq: Seq(2),
+			more: false,
+		}
+	);
+	assert_eq!(recorded(&scratch), "2\n");
+	assert!(!scratch.join("seq.new").exists());
+}
+
+#[test]
+fn a_seq_file_ahead_of_the_database_after_a_crash_before_commit_only_skips_numbers() {
+	let scratch = Scratch::new("seq-ahead");
+	let (mut store, path) = opened(&scratch);
+	call(&mut store, &sync(0, &[write(1, 1, 64)]));
+	drop(store);
+	fs::write(scratch.join("seq"), "7\n").expect("leaves the file ahead");
+	let mut store = open_at(&path).expect("opens");
+	assert_eq!(
+		call(&mut store, &sync(0, &[])),
+		pulled(vec![write(1, 1, 64)], 7)
+	);
+	call(&mut store, &sync(7, &[write(2, 1, 64)]));
+	assert_eq!(recorded(&scratch), "8\n");
+	assert_eq!(
+		call(&mut store, &sync(7, &[])),
+		pulled(vec![write(2, 1, 64)], 8)
+	);
 }

@@ -49,6 +49,13 @@ fn each_event_is_one_line_of_fixed_keys_and_categories() {
 		),
 		(
 			Event::StartupFailed {
+				stage: Stage::Seq,
+				cause: Cause::Malformed,
+			},
+			"level=error event=startup_failed stage=seq cause=malformed",
+		),
+		(
+			Event::StartupFailed {
 				stage: Stage::Listen,
 				cause: Cause::Io(ErrorKind::AddrInUse),
 			},

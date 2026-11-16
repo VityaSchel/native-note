@@ -18,6 +18,7 @@ pub enum Event<'a> {
 pub enum Stage {
 	DataDirectory,
 	ApiKey,
+	Seq,
 	Database,
 	Listen,
 	Workers,
@@ -105,6 +106,7 @@ impl fmt::Display for Stage {
 		f.write_str(match self {
 			Stage::DataDirectory => "data_directory",
 			Stage::ApiKey => "api_key",
+			Stage::Seq => "seq",
 			Stage::Database => "database",
 			Stage::Listen => "listen",
 			Stage::Workers => "workers",

@@ -53,6 +53,8 @@ SQLite: `<data directory>/native-note.sqlite`, created at `0600`, which its WAL 
 
 One `BEGIN IMMEDIATE` transaction per request. The server builds the response inside it, `sync` changes included, and commits before sealing. A fault inside it, or a failed commit, rolls it back and gets [`error`](../docs/PROTOCOL.md#response-error); only a failure to seal, answered `500`, or to send can follow a commit. Failures after unsealing are logged by category, not counted.
 
+`<data directory>/seq` holds the highest `seq` ever committed, as decimal ASCII and a newline at `0600`, written the way the API key is. A transaction that stamps new `seq`s writes the new highest there before COMMIT; a failed write rolls the transaction back and answers `error`. Startup reads the file: a missing one is 0, and an unreadable or malformed one fails startup before the database is opened. A database restored from a backup thus numbers new writes above every `seq` the server handed out.
+
 Logging is one `key=value` line per event on stderr, which the journal timestamps. Events carry only addresses, the operator's paths and fixed categories: SQLite errors by result code, I/O errors by kind, decode errors by variant.
 
 Crash-only: no signal handlers; SIGTERM and SIGINT end the process at once.
@@ -71,7 +73,7 @@ CREATE TABLE note (
 ) STRICT;
 ```
 
-`seq` is reassigned on every write, so it is not the rowid, which reuses freed values. The latest [`seq`](../docs/PROTOCOL.md#ordering) is `MAX(seq)`, read through its unique index; notes are never deleted, so it never goes back, and no counter is stored. SQLite holds `seq` up to `i64::MAX`, and a write past it answers `error`.
+`seq` is reassigned on every write, so it is not the rowid, which reuses freed values. The latest [`seq`](../docs/PROTOCOL.md#ordering) is the larger of `MAX(seq)`, read through its unique index, and the `seq` file's. SQLite holds `seq` up to `i64::MAX`, and a write past it answers `error`.
 
 ### `content_key` table
 

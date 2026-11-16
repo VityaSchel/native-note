@@ -1,5 +1,5 @@
 use crate::support::{Client, api_key, call, mode};
-use native_note_core::{Request, Seq, Version};
+use native_note_core::{Record, Request, Seq, Version};
 use native_note_testkit::client::{Response, Status};
 use native_note_testkit::corpus::{payload, write};
 use native_note_testkit::scratch::Scratch;
@@ -172,4 +172,75 @@ fn the_binary_exits_2_on_usage_and_1_on_a_damaged_database_leaving_it_as_it_is()
 		"{stderr}"
 	);
 	assert_eq!(fs::read(&database).expect("reads"), payload(8192, 3));
+}
+
+fn sync(since: u64, writes: &[Record]) -> Request {
+	Request::Sync {
+		since: Seq(since),
+		writes: writes.to_vec(),
+	}
+}
+
+fn new_notes(ids: std::ops::Range<u8>) -> Vec<Record> {
+	ids.map(|id| write(id, 1, 32)).collect()
+}
+
+#[test]
+fn a_database_restored_from_a_backup_numbers_new_writes_above_every_seq_handed_out() {
+	let scratch = Scratch::new("binary-restore");
+	let data = scratch.join("data");
+	let backup = scratch.join("backup.sqlite");
+	let database = data.join("native-note.sqlite");
+	let mut server = Process::start(&data);
+	server.line();
+	let mut client = Client::new(server.address(), api_key(&data), 14);
+	call(&mut client, &sync(0, &new_notes(0..100)));
+	rusqlite::Connection::open(&database)
+		.and_then(|connection| {
+			connection.busy_timeout(std::time::Duration::from_secs(5))?;
+			connection.execute("VACUUM INTO ?1", [backup.to_str().expect("UTF-8")])
+		})
+		.expect("backs up the live database at seq 100");
+	let Response::Sync { next_seq, .. } = call(&mut client, &sync(100, &new_notes(100..150)))
+	else {
+		panic!("a sync response");
+	};
+	assert_eq!(next_seq, Seq(150));
+	server.kill();
+
+	for file in ["native-note.sqlite-wal", "native-note.sqlite-shm"] {
+		fs::remove_file(data.join(file)).ok();
+	}
+	fs::copy(&backup, &database).expect("restores the backup");
+	let mut server = Process::start(&data);
+	let address = server.address();
+	let mut writer = Client::new(address, api_key(&data), 15);
+	let mut reader = Client::new(address, api_key(&data), 16);
+	let pulled = |changes: Vec<Record>, next_seq| Response::Sync {
+		results: Vec::new(),
+		changes,
+		next_seq: Seq(next_seq),
+		more: false,
+	};
+	assert_eq!(call(&mut reader, &sync(150, &[])), pulled(Vec::new(), 150));
+	let after = [write(200, 1, 32), write(201, 1, 32)];
+	for (index, note) in after.iter().enumerate() {
+		let Response::Sync {
+			results, next_seq, ..
+		} = call(&mut writer, &sync(150, std::slice::from_ref(note)))
+		else {
+			panic!("a sync response");
+		};
+		assert_eq!(results[0].status, Status::Accepted);
+		assert_eq!(next_seq, Seq(151 + index as u64));
+	}
+	assert_eq!(
+		call(&mut reader, &sync(150, &[])),
+		pulled(after.to_vec(), 152)
+	);
+	assert_eq!(
+		fs::read_to_string(data.join("seq")).expect("reads"),
+		"152\n"
+	);
+	server.kill();
 }

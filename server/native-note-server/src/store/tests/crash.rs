@@ -1,5 +1,4 @@
 use super::{State, state, sync, write};
-use crate::store::Store;
 use native_note_core::{Request, Version};
 use native_note_testkit::corpus::SplitMix64;
 use native_note_testkit::scratch::Scratch;
@@ -39,8 +38,8 @@ impl Files {
 		if !self.wal.is_empty() {
 			fs::write(directory.join(WAL), &self.wal).expect("writes the log");
 		}
-		let store = Store::open(&directory.join(DATABASE)).expect("boots after the cut");
-		state(&store.0)
+		let store = super::open_at(&directory.join(DATABASE)).expect("boots after the cut");
+		state(&store.connection)
 	}
 }
 
@@ -131,18 +130,24 @@ fn workload() -> Vec<Request> {
 fn a_power_cut_at_any_write_of_a_request_boots_to_the_state_before_or_after_it() {
 	let scratch = Scratch::new("crash");
 	let images = Scratch::new("crash-images");
-	let mut store = Store::open(&scratch.join(DATABASE)).expect("opens");
+	let mut store = super::open_at(&scratch.join(DATABASE)).expect("opens");
 	store
-		.0
+		.connection
 		.pragma_update(None, "wal_autocheckpoint", 64)
 		.expect("checkpoints often");
 	let mut rng = SplitMix64::new(0x6375_7473);
-	let mut before = (Files::read(scratch.path()), state(&store.0));
+	let mut before = (Files::read(scratch.path()), state(&store.connection));
 	let (mut torn_before, mut torn_after, mut mixes) = (0, 0, 0);
 	for (index, request) in workload().iter().enumerate() {
 		store.answer(request).expect("answers");
-		let after = (Files::read(scratch.path()), state(&store.0));
+		let after = (Files::read(scratch.path()), state(&store.connection));
 		assert_ne!(after.1, before.1, "request {index} changed nothing");
+		let highest = after.1.notes.last().map_or(0, |note| note.0);
+		assert_eq!(
+			fs::read_to_string(scratch.join("seq")).expect("reads the seq file"),
+			format!("{highest}\n"),
+			"request {index}"
+		);
 
 		let (old, new) = (&before.0, &after.0);
 		let (first, end) =
