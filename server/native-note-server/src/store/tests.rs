@@ -549,6 +549,39 @@ fn the_highest_seq_reaches_its_file_before_commit_and_a_failed_write_rolls_the_r
 }
 
 #[test]
+fn a_database_restored_without_its_seq_file_numbers_new_writes_far_above_every_seq_it_holds() {
+	let old = Scratch::new("restore-old-host");
+	let new = Scratch::new("restore-new-host");
+	let (mut store, _) = opened(&old);
+	call(&mut store, &sync(0, &new_notes(0..100)));
+	let copy = new.join("native-note.sqlite");
+	store
+		.connection
+		.execute("VACUUM INTO ?1", [copy.to_str().expect("UTF-8")])
+		.expect("backs up at seq 100");
+	call(&mut store, &sync(100, &new_notes(100..150)));
+	drop(store);
+
+	let resumed = 100 + (1 << 40);
+	for _ in 0..2 {
+		let mut store = open_at(&copy).expect("opens on the new host");
+		assert_eq!(
+			call(&mut store, &sync(150, &[])),
+			pulled(Vec::new(), resumed)
+		);
+	}
+	assert!(!new.join("seq").exists());
+	let mut store = open_at(&copy).expect("opens on the new host");
+	let after = write(200, 1, 16);
+	call(&mut store, &sync(150, std::slice::from_ref(&after)));
+	assert_eq!(recorded(&new), format!("{}\n", resumed + 1));
+	assert_eq!(
+		call(&mut store, &sync(150, &[])),
+		pulled(vec![after], resumed + 1)
+	);
+}
+
+#[test]
 fn a_seq_file_ahead_of_the_database_after_a_crash_before_commit_only_skips_numbers() {
 	let scratch = Scratch::new("seq-ahead");
 	let (mut store, path) = opened(&scratch);

@@ -70,4 +70,4 @@ sudo chown --reference=/var/lib/native-note-server /var/lib/native-note-server/n
 sudo systemctl start native-note-server
 ```
 
-The `seq` file stays in the data directory and is not restored with the database, so the server numbers new writes above every `seq` it handed out. A Mac that synced after the backup was taken keeps its notes and gets every write made after the restore; it reports the server as behind it on meeting a note older there than its own, and does not converge with the restored server yet ([roadmap](../ROADMAP.md)). A Mac set up after the restore gets the backup's notes.
+The `seq` file is not restored with the database: kept in the data directory, or missing on a new host, it makes the server number new writes above every `seq` it handed out. A Mac that synced after the backup was taken keeps its notes and gets every write made after the restore; it reports the server as behind it on meeting a note older there than its own, and does not converge with the restored server yet ([roadmap](../ROADMAP.md)). A Mac set up after the restore gets the backup's notes.

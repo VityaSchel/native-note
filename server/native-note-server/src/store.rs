@@ -32,7 +32,8 @@ pub struct Store {
 }
 
 impl Store {
-	pub fn open(path: &Path, seq_file: SeqFile) -> Result<Store, Cause> {
+	pub fn open(path: &Path, mut seq_file: SeqFile) -> Result<Store, Cause> {
+		let existed = path.try_exists()?;
 		OpenOptions::new()
 			.write(true)
 			.create(true)
@@ -49,6 +50,9 @@ impl Store {
 		}
 		connection.pragma_update(None, "synchronous", "FULL")?;
 		migrate(&mut connection)?;
+		if existed {
+			seq_file.resume_beside(stored_seq(&connection)?);
+		}
 		Ok(Store {
 			connection,
 			seq_file,
@@ -130,6 +134,12 @@ pub(crate) struct Rows<'c> {
 	stamped: Option<Seq>,
 }
 
+fn stored_seq(connection: &Connection) -> rusqlite::Result<Seq> {
+	connection.query_row("SELECT COALESCE(MAX(seq), 0) FROM note", [], |row| {
+		seq_column(row, 0)
+	})
+}
+
 fn seq_column(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Seq> {
 	let value: i64 = row.get(index)?;
 	u64::try_from(value)
@@ -157,11 +167,7 @@ impl Storage for Rows<'_> {
 	type Error = rusqlite::Error;
 
 	fn latest_seq(&mut self) -> rusqlite::Result<Seq> {
-		self.transaction
-			.query_row("SELECT COALESCE(MAX(seq), 0) FROM note", [], |row| {
-				seq_column(row, 0)
-			})
-			.map(|stored| stored.max(self.recorded))
+		stored_seq(&self.transaction).map(|stored| stored.max(self.recorded))
 	}
 
 	fn note_version(&mut self, id: &BlindedNoteId) -> rusqlite::Result<Option<Version>> {
