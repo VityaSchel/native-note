@@ -20,6 +20,7 @@ pub fn sample_note_as(uuid: [u8; 16], body: &str) -> Content {
 		created_at: CREATED_AT,
 		updated_at: UPDATED_AT,
 		body: body.to_string(),
+		ext: Vec::new(),
 	}
 }
 
@@ -37,12 +38,14 @@ pub(super) fn describe(value: &Content) -> Value {
 			created_at,
 			updated_at,
 			body,
+			ext,
 		} => json!({
 			"kind": "note",
 			"uuid": hx(uuid),
 			"createdAt": created_at,
 			"updatedAt": updated_at,
 			"body": body,
+			"ext": hx(ext),
 		}),
 		Content::Tombstone { uuid, deleted_at } => json!({
 			"kind": "tombstone",
@@ -75,6 +78,7 @@ fn note_with_body_bytes(body: &[u8]) -> Vec<u8> {
 	fields.extend_from_slice(&UPDATED_AT.to_be_bytes());
 	fields.extend_from_slice(&(body.len() as u32).to_be_bytes());
 	fields.extend_from_slice(body);
+	fields.extend_from_slice(&0u32.to_be_bytes());
 	filled(fields)
 }
 
@@ -95,6 +99,16 @@ fn reject(name: &str, bytes: Vec<u8>, expected: DecodeError) -> Value {
 	})
 }
 
+fn reject_from_newer(name: &str, bytes: Vec<u8>) -> Value {
+	let mut case = reject(name, bytes.clone(), DecodeError::UnknownDiscriminant);
+	case["prefixUuid"] = json!(hx(&content::prefix_uuid(&bytes).unwrap()));
+	case
+}
+
+pub(super) fn ext_bytes() -> Vec<u8> {
+	[b"ext".as_slice(), &[0x00, 0xff, 0x00]].concat()
+}
+
 pub fn content() -> Value {
 	let valid = content::encode(&sample_tombstone());
 
@@ -104,7 +118,8 @@ pub fn content() -> Value {
 	let mut wrong_kind = valid.clone();
 	wrong_kind[1] = 0x7f;
 
-	let fields_before_body = 1 + 1 + 16 + 8 + 8 + 4;
+	let prefix_only = wrong_version[..18].to_vec();
+
 	let unpadded = tombstone_fields();
 	let mut dirty_last = valid.clone();
 	*dirty_last.last_mut().expect("content is never empty") = 0x01;
@@ -114,7 +129,7 @@ pub fn content() -> Value {
 	let dirty_past_a_block = [valid.clone(), vec![0; content::BLOCK - 1], vec![0x01]].concat();
 	let off_boundary = [valid.clone(), vec![0]].concat();
 	let aligned = content::encode(&sample_note(
-		&"a".repeat(content::BLOCK - fields_before_body),
+		&"a".repeat(content::BLOCK - content::NOTE_FIELDS),
 	));
 	let whole_block = [aligned, vec![0; content::BLOCK]].concat();
 	let truncated = unpadded[..unpadded.len() - 1].to_vec();
@@ -123,21 +138,36 @@ pub fn content() -> Value {
 	let mut huge_length = content::encode(&sample_note("x"));
 	huge_length[body_len_at..body_len_at + 4].copy_from_slice(&u32::MAX.to_be_bytes());
 
+	let ext_len_at = body_len_at + 4 + 1;
+	let mut ext_past_the_end = content::encode(&sample_note("x"));
+	let past_the_end = (ext_past_the_end.len() - (ext_len_at + 4) + 1) as u32;
+	ext_past_the_end[ext_len_at..ext_len_at + 4].copy_from_slice(&past_the_end.to_be_bytes());
+
 	file(
-		"Note content: version ‖ kind ‖ fields ‖ zero fill up to the next multiple of 4096 bytes, none when the fields end on one. Timestamps are signed epoch milliseconds; the body is length-prefixed UTF-8 per RFC 3629. Nothing else is validated, so any uuid and timestamp order decodes.",
+		"Note content: version ‖ kind ‖ fields ‖ zero fill up to the next multiple of 4096 bytes, none when the fields end on one. Every version and kind begins with version ‖ kind ‖ uuid, so prefixUuid is the UUID a client reads from content it cannot decode. Timestamps are signed epoch milliseconds; the body is length-prefixed UTF-8 per RFC 3629, and ext is length-prefixed bytes kept as they are. Nothing else is validated, so any uuid, timestamp order and ext decodes.",
 		vec![
 			case("note", sample_note("Groceries\nmilk\nbread")),
 			case("tombstone", sample_tombstone()),
 			case(
 				"fieldsFillOneBlockExactly",
-				sample_note(&"a".repeat(content::BLOCK - fields_before_body)),
+				sample_note(&"a".repeat(content::BLOCK - content::NOTE_FIELDS)),
 			),
 			case(
 				"oneByteSpillsIntoASecondBlock",
-				sample_note(&"a".repeat(content::BLOCK - fields_before_body + 1)),
+				sample_note(&"a".repeat(content::BLOCK - content::NOTE_FIELDS + 1)),
 			),
 			case("nonAscii", sample_note("Ünïcode — 日本語 🔐")),
 			case("emptyBody", sample_note("")),
+			case(
+				"nonEmptyExt",
+				Content::Note {
+					uuid: uuid_bytes(),
+					created_at: CREATED_AT,
+					updated_at: UPDATED_AT,
+					body: "kept with its ext".to_string(),
+					ext: ext_bytes(),
+				},
+			),
 			case(
 				"beforeEpoch",
 				Content::Note {
@@ -145,6 +175,7 @@ pub fn content() -> Value {
 					created_at: -86_400_000,
 					updated_at: -1,
 					body: "1969".to_string(),
+					ext: Vec::new(),
 				},
 			),
 			case(
@@ -154,18 +185,12 @@ pub fn content() -> Value {
 					created_at: UPDATED_AT,
 					updated_at: CREATED_AT,
 					body: "decodes".to_string(),
+					ext: Vec::new(),
 				},
 			),
-			reject(
-				"rejectUnknownVersion",
-				wrong_version,
-				DecodeError::UnknownDiscriminant,
-			),
-			reject(
-				"rejectUnknownKind",
-				wrong_kind,
-				DecodeError::UnknownDiscriminant,
-			),
+			reject_from_newer("rejectUnknownVersion", wrong_version),
+			reject_from_newer("rejectUnknownKind", wrong_kind),
+			reject_from_newer("rejectUnknownVersionUnpadded", prefix_only),
 			reject(
 				"rejectTrailingBytes",
 				dirty_last,
@@ -204,6 +229,11 @@ pub fn content() -> Value {
 				DecodeError::Truncated,
 			),
 			reject(
+				"rejectExtLengthPastTheEnd",
+				ext_past_the_end,
+				DecodeError::Truncated,
+			),
+			reject(
 				"rejectInvalidUtf8",
 				note_with_body_bytes(&[0xff]),
 				DecodeError::NotCanonical,
@@ -227,19 +257,17 @@ pub fn content() -> Value {
 	)
 }
 
-fn note_case(name: &str, v: u32, value: Content) -> Value {
+fn sealed_case(name: &str, v: u32, plaintext: &[u8], uuid: &[u8; 16]) -> Value {
 	let content_key = seq_bytes(CONTENT_KEY, 32);
-	let blinded = note::blinded_id(&kdf::blinding_key(&content_key), value.uuid());
+	let blinded = note::blinded_id(&kdf::blinding_key(&content_key), uuid);
 	let write_id: [u8; 16] = seq_array(WRITE_ID);
 	let nonce: [u8; 12] = seq_array(NONCE);
-	let plaintext = content::encode(&value);
-	let payload = note::seal(&content_key, &write_id, &nonce, &blinded, v, &plaintext);
+	let payload = note::seal(&content_key, &write_id, &nonce, &blinded, v, plaintext);
 
 	json!({
 		"name": name,
 		"contentKey": hx(&content_key),
-		"content": describe(&value),
-		"plaintext": hx(&plaintext),
+		"plaintext": hx(plaintext),
 		"blindedId": hx(&blinded),
 		"v": v,
 		"writeId": hx(&write_id),
@@ -247,19 +275,38 @@ fn note_case(name: &str, v: u32, value: Content) -> Value {
 		"aad": hx(&note::aad(&blinded, v, &write_id)),
 		"payload": hx(&payload),
 		"roundTrips": note::open(&content_key, &write_id, &blinded, v, &payload).as_deref()
-			== Ok(plaintext.as_slice()),
+			== Ok(plaintext),
 		"opensUnderWrongVersion": note::open(&content_key, &write_id, &blinded, v + 1, &payload)
 			.is_ok(),
 	})
 }
 
+fn note_case(name: &str, v: u32, value: Content) -> Value {
+	let mut case = sealed_case(name, v, &content::encode(&value), value.uuid());
+	case["content"] = describe(&value);
+	case
+}
+
+fn note_from_newer(name: &str, v: u32) -> Value {
+	let mut plaintext = content::encode(&sample_tombstone());
+	plaintext[0] = 0x02;
+	let uuid = content::prefix_uuid(&plaintext).unwrap();
+	let mut case = sealed_case(name, v, &plaintext, &uuid);
+	case["prefixUuid"] = json!(hx(&uuid));
+	case["decodes"] = json!(content::decode(&plaintext).is_ok());
+	case["error"] = json!(format!("{:?}", DecodeError::UnknownDiscriminant));
+	case["matches"] = json!(content::decode(&plaintext) == Err(DecodeError::UnknownDiscriminant));
+	case
+}
+
 pub fn note() -> Value {
 	file(
-		"Note payloads. The key is derived per write from writeId; the AAD binds blindedId, v and writeId, so a payload will not open at another version.",
+		"Note payloads. The key is derived per write from writeId; the AAD binds blindedId, v and writeId, so a payload will not open at another version. Content a client cannot decode still carries the prefix whose prefixUuid re-derives blindedId.",
 		vec![
 			note_case("note", 1, sample_note("Groceries\nmilk\nbread")),
 			note_case("tombstone", 2, sample_tombstone()),
 			note_case("nonAscii", 3, sample_note("Ünïcode — 日本語 🔐")),
+			note_from_newer("rejectUnknownVersion", 4),
 		],
 	)
 }

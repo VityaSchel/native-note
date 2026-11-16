@@ -18,12 +18,12 @@ Boolean fields are assertions: `opens`, `decodes`, `pads`, `unpads`, `roundTrips
 
 `error` names the first failure, reading fields in order. A count larger than the input can hold fails only when an item runs out of input, so an earlier item's own failure comes first.
 
-| `error`               | Meaning                                                                                                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Truncated`           | The input ends inside a field or before a count's items                                                                                                                            |
-| `TrailingBytes`       | Bytes remain after the message, or a non-zero byte in content's fill                                                                                                               |
-| `UnknownDiscriminant` | A `version`, `kind`, `action` or `status` byte the position does not allow                                                                                                         |
-| `NotCanonical`        | A boolean other than `0x00` or `0x01`, invalid UTF-8, a non-zero `seq` on a non-accepted result, or content whose length is not the smallest multiple of 4096 B holding its fields |
+| `error`               | Meaning                                                                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `Truncated`           | The input ends inside a field or before a count's items                                                                                 |
+| `TrailingBytes`       | Bytes remain after the message, or a non-zero byte in content's fill                                                                    |
+| `UnknownDiscriminant` | A `version`, `kind`, `action` or `status` byte the position does not allow                                                              |
+| `NotCanonical`        | A boolean other than `0x00` or `0x01`, invalid UTF-8, or content whose length is not the smallest multiple of 4096 B holding its fields |
 
 A case whose name starts with `reject` is a negative test.
 
@@ -51,14 +51,16 @@ A case whose name starts with `reject` is a negative test.
 
 **`content.json` and `frames.json`**: every `reject` case maps to a rejection rule in [docs/PROTOCOL.md](../docs/PROTOCOL.md).
 
-**`frames.json`** marks each case's `direction`, `request` or `response`: the decoder it goes through.
+**`content.json` and `note.json`**: `prefixUuid` asserts the UUID a client reads from the `version ‖ kind ‖ uuid` prefix of content it cannot decode; in `note.json` it re-derives `blindedId`, so the client reports the change as written by a newer version.
 
-**`envelope.json`**'s `errorFor*` cases carry a request `frame` that opens but fails to unpad or decode, and the server's `response` to it: `responseInner` padded and sealed under `responseNonce`, with the frame's nonce as AAD.
+**`frames.json`** marks each case's `direction`, `request` or `response`: the decoder it goes through. An error response names its `reason`; `errorUnknownReason` decodes, and its `reason` is `fault`, the one a client reads an unknown byte as.
+
+**`envelope.json`**'s `errorFor*` cases carry a request `frame` that opens but fails to unpad or decode, and the server's `response` to it: `responseInner` padded and sealed under `responseNonce`, with the frame's nonce as AAD, and its `reason`.
 
 **`sync.json`**: a request's write order is the client's choice, and a step's `writes` come in the order its `request` carries them.
 
 **`recovery.json`** exchanges name the `device` that sends them. A `put` carries the `recoveryKey`, `contentKey` and `nonce` that seal its blob; a `get` that returns a blob carries the `recoveryKey` the client holds and whether the blob `opens` under it.
 
-**`markdown.json`** cases hold in both directions: rendering `uuid`, `createdAt`, `updatedAt`, `v` and `body` gives `markdown` byte for byte, and parsing `markdown` gives them back.
+**`markdown.json`** cases hold in both directions: rendering `uuid`, `createdAt`, `updatedAt` and `body` gives `markdown` byte for byte, and parsing `markdown` gives them back.
 
-**`export.json`**'s `export` case lists the `entries` its `zip` holds, each a `name` and its `markdown` file. Sealing `zip` gives `file`, and reading `zip` gives `entries`; a writer's own zip of those entries need not match `zip` byte for byte.
+**`export.json`**'s `export` case lists the `entries` its `zip` holds, each a `name` and its `markdown` file. Sealing `zip` gives `file`, and reading `zip` gives `entries`; a writer's own zip of those entries need not match `zip` byte for byte. `rejectNewerVersion`'s `outcome`, `newerVersion`, asserts that a file starting with `NNEXPORT` and then any byte but `1` is refused as written by a newer version, never read as a zip.

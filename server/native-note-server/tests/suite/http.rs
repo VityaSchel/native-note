@@ -5,7 +5,7 @@ use crate::support::{
 use native_note_core::{Request, Seq, Version};
 use native_note_server::{Runtime, Timing};
 use native_note_testkit::SEALED_MAX;
-use native_note_testkit::client::{self, Response, Status, sync};
+use native_note_testkit::client::{self, Reason, Response, Status, sync};
 use native_note_testkit::corpus::{payload, write};
 use native_note_testkit::session::Exchange;
 use rusqlite::Connection;
@@ -132,7 +132,10 @@ fn an_oversized_body_gets_413_before_any_of_it_is_sent() {
 	assert_eq!(largest.len(), SEALED_MAX);
 	let reply = post(running.address, &largest);
 	let inner = client.open(&largest, &reply).expect("opens");
-	assert_eq!(client::decode_response(&inner), Response::Error);
+	assert_eq!(
+		client::decode_response(&inner),
+		Response::Error(Reason::Unsupported)
+	);
 	assert_eq!(
 		running.log.lines(),
 		["level=error event=request_failed failure=decode cause=UnknownDiscriminant"]
@@ -143,11 +146,17 @@ fn an_oversized_body_gets_413_before_any_of_it_is_sent() {
 fn a_request_that_unseals_but_does_not_decode_gets_a_sealed_error_and_one_log_line() {
 	let running = start("http-decode");
 	let mut client = running.client(5);
-	assert_eq!(call_inner(&mut client, &[0x02, 0x00]), Response::Error);
+	assert_eq!(
+		call_inner(&mut client, &[0x02, 0x00]),
+		Response::Error(Reason::Malformed)
+	);
 	let unpadded = client::seal(&client::envelope_key(&running.key), [9; 12], &[0; 300]);
 	let reply = post(running.address, &unpadded);
 	let inner = client.open(&unpadded, &reply).expect("opens");
-	assert_eq!(client::decode_response(&inner), Response::Error);
+	assert_eq!(
+		client::decode_response(&inner),
+		Response::Error(Reason::Malformed)
+	);
 	assert_eq!(
 		running.log.lines(),
 		[
@@ -293,12 +302,14 @@ fn concurrent_clients_each_get_their_writes_with_distinct_seqs() {
 				let mut seqs = Vec::new();
 				for round in 0..8_u8 {
 					let write = write(worker * 8 + round, 1, 2_000);
-					let Response::Sync { results, .. } = call(&mut client, &sync(0, &[write]))
+					let Response::Sync {
+						results, next_seq, ..
+					} = call(&mut client, &sync(0, &[write]))
 					else {
 						panic!("a sync response");
 					};
 					assert_eq!(results[0].status, Status::Accepted);
-					seqs.push(results[0].seq);
+					seqs.push(next_seq);
 				}
 				seqs
 			})
@@ -319,7 +330,7 @@ fn a_storage_failure_answers_a_sealed_error_logged_by_category_and_stores_nothin
 	let mut client = running.client(8);
 	assert_eq!(
 		call(&mut client, &sync(0, &[write(1, 1, 64)])),
-		Response::Error
+		Response::Error(Reason::Fault)
 	);
 	release.send(()).expect("lets go");
 	holder.join().expect("lets go");

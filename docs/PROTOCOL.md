@@ -59,7 +59,7 @@ End-to-end encrypted with the Content key, opaque to the server. Fixed binary la
 ```
 version(1) = 0x01
 kind(1)
-  0x01 note        uuid(16) ‖ createdAt_be64 ‖ updatedAt_be64 ‖ bodyLen_be32 ‖ body
+  0x01 note        uuid(16) ‖ createdAt_be64 ‖ updatedAt_be64 ‖ bodyLen_be32 ‖ body ‖ extLen_be32 ‖ ext
   0x02 tombstone   uuid(16) ‖ deletedAt_be64
 fill             zero bytes up to the next multiple of 4096 B, none when the fields end on one
 ```
@@ -67,6 +67,10 @@ fill             zero bytes up to the next multiple of 4096 B, none when the fie
 A decoder rejects a non-zero fill byte as trailing bytes whatever the length, and otherwise a length that is not the smallest multiple of 4096 B holding the fields as not canonical.
 
 Timestamps are epoch milliseconds. `body` is UTF-8 per RFC 3629; anything else is rejected. An unknown `version` or `kind` is rejected.
+
+Every version and kind, present and future, begins with `version ‖ kind ‖ uuid(16)`, so a client that cannot decode the rest still reads the UUID and checks the blinded ID. A client reports a change whose prefix checks out but whose `version` or `kind` it does not know as written by a newer Native Note, not as one that does not open.
+
+`ext` is empty in this version; later versions define its content. A client keeps a note's `ext` byte for byte, writes it back with every edit, and gives a conflict copy the `ext` of the text it copies. A field a client may ignore goes in `ext`; any other change takes a new `version` or `kind`.
 
 Deleting a note writes a tombstone. Tombstones are not garbage-collected.
 
@@ -79,7 +83,7 @@ Every message has exactly one valid encoding:
 - Integers are unsigned big-endian at their stated width, except timestamps which are signed.
 - Variable-length fields are `len_be32 ‖ bytes`. Arrays are `count_be32 ‖ item*`.
 - Booleans are `0x00` or `0x01`. Any other value is rejected.
-- Enum discriminants are one byte. Unknown values are rejected.
+- Enum discriminants are one byte. Unknown values are rejected, except an [`error`](#response-error) `reason`, which a client reads as `fault`.
 - A message must consume its buffer exactly. Trailing bytes are rejected. [Content](#content)'s zero fill is the one exception.
 
 Decoders reject only what these rules and the per-message rules name, so a non-v4 `uuid`, a negative timestamp or a payload too short to open still decodes.
@@ -123,6 +127,8 @@ Each action is one byte; every response except `error` echoes it, and a client t
 | `get`    | 0x02 | Read `contentKeyEncrypted`            |
 | `put`    | 0x03 | Store or rotate `contentKeyEncrypted` |
 
+An action's request and response layouts and the limits never change; a new layout takes a new action byte, which an older server answers with `unsupported`.
+
 ### Action `sync`
 
 ```
@@ -132,21 +138,21 @@ write      blindedId(16) ‖ v_be32 ‖ writeId(16) ‖ payloadLen_be32 ‖ payl
 response   0x01 ‖ resultCount_be32 ‖ result*
                 ‖ changeCount_be32 ‖ change*
                 ‖ nextSeq_be64 ‖ more(1)
-result     status(1) ‖ v_be32 ‖ seq_be64
+result     status(1) ‖ v_be32
 change     same layout as write
 ```
 
-`results` carries one entry per submitted write, in the order submitted. A client treats as an error a response with any other result count, an `accepted` result whose `v` is not the one sent or whose `seq` is `0`, and `more` with no changes or with a `nextSeq` not above `since`, and applies none of it.
+`results` carries one entry per submitted write, in the order submitted. A client treats as an error a response with any other result count, an `accepted` result whose `v` is not the one sent, and `more` with no changes or with a `nextSeq` not above `since`, and applies none of it.
 
-| `status`    | Byte | Description                                            |
-| ----------- | ---- | ------------------------------------------------------ |
-| `accepted`  | 0x01 | Stored. `v` and `seq` are the values now on the server |
-| `conflict`  | 0x02 | `v != storedV + 1`                                     |
-| `too_large` | 0x03 | Payload over the [note limit](#limits)                 |
+| `status`    | Byte | Description                                |
+| ----------- | ---- | ------------------------------------------ |
+| `accepted`  | 0x01 | Stored. `v` is the value now on the server |
+| `conflict`  | 0x02 | `v != storedV + 1`                         |
+| `too_large` | 0x03 | Payload over the [note limit](#limits)     |
 
 A write that fails both checks gets `too_large`.
 
-On every status except `accepted`, `v` is the server's current version and `seq` is `0`; a non-zero `seq` alongside another status is rejected.
+On every status except `accepted`, `v` is the server's current version.
 
 The server applies a `sync`'s writes in the order submitted, then reads `changes`, so accepted writes come back in the same response. A `sync` is applied atomically: after `error` none of its writes are stored, so a retry is safe.
 
@@ -169,10 +175,18 @@ A `put` follows the same [version rule](#notes) as notes and answers `accepted` 
 ### Response `error`
 
 ```
-error response   0xff
+error response   0xff ‖ reason(1)
 ```
 
-A request that unseals but fails to unpad or decode, or hits a fault after unsealing, a full disk included, gets `error`.
+A request that unseals but fails to unpad or decode, or hits a fault after unsealing, gets `error`:
+
+| `reason`      | Byte | Cause                                                                                             |
+| ------------- | ---- | ------------------------------------------------------------------------------------------------- |
+| `malformed`   | 0x01 | The request fails to unpad, or to decode after its action byte                                    |
+| `unsupported` | 0x02 | An action the server does not know or no longer accepts                                           |
+| `fault`       | 0x03 | A storage failure, a full disk, an exhausted `seq`, or a first pending change too large to answer |
+
+A client treats an unknown `reason` as `fault`.
 
 ## HKDF label registry
 

@@ -3,6 +3,7 @@ use argon2::{Algorithm, Argon2, Params, Version};
 use crate::aead::{self, NONCE_LEN, OpenError};
 
 pub const MAGIC: &[u8; 9] = b"NNEXPORT1";
+const FAMILY: &[u8; 8] = b"NNEXPORT";
 const PARAMS_LEN: usize = 12;
 pub const SALT_LEN: usize = 16;
 pub const HEADER_LEN: usize = MAGIC.len() + PARAMS_LEN + SALT_LEN;
@@ -72,6 +73,34 @@ pub fn seal(
 	let header = header(params, salt);
 	let sealed = aead::seal(&key, nonce, zip, &header);
 	Ok([header, sealed].concat())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReadError {
+	NewerVersion,
+	DoesNotOpen,
+}
+
+impl ReadError {
+	pub fn name(&self) -> &'static str {
+		match self {
+			ReadError::NewerVersion => "newerVersion",
+			ReadError::DoesNotOpen => "doesNotOpen",
+		}
+	}
+}
+
+pub fn written_by_newer_version(file: &[u8]) -> bool {
+	file.strip_prefix(FAMILY.as_slice())
+		.and_then(<[u8]>::first)
+		.is_some_and(|byte| byte != MAGIC.last().unwrap())
+}
+
+pub fn read(passphrase: &str, file: &[u8]) -> Result<Vec<u8>, ReadError> {
+	if written_by_newer_version(file) {
+		return Err(ReadError::NewerVersion);
+	}
+	open(passphrase, file).map_err(|_| ReadError::DoesNotOpen)
 }
 
 pub fn open(passphrase: &str, file: &[u8]) -> Result<Vec<u8>, OpenError> {

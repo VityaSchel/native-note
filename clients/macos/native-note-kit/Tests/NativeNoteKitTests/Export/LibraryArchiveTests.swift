@@ -4,9 +4,10 @@ import Testing
 @testable import NativeNoteKit
 
 struct LibraryArchiveTests {
-	@Test func notesSurviveTheArchive() throws {
+	@Test func notesSurviveTheArchiveAndComeBackUnsynced() throws {
 		var edited = sampleNote(body: "Shopping\r\nbread\n---\nnot front matter")
 		edited.v = 7
+		edited.ext = Data([0x65, 0x78, 0x74])
 		let notes = [edited, sampleNote(body: ""), sampleNote(body: "Shopping")]
 
 		let restored = try LibraryArchive.notes(in: LibraryArchive.archive(notes))
@@ -15,7 +16,7 @@ struct LibraryArchiveTests {
 		#expect(restored.map(\.body) == notes.map(\.body))
 		#expect(restored.map(\.createdAt) == notes.map(\.createdAt))
 		#expect(restored.map(\.updatedAt) == notes.map(\.updatedAt))
-		#expect(restored.map(\.v) == notes.map(\.v))
+		#expect(restored.allSatisfy { $0.v == 0 && $0.ext.isEmpty && $0.dirty })
 	}
 
 	@Test func anExportImportWouldRefuseIsNotWritten() throws {

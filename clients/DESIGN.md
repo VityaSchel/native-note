@@ -7,7 +7,7 @@ SQLCipher in WAL mode with `synchronous=FULL`, `fullfsync` and `checkpoint_fullf
 - A note saves at most ~300 ms after its first unsaved edit, and at once on leaving the note, lock, the app resigning active, sleep and quit.
 - Budgets: a force-quit loses at most the last 400 ms of typing; a keystroke on 1,000 notes costs at most 20 times one in a plain text view and 3 times one on 10 notes; a save takes at most 100 ms at the 95th percentile.
 - A new note is marked for sync only at its first edit. A new note left empty is discarded, on lock and quit too: removed if no server has seen it, kept if a pull has written it since the list last showed it, tombstoned otherwise; one discarded during its first push is tombstoned [when that push lands](#conflicts).
-- A local save never bumps `v` and never writes to a tombstone. Undoing a delete restores the text as a new note with the deleted one's timestamps, until the library locks.
+- A local save never bumps `v` and never writes to a tombstone. Undoing a delete restores the text as a new note with the deleted one's timestamps and `ext`, until the library locks.
 - A failed save retries with the latest text, across lock and unlock, and is reported once until no save fails. Lock does not wait for it and shows the failure on the lock screen.
 - Quit with an unsaved edit asks first.
 
@@ -24,8 +24,8 @@ CREATE TABLE note (
     deleted   INTEGER NOT NULL DEFAULT 0,
     dirty     INTEGER NOT NULL DEFAULT 0,
     v         INTEGER NOT NULL DEFAULT 0,
-    seq       INTEGER,
-    pulled    INTEGER NOT NULL DEFAULT 0
+    pulled    INTEGER NOT NULL DEFAULT 0,
+    ext       BLOB NOT NULL DEFAULT x''
 ) STRICT;
 CREATE INDEX note_updatedAt ON note (updatedAt DESC);
 CREATE INDEX note_dirty ON note (dirty) WHERE dirty = 1;
@@ -46,7 +46,7 @@ END;
 CREATE TABLE meta (k TEXT PRIMARY KEY NOT NULL, v BLOB NOT NULL) STRICT;
 ```
 
-Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `seq` stays `NULL`, since a change carries no `seq`. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, the recovery blob's pinned `v`, and the IDs of notes first pushed since the last pull that left `more` clear.
+Timestamps are epoch milliseconds, as in [note content](../docs/PROTOCOL.md#content), held as `Int64` and converted to `Date` only for display, so any pulled `i64` survives. Columns are plaintext inside SQLCipher, so FTS5 works. `dirty` is the outbox. `ext` holds the note's [`ext`](../docs/PROTOCOL.md#content) byte for byte: a pull writes it, a push sends it, a local edit never changes it, and a new, imported or deleted note holds it empty. `meta` holds sync state: the Content key, API key, server URL, the last pulled `seq` with the blinded ID and `v` of the write there, the recovery blob's pinned `v`, and the IDs of notes first pushed since the last pull that left `more` clear.
 
 Search matches whole words, and the last word as a prefix from two characters, ranked by relevance. A search survives lock and reruns on unlock.
 
@@ -126,8 +126,8 @@ Applies only with a sync server. The recovery credential is the [Recovery key](.
 Every recovery-blob `put` follows the [pin rule](../docs/PROTOCOL.md#recovery-key):
 
 - A `put` whose response is lost is sent again unchanged.
-- A `put` whose answer never arrives intact, as when a proxy forwards it and then fails, is settled by a `get`: a blob that opens under the Recovery key still in memory means it landed. When that `get` fails, or a conflict's `get` fails, the outcome is unknown and the words stay in memory for a retry.
-- A `put` counts as not sent only when every attempt failed to reach the server. A `put` given up on can still land later, since nothing in it expires.
+- A `put` whose answer never arrives intact, as when a proxy forwards it and then fails, or arrives as a `fault`, is settled by a `get`: a blob that opens under the Recovery key still in memory means it landed. When that `get` fails, or a conflict's `get` fails, the outcome is unknown and the words stay in memory for a retry.
+- A `put` counts as not sent only when every attempt failed to reach the server, and as not stored when the server answered `malformed` or `unsupported`. A `put` given up on can still land later, since nothing in it expires.
 - A conflict whose fetched blob [does not open](../docs/PROTOCOL.md#actions-get-and-put) under the Recovery key in memory routes setup to the join, and makes rotation report that another device rotated.
 
 Cancel stops setup, join and Change Server while nothing is stored, and is off while a recovery-blob `put` is in flight.
@@ -158,25 +158,27 @@ A sync runs 30 s after the last edit, when the app becomes or stops being active
 
 A save carries the `v` its edit began at. `pulled` marks a row whose text a pull wrote; a save whose `v` no longer matches such a row lands as a new note, which the editor follows, so no save writes over pulled text.
 
+An [`error`](../docs/PROTOCOL.md#response-error) fails the sync or setup step and is reported by its `reason`, `unsupported` as needing a newer app; an unknown `reason` reads as `fault`.
+
 The server URL may be plain `http`, since everything past the URL is sealed. A stored address that is not an `http` or `https` URL with a host is reported as an error, and sync does not start. Requests carry only fixed headers, the same on every device, so nothing outside the envelope tells devices, builds or languages apart.
 
 ## Pull verification
 
 Each pulled change, tombstones included, must pass three checks:
 
-- It decrypts and its content decodes.
-- Its decrypted `uuid` re-derives the `blindedId` it arrived under.
+- It decrypts, and the `uuid` its content [begins with](../docs/PROTOCOL.md#content) re-derives the `blindedId` it arrived under.
+- Its content decodes.
 - Its `v` is not below the local `v`. Equal passes, since a device's own write comes back, and is not applied.
 
-A change that fails a check is reported and not applied, so only a pulled tombstone that passes all three removes a local note. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, a `put` `conflict` below the pin, or a `nextSeq` below the client's `since` means the server is behind the client: the client reports it and does not retry in a loop. A response whose `nextSeq` is below `since` is not applied at all, and `since` stays.
+A change that fails a check is reported and not applied, so only a pulled tombstone that passes all three removes a local note. One that fails only to decode, over a `version` or `kind` this client does not know, is reported as written by a newer version. A pulled `v` below the local `v`, a push `conflict` carrying a `v` below it, a `put` `conflict` below the pin, or a `nextSeq` below the client's `since` means the server is behind the client: the client reports it and does not retry in a loop. A response whose `nextSeq` is below `since` is not applied at all, and `since` stays.
 
 ## Conflicts
 
-Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note, with a new UUID, the unpushed `createdAt` and `updatedAt`, and dirty at `v = 0`, and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text, and the original keeps it locally and is marked clean; a dirty tombstone there is marked clean without a push.
+Sync first flushes each note's pending save. A pulled change whose `v` is above the local `v`, for a note with unpushed edits, saves the unpushed text as a new note, with a new UUID, the unpushed `createdAt`, `updatedAt` and `ext`, and dirty at `v = 0`, and applies the pulled version, in one transaction; when the bodies match, no copy is made. A dirty local tombstone yields to a pulled edit, and a pulled tombstone over unpushed edits keeps the text as the copy. The open editor follows the copy. A dirty note at `v = u32::MAX`, which [no write can follow](../docs/PROTOCOL.md#notes), takes the same copy path without a pull: the copy takes the unpushed text, and the original keeps it locally and is marked clean; a dirty tombstone there is marked clean without a push.
 
 A pulled change carrying the `writeId` of our own unacknowledged write is that write already stored after a lost response: it counts as `accepted`, not a conflict. An `accepted` write sets the note's `v` and clears `dirty` only if the note was not saved after the write was sealed; otherwise the note stays dirty and pushes at the new `v + 1`. An `accepted` write whose note is no longer held becomes a dirty tombstone at that `v`, pushed in the same sync. Unacknowledged `writeId`s live in memory until a pull resolves each; after a relaunch, a lost response takes the copy path, where matching bodies make no copy, and a pulled `v = 1` for a first-push ID in `meta` whose note is no longer held becomes the same tombstone.
 
-A conflicted push stays dirty until its pull arrives. A failed sync retries at the next scheduled sync. A note whose payload would exceed the [note limit](../docs/PROTOCOL.md#limits) stays dirty and unpushed, and is reported.
+A conflicted push stays dirty until its pull arrives. A note whose push `conflict` carried a `v` still above its local `v` once the sync reaches the head, because that version was skipped or never arrived, is reported. A failed sync retries at the next scheduled sync. A note whose payload would exceed the [note limit](../docs/PROTOCOL.md#limits) stays dirty and unpushed, and is reported.
 
 ## Exports
 
@@ -202,11 +204,10 @@ Each file is UTF-8: front matter with LF line endings, then the body byte for by
 id: 0b8f1d2e-3a4b-4c5d-8e9f-001122334455
 created: 2026-08-08T10:00:00.000Z
 updated: 2026-08-08T10:05:00.000Z
-v: 3
 ---
 body
 ```
 
-The fields come in this order and spelling only: `id` lowercase and hyphenated; `created` and `updated` as ISO 8601 in UTC with milliseconds on the proleptic Gregorian calendar, where year `0000` is 1 BC, and, for a year outside 0000–9999, a sign and the year zero-padded to six digits; `v` as a `u32` in decimal.
+The fields come in this order and spelling only: `id` lowercase and hyphenated; `created` and `updated` as ISO 8601 in UTC with milliseconds on the proleptic Gregorian calendar, where year `0000` is 1 BC, and, for a year outside 0000–9999, a sign and the year zero-padded to six digits.
 
-Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase; any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, in one transaction, and skips every `id` it holds, live or deleted.
+Import reads only this format, one import at a time, and refuses files over 512 MiB unread. A file that starts with `NNEXPORT1` opens with its passphrase, one that starts with `NNEXPORT` and then any other byte is refused as written by a newer version, and any other is read as the zip. Import finds entries through the central directory, which ends where the end record starts, and ignores bytes no entry covers before it. It checks every CRC-32, reads no meaning from names or times, and ignores versions, attributes, comments and extra fields of any kind, zip64's included. It refuses the whole archive over a method other than 0, a flag other than bit 11, an all-ones count, size or offset, a zip64 locator, a disk number other than 0, a local header whose flags, method, time, date, CRC-32, sizes or name differ from its central record, an entry whose two sizes differ, overlapping entries, a name that is not UTF-8 or has NUL, `\`, or an empty, `.` or `..` path component, a file in any other spelling or not UTF-8, or a repeated `id`. It adds notes whose `id` the library does not hold, dirty at `v = 0`, in one transaction, and skips every `id` it holds, live or deleted.

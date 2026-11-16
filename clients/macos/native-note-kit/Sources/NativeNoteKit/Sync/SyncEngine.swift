@@ -21,6 +21,7 @@ final class SyncEngine {
 		var total = try await apply(.settleLastVersion)
 		var sent: Set<UUID> = []
 		var deletedWhilePushed: Set<UUID> = []
+		var conflicts: [(id: UUID, v: UInt32)] = []
 		var more = true
 		while true {
 			let since = try await store.since()
@@ -28,7 +29,10 @@ final class SyncEngine {
 			let (batch, tooLarge) = try await Self.seal(unsent, with: cipher)
 			sent.formUnion(batch.map(\.note.id) + tooLarge)
 			total.problems += tooLarge.map(SyncProblem.tooLarge)
-			guard !batch.isEmpty || more else { return total }
+			guard !batch.isEmpty || more else {
+				total.problems += try await stuck(conflicts)
+				return total
+			}
 
 			for sealed in batch { unacknowledged[sealed.write.writeId] = sealed }
 			try await store.awaitEchoes(ofFirstPushes: batch.map(\.note).filter { $0.v == 0 }.map(\.id))
@@ -41,11 +45,12 @@ final class SyncEngine {
 				return total
 			}
 			for sealed in batch { unacknowledged[sealed.write.writeId] = nil }
-			let (pulled, unverifiable) = await Self.open(changes, with: cipher)
+			conflicts += zip(batch, results).filter { $1.status == .conflict }.map { ($0.note.id, $1.v) }
+			let (pulled, unread) = await Self.open(changes, with: cipher)
 			let pullMark = changes.last.map { PullMark(blindedId: $0.blindedId, v: $0.v) }
 			let exchange = Exchange(sent: batch, results: results, changes: pulled, nextSeq: nextSeq, unacknowledged: unacknowledged, pullMark: pullMark, reachedHead: !hasMore)
 			var applied = try await apply(.exchange(exchange))
-			applied.problems += Array(repeating: .unverifiableChange, count: unverifiable)
+			applied.problems += unread
 			let resolved = Set(pulled.map(\.content.id))
 			unacknowledged = unacknowledged.filter { !resolved.contains($0.value.note.id) }
 			let tombstonesToPush = applied.changed.values.filter { $0.deleted && $0.dirty && deletedWhilePushed.insert($0.id).inserted }
@@ -65,7 +70,7 @@ final class SyncEngine {
 	) -> Bool {
 		guard results.count == batch.count, !more || (!changes.isEmpty && nextSeq > since) else { return false }
 		return zip(results, batch).allSatisfy { result, sealed in
-			result.status != .accepted || (result.v == sealed.write.v && result.seq != 0)
+			result.status != .accepted || result.v == sealed.write.v
 		}
 	}
 
@@ -78,7 +83,7 @@ final class SyncEngine {
 			let content: Content =
 				note.deleted
 				? .tombstone(id: note.id, deletedAt: note.updatedAt)
-				: .note(id: note.id, createdAt: note.createdAt, updatedAt: note.updatedAt, body: note.body)
+				: .note(id: note.id, createdAt: note.createdAt, updatedAt: note.updatedAt, body: note.body, ext: note.ext)
 			let write = try cipher.seal(content, v: note.v + 1)
 			guard write.payload.count <= noteMax else {
 				tooLarge.append(note.id)
@@ -92,13 +97,26 @@ final class SyncEngine {
 	}
 
 	@concurrent
-	private nonisolated static func open(_ changes: [Write], with cipher: NoteCipher) async -> (pulled: [PulledChange], unverifiable: Int) {
+	private nonisolated static func open(_ changes: [Write], with cipher: NoteCipher) async -> (pulled: [PulledChange], unread: [SyncProblem]) {
 		var pulled: [PulledChange] = []
+		var unread: [SyncProblem] = []
 		for change in changes {
-			guard let content = cipher.open(change), cipher.blindedId(for: content.id) == change.blindedId else { continue }
-			pulled.append(PulledChange(content: content, v: change.v, writeId: change.writeId))
+			switch cipher.verify(change) {
+			case let .content(content): pulled.append(PulledChange(content: content, v: change.v, writeId: change.writeId))
+			case .newerVersion: unread.append(.newerChange)
+			case .unverifiable: unread.append(.unverifiableChange)
+			}
 		}
-		return (pulled, changes.count - pulled.count)
+		return (pulled, unread)
+	}
+
+	private func stuck(_ conflicts: [(id: UUID, v: UInt32)]) async throws -> [SyncProblem] {
+		var stuck: [SyncProblem] = []
+		for conflict in conflicts {
+			guard let held = try await store.note(id: conflict.id), held.v < conflict.v, !stuck.contains(.stuckConflict(conflict.id)) else { continue }
+			stuck.append(.stuckConflict(conflict.id))
+		}
+		return stuck
 	}
 }
 

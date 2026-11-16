@@ -171,7 +171,6 @@ impl<E: Exchange> Session<E> {
 				let expected: Vec<_> = sent.iter().map(|write| self.model.judge(write)).collect();
 				assert_eq!(results, expected, "replay {index}");
 				for result in results {
-					assert_eq!(result.seq, Seq(0), "replay {index}");
 					match result.status {
 						Status::Conflict => replays.conflicts += 1,
 						Status::TooLarge => replays.too_large += 1,

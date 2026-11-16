@@ -1,7 +1,9 @@
 use crate::support::client::{self, INNER_MAX, Response};
 use crate::support::corpus::{SplitMix64, corpus, payload};
 use crate::support::{SEALED_MAX, open, server_key};
-use native_note_core::{DecodeError, Envelope, Rejection, Reply, Request, Seq, Version, admit};
+use native_note_core::{
+	DecodeError, Envelope, Reason, Rejection, Reply, Request, Seq, Version, admit,
+};
 use std::collections::BTreeSet;
 
 const API_KEY: [u8; 32] = [
@@ -167,12 +169,19 @@ fn a_sealed_error_reply_is_284_bytes_and_opens_only_under_its_request_nonce() {
 	let envelope_key = client::envelope_key(&API_KEY);
 	let (request_nonce, response_nonce) = ([0x52; 12], [0x91; 12]);
 	let body = key
-		.seal(Reply::error(), &request_nonce, response_nonce)
+		.seal(
+			Reply::error(Reason::Malformed),
+			&request_nonce,
+			response_nonce,
+		)
 		.expect("seals");
 	assert_eq!(body.len(), 284);
 	assert_eq!(body[..12], response_nonce);
 	let inner = client::open_response(&envelope_key, &request_nonce, &body).expect("opens");
-	assert_eq!(client::decode_response(&inner), Response::Error);
+	assert_eq!(
+		client::decode_response(&inner),
+		Response::Error(client::Reason::Malformed)
+	);
 
 	for bit in 0..96 {
 		let mut other = request_nonce;

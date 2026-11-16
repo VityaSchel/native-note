@@ -106,6 +106,24 @@ struct RecoveryFlowTests {
 		await #expect(throws: SyncError.refused(status: 400)) { try await flow(server).put(sharedContentKey, under: recoveryKey, pin: 3) }
 	}
 
+	@Test(arguments: [ErrorReason.malformed, .unsupported])
+	func aPutTheServerRefusedUnreadReportsWhyWithoutACheck(reason: ErrorReason) async throws {
+		let server = ScriptedServer()
+		server.answer { _ in .error(reason) }
+
+		await #expect(throws: SyncError(reason)) { try await flow(server).put(sharedContentKey, under: recoveryKey, pin: 3) }
+		#expect(server.requests.count == 1)
+	}
+
+	@Test func aPutTheServerFaultedOnIsSettledByItsBlob() async throws {
+		let server = ScriptedServer()
+		server.answer { _ in .error(.fault) }
+		server.answer { [unowned server] _ in .get(v: 4, blob: putBlob(server)) }
+
+		#expect(try await flow(server).put(sharedContentKey, under: recoveryKey, pin: 3) == 4)
+		#expect(server.requests.count == 2)
+	}
+
 	@Test func aReplacedReplyOverABlobAnotherDevicePutIsARotationElsewhere() async throws {
 		let server = ScriptedServer()
 		let other = try RecoveryBlob.seal(sharedContentKey, under: SymmetricKey(size: .bits256))

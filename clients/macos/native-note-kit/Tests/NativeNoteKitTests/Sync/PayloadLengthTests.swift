@@ -5,7 +5,7 @@ import Testing
 
 struct PayloadLengthTests {
 	private let cipher = NoteCipher(contentKey: sharedContentKey)
-	private let fields = 1 + 1 + 16 + 8 + 8 + 4
+	private let fields = 1 + 1 + 16 + 8 + 8 + 4 + 4
 
 	private func length(_ content: Content) throws -> Int {
 		try cipher.seal(content, v: 1).payload.count

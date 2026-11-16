@@ -36,6 +36,20 @@ struct ExportEnvelopeTests {
 		#expect(!ExportEnvelope.isEncrypted(Data()))
 	}
 
+	@Test(arguments: ["NNEXPORT2", "NNEXPORT0", "NNEXPORT\u{0}", "NNEXPORTv2", "NNEXPORT\u{FF}"])
+	func aFileFromANewerExportVersionIsRefusedAsSuch(head: String) throws {
+		let file = Data(head.utf8) + (try ExportEnvelope.seal(Self.zip, passphrase: "x", parameters: Self.fast)).dropFirst(9)
+
+		#expect(!ExportEnvelope.isEncrypted(file))
+		#expect(throws: ExportEnvelope.Failure.newerVersion) { try ExportEnvelope.refuseNewerVersion(file) }
+		#expect(throws: ExportEnvelope.Failure.newerVersion) { try ExportEnvelope.open(file, passphrase: "x") }
+	}
+
+	@Test(arguments: [Data(), Data("NNEXPORT".utf8), Data("NNEXPORT1".utf8), Data("PK\u{3}\u{4}".utf8), Data("NNEXPOR2".utf8)])
+	func onlyAnotherByteAfterTheExportFamilyIsANewerVersion(file: Data) throws {
+		#expect(throws: Never.self) { try ExportEnvelope.refuseNewerVersion(file) }
+	}
+
 	@Test func aWrongPassphraseAndADamagedFileFailTheSameWay() throws {
 		let file = try ExportEnvelope.seal(Self.zip, passphrase: "right", parameters: Self.fast)
 		var damaged = file

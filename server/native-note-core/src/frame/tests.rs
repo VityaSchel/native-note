@@ -1,4 +1,5 @@
-use super::{Changes, WriteResult, get_response, put_response, sync_response};
+use super::{Changes, DecodeError, WriteResult, get_response, put_response, sync_response};
+use crate::reply::Reason;
 use crate::tests::hex;
 use crate::types::{BlindedNoteId, Record, Seq, Version};
 use crate::version::Status;
@@ -19,40 +20,35 @@ fn no_changes(next_seq: u64) -> Changes {
 
 #[test]
 fn the_sync_result_vectors_encode_byte_for_byte() {
-	for (name, status, v, seq, encoded) in [
+	for (name, status, v, encoded) in [
 		(
 			"syncAccepted",
 			Status::Accepted,
 			1,
-			1,
-			"01000000010100000001000000000000000100000000000000000000000100",
+			"0100000001010000000100000000000000000000000100",
 		),
 		(
 			"syncConflict",
 			Status::Conflict,
 			1,
-			0,
-			"01000000010200000001000000000000000000000000000000000000000100",
+			"0100000001020000000100000000000000000000000100",
 		),
 		(
 			"syncConflictAtLastVersion",
 			Status::Conflict,
 			u32::MAX,
-			0,
-			"010000000102ffffffff000000000000000000000000000000000000000100",
+			"010000000102ffffffff00000000000000000000000100",
 		),
 		(
 			"syncTooLarge",
 			Status::TooLarge,
 			1,
-			0,
-			"01000000010300000001000000000000000000000000000000000000000100",
+			"0100000001030000000100000000000000000000000100",
 		),
 	] {
 		let results = [WriteResult {
 			status,
 			v: Version(v),
-			seq: Seq(seq),
 		}];
 		assert_eq!(
 			sync_response(&results, &no_changes(1)),
@@ -93,4 +89,16 @@ fn the_recovery_response_vectors_encode_byte_for_byte() {
 		put_response(Status::Accepted, Version(3)),
 		hex("030100000003")
 	);
+}
+
+#[test]
+fn a_request_that_fails_to_decode_is_malformed_unless_its_action_is_unknown() {
+	for (error, reason) in [
+		(DecodeError::Padding, Reason::Malformed),
+		(DecodeError::Truncated, Reason::Malformed),
+		(DecodeError::TrailingBytes, Reason::Malformed),
+		(DecodeError::UnknownDiscriminant, Reason::Unsupported),
+	] {
+		assert_eq!(error.reason(), reason, "{error:?}");
+	}
 }

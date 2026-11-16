@@ -23,15 +23,23 @@ struct CipherVectorTests {
 	@Test func notePayloadsSealExactlyOpenAndRefuseAnotherVersion() throws {
 		for vector in try Vectors.load(.note) {
 			let cipher = NoteCipher(contentKey: try key(vector, "contentKey"))
-			let expected = try content(from: try #require(vector.object("content")))
 			let v = UInt32(try #require(vector.int("v")))
-			let write = try cipher.seal(expected, v: v, writeId: try vector.require("writeId"), nonce: try nonce(vector))
-			#expect(write.blindedId == (try vector.require("blindedId")), "\(vector.name)")
-			#expect(write.payload == (try vector.require("payload")), "\(vector.name)")
-			#expect(expected.encoded() == (try vector.require("plaintext")), "\(vector.name)")
-			#expect(cipher.open(write) == expected, "\(vector.name)")
+			let write = Write(blindedId: try vector.require("blindedId"), v: v, writeId: try vector.require("writeId"), payload: try vector.require("payload"))
 			let bumped = Write(blindedId: write.blindedId, v: v + 1, writeId: write.writeId, payload: write.payload)
 			#expect(cipher.open(bumped) == nil, "\(vector.name)")
+			#expect(cipher.verify(bumped) == .unverifiable, "\(vector.name)")
+			if let prefixUuid = vector.bytes("prefixUuid") {
+				#expect(try Content.prefix(of: try vector.require("plaintext")).id.bytes == prefixUuid, "\(vector.name)")
+				#expect(cipher.blindedId(for: try #require(UUID(bytes: prefixUuid))) == write.blindedId, "\(vector.name)")
+				#expect(cipher.open(write) == nil, "\(vector.name)")
+				#expect(cipher.verify(write) == .newerVersion, "\(vector.name)")
+				continue
+			}
+			let expected = try content(from: try #require(vector.object("content")))
+			#expect(try cipher.seal(expected, v: v, writeId: write.writeId, nonce: try nonce(vector)) == write, "\(vector.name)")
+			#expect(expected.encoded() == (try vector.require("plaintext")), "\(vector.name)")
+			#expect(cipher.open(write) == expected, "\(vector.name)")
+			#expect(cipher.verify(write) == .content(expected), "\(vector.name)")
 		}
 	}
 
@@ -53,7 +61,7 @@ struct CipherVectorTests {
 			case let name where name.hasPrefix("errorFor"):
 				let reply = try envelope.open(try vector.require("response"), requestNonce: frame.prefix(EnvelopeKey.nonceLength))
 				#expect(reply == (try vector.require("responseInner")))
-				#expect(try Response.decode(reply) == .error)
+				#expect(try Response.decode(reply) == .error(try errorReason(named: vector.string("reason"))), "\(vector.name)")
 			default:
 				#expect(vector.bool("opens") == false)
 				let requestNonce = vector.bytes("requestNonce") ?? frame.prefix(EnvelopeKey.nonceLength)

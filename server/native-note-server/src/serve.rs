@@ -2,7 +2,7 @@ use crate::key;
 use crate::log::{Cause, Event, Failure, Log, Stage, Stderr};
 use crate::store::Store;
 use native_note_core::http::{self, HEAD_MAX, Status};
-use native_note_core::{Envelope, EnvelopeKey, Rejection, Reply, Request};
+use native_note_core::{Envelope, EnvelopeKey, Reason, Rejection, Reply, Request};
 use ring::error::Unspecified;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::fs::DirBuilder;
@@ -168,7 +168,7 @@ impl Shared {
 			Ok(request) => self.transact(&request),
 			Err(error) => {
 				self.fail(Failure::Decode(error));
-				Reply::error()
+				Reply::error(error.reason())
 			}
 		};
 		self.key
@@ -184,7 +184,7 @@ impl Shared {
 			.answer(request);
 		answer.unwrap_or_else(|failure| {
 			self.fail(failure);
-			Reply::error()
+			Reply::error(Reason::Fault)
 		})
 	}
 

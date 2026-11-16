@@ -4,7 +4,7 @@ use native_note_vectors::codec::DecodeError;
 use native_note_vectors::content::{self, Content};
 use native_note_vectors::envelope::{self, MAX_BUCKET};
 use native_note_vectors::export::{self, ArgonParams};
-use native_note_vectors::frame::{self, Request, Response, Status, Write, WriteResult};
+use native_note_vectors::frame::{self, Reason, Request, Response, Status, Write, WriteResult};
 use native_note_vectors::mnemonic::{self, MnemonicError};
 use native_note_vectors::server::{NOTE_MAX, Server};
 use native_note_vectors::vectors::{seq_array, seq_bytes};
@@ -82,12 +82,24 @@ fn version_rule_rejects_replays_and_gaps() {
 	assert_eq!(server.apply(&write(3, 1)).status, Status::Conflict);
 
 	let accepted = server.apply(&write(2, 1));
-	assert_eq!(accepted.status, Status::Accepted);
-	assert_eq!(accepted.seq, 2);
+	assert_eq!(
+		accepted,
+		WriteResult {
+			status: Status::Accepted,
+			v: 2
+		}
+	);
+	assert_eq!(server.seq(), 2);
 
 	let rejected = server.apply(&write(3, NOTE_MAX + 1));
-	assert_eq!(rejected.status, Status::TooLarge);
-	assert_eq!(rejected.seq, 0, "a rejected write never carries a seq");
+	assert_eq!(
+		rejected,
+		WriteResult {
+			status: Status::TooLarge,
+			v: 2
+		}
+	);
+	assert_eq!(server.seq(), 2, "a rejected write takes no seq");
 
 	assert_eq!(server.changes_since(1).len(), 1);
 	assert_eq!(server.changes_since(2).len(), 0);
@@ -101,12 +113,14 @@ fn content_round_trips_and_rejects_every_truncation() {
 			created_at: -1,
 			updated_at: i64::MAX,
 			body: "é".into(),
+			ext: Vec::new(),
 		},
 		Content::Note {
 			uuid: [2; 16],
 			created_at: 0,
 			updated_at: 0,
 			body: String::new(),
+			ext: vec![0x00, 0x01, 0x00],
 		},
 		Content::Tombstone {
 			uuid: [3; 16],
@@ -116,15 +130,17 @@ fn content_round_trips_and_rejects_every_truncation() {
 			uuid: [4; 16],
 			created_at: 0,
 			updated_at: 0,
-			body: "a".repeat(content::BLOCK - (1 + 1 + 16 + 8 + 8 + 4)),
+			body: "a".repeat(content::BLOCK - content::NOTE_FIELDS - 2),
+			ext: vec![0xff; 2],
 		},
 	];
 	for sample in samples {
 		let encoded = content::encode(&sample);
 		let fields = match &sample {
-			Content::Note { body, .. } => 1 + 1 + 16 + 8 + 8 + 4 + body.len(),
-			Content::Tombstone { .. } => 1 + 1 + 16 + 8,
+			Content::Note { body, ext, .. } => content::NOTE_FIELDS + body.len() + ext.len(),
+			Content::Tombstone { .. } => content::TOMBSTONE_FIELDS,
 		};
+		assert_eq!(content::prefix_uuid(&encoded).as_ref(), Ok(sample.uuid()));
 		assert_eq!(
 			encoded.len(),
 			fields.div_ceil(content::BLOCK) * content::BLOCK
@@ -164,11 +180,19 @@ fn content_round_trips_and_rejects_every_truncation() {
 		content::decode(&[0x02, 0x01]),
 		Err(DecodeError::UnknownDiscriminant)
 	);
+	for cut in 0..18 {
+		assert_eq!(
+			content::prefix_uuid(&[0x02; 18][..cut]),
+			Err(DecodeError::Truncated),
+			"cut at {cut}"
+		);
+	}
+	assert_eq!(content::prefix_uuid(&[0x02; 18]), Ok([0x02; 16]));
 }
 
 #[test]
 fn frames_round_trip_and_reject_every_truncation() {
-	let result = |status, seq| WriteResult { status, v: 7, seq };
+	let result = |status| WriteResult { status, v: 7 };
 	let requests = [
 		Request::Sync {
 			since: 9,
@@ -183,9 +207,9 @@ fn frames_round_trip_and_reject_every_truncation() {
 	let responses = [
 		Response::Sync {
 			results: vec![
-				result(Status::Accepted, 1),
-				result(Status::Conflict, 0),
-				result(Status::TooLarge, 0),
+				result(Status::Accepted),
+				result(Status::Conflict),
+				result(Status::TooLarge),
 			],
 			changes: vec![write(2, 5)],
 			next_seq: 3,
@@ -199,7 +223,9 @@ fn frames_round_trip_and_reject_every_truncation() {
 			status: Status::Conflict,
 			v: 2,
 		},
-		Response::Error,
+		Response::Error(Reason::Malformed),
+		Response::Error(Reason::Unsupported),
+		Response::Error(Reason::Fault),
 	];
 
 	for request in requests {
@@ -215,6 +241,23 @@ fn frames_round_trip_and_reject_every_truncation() {
 			Err(DecodeError::UnknownDiscriminant)
 		);
 	}
+	for reason in [0x00, 0x04, 0x7f, 0xff] {
+		assert_eq!(
+			frame::decode_response(&[0xff, reason]),
+			Ok(Response::Error(Reason::Fault)),
+			"reason {reason:#04x}"
+		);
+	}
+}
+
+#[test]
+fn reason_names_match_the_protocol() {
+	let reasons = [Reason::Malformed, Reason::Unsupported, Reason::Fault];
+	assert_eq!(
+		reasons.map(Reason::name),
+		["malformed", "unsupported", "fault"]
+	);
+	assert_eq!(reasons.map(Reason::code), [0x01, 0x02, 0x03]);
 }
 
 #[test]
@@ -296,7 +339,6 @@ fn the_most_results_a_request_can_ask_for_and_a_maximum_size_change_fit_one_resp
 			WriteResult {
 				status: Status::Accepted,
 				v: 1,
-				seq: 1,
 			};
 			most
 		],
@@ -347,11 +389,53 @@ fn export_round_trips_under_its_own_header() {
 	);
 	assert!(export::open("Passphrase", &file).is_err());
 
+	assert_eq!(
+		export::read("passphrase", &file).as_deref(),
+		Ok(b"zip".as_slice())
+	);
+	assert_eq!(
+		export::read("Passphrase", &file),
+		Err(export::ReadError::DoesNotOpen)
+	);
+
 	for at in (0..export::MAGIC.len()).chain(export::HEADER_LEN - export::SALT_LEN..file.len()) {
 		let mut flipped = file.clone();
 		flipped[at] ^= 0x01;
 		assert!(export::open("passphrase", &flipped).is_err(), "byte {at}");
+		let expected = if at == export::MAGIC.len() - 1 {
+			export::ReadError::NewerVersion
+		} else {
+			export::ReadError::DoesNotOpen
+		};
+		assert_eq!(
+			export::read("passphrase", &flipped),
+			Err(expected),
+			"byte {at}"
+		);
 	}
+}
+
+#[test]
+fn only_nnexport_and_a_byte_other_than_1_is_from_a_newer_version() {
+	for (file, newer) in [
+		(&b"NNEXPORT2"[..], true),
+		(b"NNEXPORT\x00rest", true),
+		(b"NNEXPORT1", false),
+		(b"NNEXPORT", false),
+		(b"NNEXPOR", false),
+		(b"PK\x03\x04", false),
+		(b"", false),
+	] {
+		assert_eq!(export::written_by_newer_version(file), newer, "{file:?}");
+	}
+	assert_eq!(
+		[
+			export::ReadError::NewerVersion,
+			export::ReadError::DoesNotOpen
+		]
+		.map(|e| e.name()),
+		["newerVersion", "doesNotOpen"]
+	);
 }
 
 #[test]
@@ -416,12 +500,17 @@ fn the_server_seals_an_answer_to_everything_that_unseals() {
 	};
 	assert_eq!(results[0].status, Status::Accepted);
 	assert_eq!(changes, vec![write(1, 1)]);
-	assert_eq!(ask(&[0x7f]), Response::Error);
+	assert_eq!(ask(&[0x7f]), Response::Error(Reason::Unsupported));
+	assert_eq!(ask(&[0x01]), Response::Error(Reason::Malformed));
+	assert_eq!(
+		ask(&[put.clone(), vec![0]].concat()),
+		Response::Error(Reason::Malformed)
+	);
 
 	let mut dirty = envelope::pad(&put).unwrap();
 	dirty[200] = 0x01;
 	let unpaddable = aead::seal(&key, &nonce, &dirty, &[]);
-	assert_eq!(answer_to(&unpaddable), Response::Error);
+	assert_eq!(answer_to(&unpaddable), Response::Error(Reason::Malformed));
 
 	let other_key = kdf::envelope_key(&seq_bytes(0x01, 32));
 	let foreign = envelope::seal_request(&other_key, &nonce, &put).unwrap();

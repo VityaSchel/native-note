@@ -31,29 +31,29 @@
 		},
 		{
 			"direction": "response",
-			"encoded": "01000000010100000001000000000000000100000000000000000000000100",
-			"length": 31,
+			"encoded": "0100000001010000000100000000000000000000000100",
+			"length": 23,
 			"name": "syncAccepted",
 			"roundTrips": true
 		},
 		{
 			"direction": "response",
-			"encoded": "01000000010200000001000000000000000000000000000000000000000100",
-			"length": 31,
+			"encoded": "0100000001020000000100000000000000000000000100",
+			"length": 23,
 			"name": "syncConflict",
 			"roundTrips": true
 		},
 		{
 			"direction": "response",
-			"encoded": "010000000102ffffffff000000000000000000000000000000000000000100",
-			"length": 31,
+			"encoded": "010000000102ffffffff00000000000000000000000100",
+			"length": 23,
 			"name": "syncConflictAtLastVersion",
 			"roundTrips": true
 		},
 		{
 			"direction": "response",
-			"encoded": "01000000010300000001000000000000000000000000000000000000000100",
-			"length": 31,
+			"encoded": "0100000001030000000100000000000000000000000100",
+			"length": 23,
 			"name": "syncTooLarge",
 			"roundTrips": true
 		},
@@ -87,10 +87,34 @@
 		},
 		{
 			"direction": "response",
-			"encoded": "ff",
-			"length": 1,
-			"name": "error",
+			"encoded": "ff01",
+			"length": 2,
+			"name": "errorMalformed",
+			"reason": "malformed",
 			"roundTrips": true
+		},
+		{
+			"direction": "response",
+			"encoded": "ff02",
+			"length": 2,
+			"name": "errorUnsupported",
+			"reason": "unsupported",
+			"roundTrips": true
+		},
+		{
+			"direction": "response",
+			"encoded": "ff03",
+			"length": 2,
+			"name": "errorFault",
+			"reason": "fault",
+			"roundTrips": true
+		},
+		{
+			"decodes": true,
+			"direction": "response",
+			"encoded": "ff7f",
+			"name": "errorUnknownReason",
+			"reason": "fault"
 		},
 		{
 			"decodes": false,
@@ -127,7 +151,7 @@
 		{
 			"decodes": false,
 			"direction": "request",
-			"encoded": "ff",
+			"encoded": "ff03",
 			"error": "UnknownDiscriminant",
 			"matches": true,
 			"name": "rejectErrorAsRequest"
@@ -135,7 +159,7 @@
 		{
 			"decodes": false,
 			"direction": "response",
-			"encoded": "01000000010200000001000000000000000000000000000000000000000102",
+			"encoded": "0100000001020000000100000000000000000000000102",
 			"error": "NotCanonical",
 			"matches": true,
 			"name": "rejectNonCanonicalBool"
@@ -143,15 +167,7 @@
 		{
 			"decodes": false,
 			"direction": "response",
-			"encoded": "01000000010200000001000000000000000900000000000000000000000100",
-			"error": "NotCanonical",
-			"matches": true,
-			"name": "rejectSeqOnNonAcceptedResult"
-		},
-		{
-			"decodes": false,
-			"direction": "response",
-			"encoded": "01000000010400000001000000000000000000000000000000000000000100",
+			"encoded": "0100000001040000000100000000000000000000000100",
 			"error": "UnknownDiscriminant",
 			"matches": true,
 			"name": "rejectUnknownStatus"
@@ -159,7 +175,7 @@
 		{
 			"decodes": false,
 			"direction": "response",
-			"encoded": "010000000204000000010000000000000000",
+			"encoded": "01000000020400000001",
 			"error": "UnknownDiscriminant",
 			"matches": true,
 			"name": "rejectBadItemBeforeShortCount"
@@ -175,7 +191,7 @@
 		{
 			"decodes": false,
 			"direction": "response",
-			"encoded": "fe",
+			"encoded": "fe03",
 			"error": "UnknownDiscriminant",
 			"matches": true,
 			"name": "rejectUnknownResponseAction"
@@ -183,11 +199,19 @@
 		{
 			"decodes": false,
 			"direction": "response",
-			"encoded": "ff00",
+			"encoded": "ff",
+			"error": "Truncated",
+			"matches": true,
+			"name": "rejectTruncatedError"
+		},
+		{
+			"decodes": false,
+			"direction": "response",
+			"encoded": "ff0300",
 			"error": "TrailingBytes",
 			"matches": true,
 			"name": "rejectTrailingBytesAfterError"
 		}
 	],
-	"description": "Request and response frames. Fixed-width big-endian fields, length-prefixed byte strings, exactly one valid encoding per message."
+	"description": "Request and response frames. Fixed-width big-endian fields, length-prefixed byte strings, exactly one valid encoding per message, except that an error response decodes any reason byte and reads an unknown one as fault."
 }

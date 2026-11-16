@@ -32,9 +32,9 @@ struct ExchangeVectorTests {
 			}
 			let outcome = try #require(step.object("outcome"))
 			let expected = try #require(outcome["results"] as? [[String: Any]]).map { result in
-				(result["status"] as? String, (result["v"] as? Int).map(UInt32.init), (result["seq"] as? Int).map(UInt64.init))
+				(result["status"] as? String, (result["v"] as? Int).map(UInt32.init))
 			}
-			#expect(results.map { (Self.name(of: $0.status), Optional($0.v), Optional($0.seq)) }.elementsEqual(expected, by: ==), "\(step.name)")
+			#expect(results.map { (Self.name(of: $0.status), Optional($0.v)) }.elementsEqual(expected, by: ==), "\(step.name)")
 			#expect(changes.count == outcome["changes"] as? Int, "\(step.name)")
 			#expect(!more)
 			for change in changes {

@@ -66,7 +66,7 @@ extension NoteStore {
 			try deleteMeta(.lastPulled)
 			try deleteMeta(.firstPushes)
 			try connection.prepare("DELETE FROM note WHERE deleted = 1").step()
-			try connection.prepare("UPDATE note SET v = 0, seq = NULL, dirty = 1, pulled = 0").step()
+			try connection.prepare("UPDATE note SET v = 0, dirty = 1, pulled = 0").step()
 		}
 	}
 
@@ -200,8 +200,8 @@ extension NoteStore {
 
 	private static func note(_ change: PulledChange, over held: Note?) -> Note {
 		switch change.content {
-		case let .note(id, createdAt, updatedAt, body):
-			Note(id: id, body: body, createdAt: createdAt, updatedAt: updatedAt, v: change.v)
+		case let .note(id, createdAt, updatedAt, body, ext):
+			Note(id: id, body: body, createdAt: createdAt, updatedAt: updatedAt, v: change.v, ext: ext)
 		case let .tombstone(id, deletedAt):
 			Note(id: id, body: "", createdAt: held?.createdAt ?? deletedAt, updatedAt: deletedAt, deleted: true, v: change.v)
 		}
@@ -241,6 +241,6 @@ extension NoteStore {
 
 nonisolated extension PulledChange {
 	var body: String? {
-		if case let .note(_, _, _, body) = content { body } else { nil }
+		if case let .note(_, _, _, body, _) = content { body } else { nil }
 	}
 }

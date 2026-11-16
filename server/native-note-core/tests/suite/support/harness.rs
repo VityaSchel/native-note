@@ -57,7 +57,7 @@ impl Harness {
 			Ok(request) => self.transact(&request),
 			Err(error) => {
 				self.failures.push(Failure::Decode(error));
-				Reply::error()
+				Reply::error(error.reason())
 			}
 		};
 		self.key
@@ -74,8 +74,9 @@ impl Harness {
 			}
 			Err(fault) => {
 				drop(transaction);
+				let reply = Reply::error(fault.reason());
 				self.failures.push(Failure::Fault(fault));
-				Reply::error()
+				reply
 			}
 		}
 	}

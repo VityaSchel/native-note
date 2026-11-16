@@ -181,7 +181,13 @@ pub enum Status {
 pub struct WriteResult {
 	pub status: Status,
 	pub v: Version,
-	pub seq: Seq,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+	Malformed,
+	Unsupported,
+	Fault,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -200,7 +206,7 @@ pub enum Response {
 		status: Status,
 		v: Version,
 	},
-	Error,
+	Error(Reason),
 }
 
 struct Cursor<'a>(&'a [u8]);
@@ -235,6 +241,14 @@ impl<'a> Cursor<'a> {
 		self.take(len).to_vec()
 	}
 
+	fn reason(&mut self) -> Reason {
+		match self.u8() {
+			0x01 => Reason::Malformed,
+			0x02 => Reason::Unsupported,
+			_ => Reason::Fault,
+		}
+	}
+
 	fn status(&mut self) -> Status {
 		match self.u8() {
 			0x01 => Status::Accepted,
@@ -255,19 +269,10 @@ fn items<T>(cursor: &mut Cursor, item: fn(&mut Cursor) -> T) -> Vec<T> {
 }
 
 fn result(cursor: &mut Cursor) -> WriteResult {
-	let status = cursor.status();
-	let v = Version(cursor.u32());
-	let seq = Seq(cursor.u64());
-	assert!(
-		status == Status::Accepted || seq.0 == 0,
-		"NotCanonical: {status:?} with seq {}",
-		seq.0
-	);
-	assert!(
-		status != Status::Accepted || seq.0 != 0,
-		"accepted with seq 0"
-	);
-	WriteResult { status, v, seq }
+	WriteResult {
+		status: cursor.status(),
+		v: Version(cursor.u32()),
+	}
 }
 
 fn change(cursor: &mut Cursor) -> Record {
@@ -316,7 +321,7 @@ pub fn decode_response(inner: &[u8]) -> Response {
 				v: Version(cursor.u32()),
 			}
 		}
-		0xff => Response::Error,
+		0xff => Response::Error(cursor.reason()),
 		action => panic!("UnknownDiscriminant: action {action:#04x}"),
 	};
 	assert!(

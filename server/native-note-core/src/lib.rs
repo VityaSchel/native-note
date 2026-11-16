@@ -41,7 +41,7 @@ mod tests;
 pub use envelope::{Envelope, EnvelopeKey, Opened, Rejection, admit};
 pub use frame::{DecodeError, Request};
 pub use process::process;
-pub use reply::{Fault, Reply};
+pub use reply::{Fault, Reason, Reply};
 pub use secret::Secret;
 pub use storage::Storage;
 pub use types::{BlindedNoteId, Record, Seq, Version};

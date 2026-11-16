@@ -11,7 +11,7 @@ nonisolated enum NoteMarkdown {
 	}
 
 	private enum Field: String, CaseIterable {
-		case id, created, updated, v
+		case id, created, updated
 	}
 
 	private static let delimiter = "---"
@@ -39,8 +39,7 @@ nonisolated enum NoteMarkdown {
 			body: body,
 			createdAt: moment(.created, from: values),
 			updatedAt: moment(.updated, from: values),
-			dirty: true,
-			v: decode(.v, from: values, { UInt32($0) }, canonical: { String($0) })
+			dirty: true
 		)
 	}
 
@@ -75,7 +74,6 @@ nonisolated enum NoteMarkdown {
 		case .id: note.id.uuidString.lowercased()
 		case .created: Timestamp.string(from: note.createdAt)
 		case .updated: Timestamp.string(from: note.updatedAt)
-		case .v: String(note.v)
 		}
 	}
 

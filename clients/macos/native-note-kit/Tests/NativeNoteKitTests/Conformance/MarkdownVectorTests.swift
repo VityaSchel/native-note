@@ -14,8 +14,7 @@ struct MarkdownVectorTests {
 				body: try #require(vector.string("body")),
 				createdAt: Int64(try #require(vector.int("createdAt"))),
 				updatedAt: Int64(try #require(vector.int("updatedAt"))),
-				dirty: true,
-				v: UInt32(try #require(vector.int("v")))
+				dirty: true
 			)
 			let file = try #require(vector.string("markdown"))
 

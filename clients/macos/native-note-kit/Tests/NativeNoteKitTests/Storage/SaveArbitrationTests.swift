@@ -52,7 +52,7 @@ struct SaveArbitrationTests {
 		let write = try NoteCipher(contentKey: sharedContentKey).seal(.note(id: note.id, createdAt: 1, updatedAt: 2, body: "draft"), v: 1)
 		_ = try await store.commit(.exchange(Exchange(
 			sent: [SealedWrite(note: note, write: write)],
-			results: [WriteResult(status: .accepted, v: 1, seq: 1)],
+			results: [WriteResult(status: .accepted, v: 1)],
 			nextSeq: 1
 		)))
 		note.body = "typed after the push was sealed"

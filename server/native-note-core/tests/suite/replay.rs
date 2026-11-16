@@ -3,7 +3,7 @@ use crate::support::corpus::{SplitMix64, corpus, payload};
 use crate::support::harness::{Harness, Http, nonce_of};
 use crate::support::session::{Replays, Session};
 use crate::support::{open, server_key};
-use native_note_core::{Record, Rejection, Reply, Request, Seq, Version};
+use native_note_core::{Reason, Record, Rejection, Reply, Request, Seq, Version};
 use native_note_testkit::scenario::shuffled;
 use std::collections::BTreeSet;
 
@@ -99,11 +99,14 @@ fn a_sealed_reply_replayed_as_a_request_is_unopenable() {
 	for index in 0..256 {
 		let request_nonce = rng.array();
 		let body = key
-			.seal(Reply::error(), &request_nonce, rng.array())
+			.seal(Reply::error(Reason::Fault), &request_nonce, rng.array())
 			.expect("seals");
 		let inner = client::open_response(&envelope_key, &request_nonce, &body)
 			.expect("the client opens it");
-		assert_eq!(client::decode_response(&inner), Response::Error);
+		assert_eq!(
+			client::decode_response(&inner),
+			Response::Error(client::Reason::Fault)
+		);
 		assert_eq!(
 			open(&key, body).err(),
 			Some(Rejection::Unopenable),

@@ -1,7 +1,7 @@
 use super::{Envelope, EnvelopeKey, Rejection};
 use crate::frame::{Changes, WriteResult, sync_response};
 use crate::padding::pad;
-use crate::reply::Reply;
+use crate::reply::{Reason, Reply};
 use crate::secret::Secret;
 use crate::types::{BlindedNoteId, Record, Seq, Version};
 use crate::version::Status;
@@ -43,17 +43,14 @@ fn a_sealed_reply_is_its_response_nonce_then_the_padded_reply_sealed_to_the_requ
 		WriteResult {
 			status: Status::Accepted,
 			v: Version(4),
-			seq: Seq(17),
 		},
 		WriteResult {
 			status: Status::Conflict,
 			v: Version(9),
-			seq: Seq(0),
 		},
 		WriteResult {
 			status: Status::TooLarge,
 			v: Version(1),
-			seq: Seq(0),
 		},
 	];
 	let changes = Changes {
@@ -97,5 +94,5 @@ fn a_sealed_reply_is_its_response_nonce_then_the_padded_reply_sealed_to_the_requ
 fn a_reply_is_never_sealed_under_its_request_nonce() {
 	let key = EnvelopeKey::derive(&Secret::new(API_KEY)).expect("a 32-byte key derives");
 	let nonce = [0x44; 12];
-	assert_eq!(key.seal(Reply::error(), &nonce, nonce), None);
+	assert_eq!(key.seal(Reply::error(Reason::Fault), &nonce, nonce), None);
 }

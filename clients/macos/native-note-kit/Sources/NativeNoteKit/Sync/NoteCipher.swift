@@ -2,6 +2,12 @@ import CryptoKit
 import Foundation
 
 nonisolated struct NoteCipher: Sendable {
+	enum Verified: Equatable, Sendable {
+		case content(Content)
+		case newerVersion
+		case unverifiable
+	}
+
 	private let contentKey: SymmetricKey
 	private let blindingKey: SymmetricKey
 
@@ -31,14 +37,25 @@ nonisolated struct NoteCipher: Sendable {
 	}
 
 	func open(_ write: Write) -> Content? {
-		guard let box = try? AES.GCM.SealedBox(combined: write.payload),
-			let plaintext = try? AES.GCM.open(box, using: noteKey(write.writeId), authenticating: Self.binding(write.blindedId, write.v, write.writeId))
-		else { return nil }
-		return try? Content.decode(plaintext)
+		decrypt(write).flatMap { try? Content.decode($0) }
+	}
+
+	func verify(_ change: Write) -> Verified {
+		guard let plaintext = decrypt(change),
+			let prefix = try? Content.prefix(of: plaintext),
+			blindedId(for: prefix.id) == change.blindedId
+		else { return .unverifiable }
+		guard prefix.isKnown else { return .newerVersion }
+		return (try? Content.decode(plaintext)).map(Verified.content) ?? .unverifiable
 	}
 
 	static func randomWriteId() -> Data {
 		Data.random(.bits128)
+	}
+
+	private func decrypt(_ write: Write) -> Data? {
+		guard let box = try? AES.GCM.SealedBox(combined: write.payload) else { return nil }
+		return try? AES.GCM.open(box, using: noteKey(write.writeId), authenticating: Self.binding(write.blindedId, write.v, write.writeId))
 	}
 
 	private func noteKey(_ writeId: Data) -> SymmetricKey {

@@ -46,9 +46,9 @@ pub fn timestamp(ms: i64) -> String {
 	)
 }
 
-pub fn render(uuid: &[u8; 16], created_at: i64, updated_at: i64, v: u32, body: &str) -> String {
+pub fn render(uuid: &[u8; 16], created_at: i64, updated_at: i64, body: &str) -> String {
 	format!(
-		"---\nid: {}\ncreated: {}\nupdated: {}\nv: {v}\n---\n{body}",
+		"---\nid: {}\ncreated: {}\nupdated: {}\n---\n{body}",
 		uuid_text(uuid),
 		timestamp(created_at),
 		timestamp(updated_at)

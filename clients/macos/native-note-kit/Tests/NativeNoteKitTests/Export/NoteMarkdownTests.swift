@@ -7,7 +7,6 @@ private let validFields = [
 	"id: 3f2504e0-4f89-41d3-9a0c-0305e82c3301",
 	"created: 2026-09-24T21:00:00.123Z",
 	"updated: 2026-09-25T08:30:15.456Z",
-	"v: 7",
 ]
 
 private let textsWithoutFrontMatter: [String] = {
@@ -42,16 +41,26 @@ private func utf8(_ strings: [String]) -> [[UInt8]] {
 }
 
 struct NoteMarkdownTests {
-	@Test func importedNotesAreLiveAndDirty() throws {
+	@Test func importedNotesAreLiveDirtyAndUnsynced() throws {
 		var original = note("Synced elsewhere", v: 12)
 		original.deleted = true
 		original.dirty = false
+		original.ext = Data([1, 2, 3])
 
-		let parsed = try NoteMarkdown.parse(NoteMarkdown.render(original))
+		let rendered = NoteMarkdown.render(original)
+		let parsed = try NoteMarkdown.parse(rendered)
 
+		#expect(rendered.hasPrefix("---\nid: \(original.id.uuidString.lowercased())\ncreated: 2026-09-24T21:00:00.123Z\nupdated: 2026-09-25T08:30:15.456Z\n---\n"))
 		#expect(parsed.deleted == false)
 		#expect(parsed.dirty)
-		#expect(parsed.v == 12)
+		#expect(parsed.v == 0)
+		#expect(parsed.ext.isEmpty)
+	}
+
+	@Test func refusesTheVersionLineEarlierExportsCarried() {
+		#expect(throws: NoteMarkdown.Failure.unknownField("v")) {
+			try NoteMarkdown.parse(document(validFields + ["v: 7"]))
+		}
 	}
 
 	@Test(arguments: [
@@ -131,7 +140,7 @@ struct NoteMarkdownTests {
 		}
 	}
 
-	@Test(arguments: ["id", "created", "updated", "v"])
+	@Test(arguments: ["id", "created", "updated"])
 	func namesTheMissingField(name: String) {
 		#expect(throws: NoteMarkdown.Failure.missingField(name)) {
 			try NoteMarkdown.parse(document(validFields.filter { !$0.hasPrefix(name + ": ") }))
@@ -171,15 +180,6 @@ struct NoteMarkdownTests {
 		("created", "created:X2026-09-24T21:00:00.123Z"),
 		("updated", "updated: 1790325015456"),
 		("updated", "updated: 2026-09-25T08:30:15.456Z\r"),
-		("v", "v: -1"),
-		("v", "v: +7"),
-		("v", "v: 07"),
-		("v", "v: 4294967296"),
-		("v", "v: 7 "),
-		("v", "v:7"),
-		("v", "v:77"),
-		("v", "v: seven"),
-		("v", "v: \u{301}7"),
 	])
 	func namesTheInvalidField(name: String, line: String) {
 		#expect(throws: NoteMarkdown.Failure.invalidField(name)) {
@@ -187,7 +187,7 @@ struct NoteMarkdownTests {
 		}
 	}
 
-	@Test(arguments: ["id", "created", "updated", "v"])
+	@Test(arguments: ["id", "created", "updated"])
 	func namesTheDuplicateField(name: String) {
 		let repeated = validFields.flatMap { $0.hasPrefix(name + ": ") ? [$0, $0] : [$0] }
 
@@ -214,10 +214,10 @@ struct NoteMarkdownTests {
 
 	@Test func namesAFieldThatIsOutOfOrder() {
 		#expect(throws: NoteMarkdown.Failure.misplacedField("id")) {
-			try NoteMarkdown.parse(document([validFields[1], validFields[0], validFields[2], validFields[3]]))
+			try NoteMarkdown.parse(document([validFields[1], validFields[0], validFields[2]]))
 		}
-		#expect(throws: NoteMarkdown.Failure.misplacedField("updated")) {
-			try NoteMarkdown.parse(document([validFields[0], validFields[1], validFields[3], validFields[2]]))
+		#expect(throws: NoteMarkdown.Failure.misplacedField("created")) {
+			try NoteMarkdown.parse(document([validFields[0], validFields[2], validFields[1]]))
 		}
 	}
 

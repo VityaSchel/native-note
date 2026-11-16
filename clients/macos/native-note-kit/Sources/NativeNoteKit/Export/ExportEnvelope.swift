@@ -4,11 +4,13 @@ import Foundation
 nonisolated enum ExportEnvelope {
 	enum Failure: Error, Equatable {
 		case notAnExport
+		case newerVersion
 		case parametersOutOfBounds
 		case wrongPassphraseOrDamaged
 	}
 
-	static let magic = Data("NNEXPORT1".utf8)
+	private static let family = Data("NNEXPORT".utf8)
+	static let magic = family + Data("1".utf8)
 	static let saltLength = 16
 	static let maximumMemory: UInt32 = 2 * 1024 * 1024
 	static let maximumPasses: UInt32 = 10
@@ -22,6 +24,10 @@ nonisolated enum ExportEnvelope {
 
 	static func isEncrypted(_ file: Data) -> Bool {
 		file.starts(with: magic)
+	}
+
+	static func refuseNewerVersion(_ file: Data) throws(Failure) {
+		guard file.count <= family.count || !file.starts(with: family) || isEncrypted(file) else { throw .newerVersion }
 	}
 
 	static func isWithinBounds(_ parameters: Argon2.Parameters) -> Bool {
@@ -46,6 +52,7 @@ nonisolated enum ExportEnvelope {
 	}
 
 	static func open(_ file: Data, passphrase: String) throws -> Data {
+		try refuseNewerVersion(file)
 		guard file.count >= minimumLength, isEncrypted(file) else { throw Failure.notAnExport }
 		let header = file.prefix(headerLength)
 		var fields = WireReader(header.dropFirst(magic.count))

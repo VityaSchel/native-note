@@ -1,4 +1,4 @@
-use super::{Fault, INNER_MAX, Reply, collect_changes};
+use super::{Fault, INNER_MAX, Reason, Reply, collect_changes};
 use crate::frame::{Changes, WriteResult, sync_response};
 use crate::padding::pad;
 use crate::types::{BlindedNoteId, Record, Seq, Version};
@@ -6,7 +6,7 @@ use crate::version::{NOTE_MAX, Status};
 use std::convert::Infallible;
 
 const MOST_WRITES: usize = (INNER_MAX - 13) / 40;
-const MOST_RESULTS: usize = (INNER_MAX - 18) / 13;
+const MOST_RESULTS: usize = (INNER_MAX - 18) / 5;
 
 type Library = [(Seq, Record)];
 
@@ -28,10 +28,9 @@ fn record(seq: u64, len: usize) -> (Seq, Record) {
 
 fn accepted(count: usize) -> Vec<WriteResult> {
 	(1..=count)
-		.map(|index| WriteResult {
+		.map(|_| WriteResult {
 			status: Status::Accepted,
 			v: Version(1),
-			seq: Seq(u64::try_from(index).expect("fits")),
 		})
 		.collect()
 }
@@ -63,7 +62,7 @@ fn failing(
 }
 
 fn encoded_len(results: usize, records: &[Record]) -> usize {
-	18 + 13 * results
+	18 + 5 * results
 		+ records
 			.iter()
 			.map(|record| 40 + record.payload.len())
@@ -112,11 +111,28 @@ fn pull_all(library: &Library, first_results: &[WriteResult]) -> usize {
 }
 
 #[test]
-fn the_error_reply_is_its_action_byte_padded_to_the_smallest_bucket() {
-	let padded = Reply::error().0;
-	assert_eq!(padded.len(), 256);
-	assert_eq!(padded[..5], [0x00, 0x00, 0x00, 0x01, 0xff]);
-	assert!(padded[5..].iter().all(|&byte| byte == 0));
+fn the_error_reply_is_its_action_byte_and_reason_padded_to_the_smallest_bucket() {
+	for (reason, code) in [
+		(Reason::Malformed, 0x01),
+		(Reason::Unsupported, 0x02),
+		(Reason::Fault, 0x03),
+	] {
+		let padded = Reply::error(reason).0;
+		assert_eq!(padded.len(), 256);
+		assert_eq!(padded[..6], [0x00, 0x00, 0x00, 0x02, 0xff, code]);
+		assert!(padded[6..].iter().all(|&byte| byte == 0));
+	}
+}
+
+#[test]
+fn every_fault_answers_the_fault_reason() {
+	for fault in [
+		Fault::Storage(Down(0)),
+		Fault::SeqExhausted,
+		Fault::Unanswerable,
+	] {
+		assert_eq!(fault.reason(), Reason::Fault, "{fault:?}");
+	}
 }
 
 #[test]
@@ -143,7 +159,7 @@ fn a_pull_with_nothing_new_answers_the_latest_seq_without_more() {
 fn a_change_that_fills_the_budget_exactly_fits_and_one_byte_more_sets_more() {
 	for count in [0, 1, MOST_WRITES] {
 		let results = accepted(count);
-		let fill = INNER_MAX - 18 - 13 * count - (40 + NOTE_MAX) - 40;
+		let fill = INNER_MAX - 18 - 5 * count - (40 + NOTE_MAX) - 40;
 		let exact = [record(3, NOTE_MAX), record(7, fill), record(8, 0)];
 
 		let fits = pull(&results, Seq(0), Seq(7), &exact[..2]);
@@ -178,7 +194,7 @@ fn the_most_results_a_request_can_ask_for_and_a_maximum_size_change_fit_one_resp
 	let library = [record(52_429, NOTE_MAX)];
 	let changes = pull(&results, Seq(0), Seq(52_429), &library);
 	assert_eq!((changes.records.len(), changes.more), (1, false));
-	assert_eq!(sync_response(&results, &changes).len(), 1_730_198);
+	assert_eq!(sync_response(&results, &changes).len(), 1_310_774);
 }
 
 #[test]
@@ -205,7 +221,7 @@ fn a_change_that_fits_no_response_is_unanswerable() {
 
 #[test]
 fn results_that_leave_no_room_for_a_pending_change_are_unanswerable() {
-	assert_eq!(MOST_RESULTS, 161_317);
+	assert_eq!(MOST_RESULTS, 419_426);
 	let library = [record(1, 0)];
 	assert_eq!(
 		collect_changes(MOST_RESULTS, Seq(0), Seq(1), source(&library)),

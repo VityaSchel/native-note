@@ -294,12 +294,12 @@ fn every_outcome_of_each_action_is_answered_from_the_database() {
 		call(&mut store, &sync(0, &writes)),
 		Response::Sync {
 			results: vec![
-				result(Status::Accepted, 1, 1),
-				result(Status::Accepted, 2, 2),
-				result(Status::Conflict, 2, 0),
-				result(Status::TooLarge, 0, 0),
-				result(Status::Conflict, 0, 0),
-				result(Status::Accepted, 1, 3),
+				result(Status::Accepted, 1),
+				result(Status::Accepted, 2),
+				result(Status::Conflict, 2),
+				result(Status::TooLarge, 0),
+				result(Status::Conflict, 0),
+				result(Status::Accepted, 1),
 			],
 			changes: vec![writes[1].clone(), writes[5].clone()],
 			next_seq: Seq(3),
@@ -427,7 +427,7 @@ fn a_request_waits_for_another_connection_holding_the_write_lock() {
 	assert_eq!(
 		call(&mut store, &sync(0, &[write(1, 1, 8)])),
 		Response::Sync {
-			results: vec![result(Status::Accepted, 1, 1)],
+			results: vec![result(Status::Accepted, 1)],
 			changes: vec![write(1, 1, 8)],
 			next_seq: Seq(1),
 			more: false,

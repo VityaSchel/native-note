@@ -5,11 +5,10 @@ use crate::session::{Device, Exchange, Session};
 use native_note_core::{Record, Seq, Version};
 use std::collections::BTreeMap;
 
-pub fn result(status: Status, v: u32, seq: u64) -> WriteResult {
+pub fn result(status: Status, v: u32) -> WriteResult {
 	WriteResult {
 		status,
 		v: Version(v),
-		seq: Seq(seq),
 	}
 }
 
@@ -129,11 +128,10 @@ pub fn three_devices<E: Exchange>(session: &mut Session<E>) {
 	let a_rewrites = edits(&a, &originals, &mut rng);
 	assert_eq!(
 		session.sync(&mut a, a_rewrites),
-		[
-			result(Status::Accepted, 2, 2_250),
-			result(Status::Accepted, 2, 2_251)
-		]
+		[result(Status::Accepted, 2), result(Status::Accepted, 2)]
 	);
+	assert_eq!(session.model.current(&had).0, Seq(2_250));
+	assert_eq!(session.model.current(&lacking).0, Seq(2_251));
 	while session.sync_once(&mut c, &[]).1 {
 		pages += 1;
 	}

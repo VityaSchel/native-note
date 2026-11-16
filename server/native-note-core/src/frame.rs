@@ -1,4 +1,5 @@
 use crate::codec::{Reader, Writer};
+use crate::reply::Reason;
 use crate::types::{BlindedNoteId, Record, Seq, Version};
 use crate::version::Status;
 
@@ -20,6 +21,17 @@ pub enum DecodeError {
 	Truncated,
 	TrailingBytes,
 	UnknownDiscriminant,
+}
+
+impl DecodeError {
+	pub fn reason(self) -> Reason {
+		match self {
+			DecodeError::Padding | DecodeError::Truncated | DecodeError::TrailingBytes => {
+				Reason::Malformed
+			}
+			DecodeError::UnknownDiscriminant => Reason::Unsupported,
+		}
+	}
 }
 
 impl Request {
@@ -69,7 +81,6 @@ impl Status {
 pub(crate) struct WriteResult {
 	pub(crate) status: Status,
 	pub(crate) v: Version,
-	pub(crate) seq: Seq,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -83,10 +94,7 @@ pub(crate) fn sync_response(results: &[WriteResult], changes: &Changes) -> Vec<u
 	let mut writer = Writer::new();
 	writer.u8(ACTION_SYNC).count(results.len());
 	for result in results {
-		writer
-			.u8(result.status.code())
-			.u32(result.v.0)
-			.u64(result.seq.0);
+		writer.u8(result.status.code()).u32(result.v.0);
 	}
 	writer.count(changes.records.len());
 	for record in &changes.records {

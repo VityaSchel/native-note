@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 
 actor NoteStore {
-	static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v"
+	static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, ext"
 
 	private let url: URL
 	private var opened: SQLiteConnection?
@@ -70,7 +70,7 @@ actor NoteStore {
 		}
 	}
 
-	private static let insertion = "INSERT INTO note (\(columns), pulled) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"
+	private static let insertion = "INSERT INTO note (\(columns), pulled) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"
 
 	func put(_ note: Note, pulled: Bool) throws {
 		let statement = try connection.prepare(
@@ -83,6 +83,7 @@ actor NoteStore {
 				deleted = excluded.deleted,
 				dirty = excluded.dirty,
 				v = excluded.v,
+				ext = excluded.ext,
 				pulled = excluded.pulled
 			"""
 		)
@@ -109,7 +110,8 @@ actor NoteStore {
 		try statement.bind(5, note.deleted ? 1 : 0)
 		try statement.bind(6, note.dirty ? 1 : 0)
 		try statement.bind(7, Int64(note.v))
-		try statement.bind(8, pulled ? 1 : 0)
+		try statement.bind(8, note.ext)
+		try statement.bind(9, pulled ? 1 : 0)
 	}
 
 	func rekey(from oldKey: SymmetricKey, to newKey: SymmetricKey) throws -> Bool {
@@ -184,7 +186,7 @@ actor NoteStore {
 		let statement = try connection.prepare(
 			"""
 			INSERT INTO note (uuid, body, createdAt, updatedAt, deleted, dirty, pulled) VALUES (?1, '', ?2, ?2, 1, 0, 0)
-			ON CONFLICT(uuid) DO UPDATE SET deleted = 1, dirty = 1, body = '', updatedAt = ?2, pulled = 0
+			ON CONFLICT(uuid) DO UPDATE SET deleted = 1, dirty = 1, body = '', ext = x'', updatedAt = ?2, pulled = 0
 			"""
 		)
 		try statement.bind(1, id.bytes)
@@ -209,7 +211,8 @@ actor NoteStore {
 			updatedAt: statement.int(3),
 			deleted: statement.int(4) != 0,
 			dirty: statement.int(5) != 0,
-			v: UInt32(statement.int(6))
+			v: UInt32(statement.int(6)),
+			ext: statement.data(7)
 		)
 	}
 }

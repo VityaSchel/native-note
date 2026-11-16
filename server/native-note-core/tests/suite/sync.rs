@@ -51,7 +51,7 @@ fn the_sync_vector_steps_run_in_order_against_one_server_and_the_replayed_step_c
 			let Response::Sync { results, .. } = client::decode_response(&inner) else {
 				panic!("{name} gets a sync response");
 			};
-			assert_eq!(results, [result(Status::Conflict, 2, 0)], "{name}");
+			assert_eq!(results, [result(Status::Conflict, 2)], "{name}");
 		}
 		bodies.insert(name.to_owned(), body);
 	}
@@ -79,11 +79,11 @@ fn writes_within_one_sync_see_each_other_and_take_consecutive_seqs() {
 		response,
 		Response::Sync {
 			results: vec![
-				result(Status::Accepted, 1, 4),
-				result(Status::Accepted, 2, 5),
-				result(Status::Conflict, 2, 0),
-				result(Status::TooLarge, 2, 0),
-				result(Status::Accepted, 3, 6),
+				result(Status::Accepted, 1),
+				result(Status::Accepted, 2),
+				result(Status::Conflict, 2),
+				result(Status::TooLarge, 2),
+				result(Status::Accepted, 3),
 			],
 			changes: vec![writes[4].clone()],
 			next_seq: Seq(6),
@@ -93,15 +93,22 @@ fn writes_within_one_sync_see_each_other_and_take_consecutive_seqs() {
 
 	let mut everything: Vec<_> = others.into_iter().map(|(_, note)| note).collect();
 	everything.push(writes[4].clone());
-	assert_eq!(
-		harness.call(&sync(0, &[])),
-		Response::Sync {
-			results: Vec::new(),
-			changes: everything,
-			next_seq: Seq(6),
-			more: false,
-		}
-	);
+	for (since, changes) in [
+		(0, everything),
+		(5, vec![writes[4].clone()]),
+		(6, Vec::new()),
+	] {
+		assert_eq!(
+			harness.call(&sync(since, &[])),
+			Response::Sync {
+				results: Vec::new(),
+				changes,
+				next_seq: Seq(6),
+				more: false,
+			},
+			"{since}"
+		);
+	}
 }
 
 #[test]
@@ -116,9 +123,9 @@ fn a_note_at_the_last_version_takes_no_write_after_it() {
 		response,
 		Response::Sync {
 			results: vec![
-				result(Status::Accepted, u32::MAX, 2),
-				result(Status::Conflict, u32::MAX, 0),
-				result(Status::Conflict, u32::MAX, 0),
+				result(Status::Accepted, u32::MAX),
+				result(Status::Conflict, u32::MAX),
+				result(Status::Conflict, u32::MAX),
 			],
 			changes: vec![last],
 			next_seq: Seq(2),

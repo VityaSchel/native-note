@@ -71,7 +71,8 @@ protocol SyncedLibrary: AnyObject {
 		do {
 			let applied = try await engine.sync { try await library.commit($0, to: store) }
 			guard store === self.store else { return }
-			status.problems = applied.problems.map(Self.describe)
+			var shown: Set<String> = []
+			status.problems = applied.problems.map(Self.describe).filter { shown.insert($0).inserted }
 			status.lastSynced = Date()
 			status.phase = .idle
 		} catch {
@@ -296,7 +297,9 @@ protocol SyncedLibrary: AnyObject {
 		switch problem {
 		case .serverBehind: "The server holds less than this Mac has seen. It may have been restored from a backup."
 		case .unverifiableChange: "A change on the server could not be read with this library's key, so it was skipped."
+		case .newerChange: "A change on the server was made by a newer version of Native Note. Update Native Note to read it."
 		case .tooLarge: "A note is larger than 1 MB, so it stays on this Mac until it is shorter."
+		case .stuckConflict: "A note can't sync until Native Note is updated: the server holds a newer version of it."
 		}
 	}
 
@@ -304,6 +307,8 @@ protocol SyncedLibrary: AnyObject {
 		switch error {
 		case SyncError.refused(400), SyncError.unopenable: "The server did not accept this Mac's API key, or a proxy in front of it changed the request."
 		case let SyncError.refused(status): AppModel.statusMessage(status)
+		case SyncError.requestMalformed: "The server could not read Native Note's request."
+		case SyncError.unsupported: "This server needs a newer version of Native Note."
 		case SyncError.serverFault: "The server could not store the changes. Its disk may be full."
 		case SyncError.protocolViolation: "The server sent a reply Native Note does not understand."
 		case let error as URLError: "The server could not be reached. \(error.localizedDescription)"

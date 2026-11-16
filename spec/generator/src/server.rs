@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::aead::NONCE_LEN;
 use crate::envelope;
-use crate::frame::{self, Request, Response, Status, Write, WriteResult};
+use crate::frame::{self, Reason, Request, Response, Status, Write, WriteResult};
 use crate::note::BlindedId;
 
 pub const NOTE_MAX: usize = 1024 * 1024;
@@ -35,11 +35,7 @@ impl Server {
 
 	pub fn apply(&mut self, write: &Write) -> WriteResult {
 		let stored = self.notes.get(&write.blinded_id).map_or(0, |r| r.write.v);
-		let reject = |status| WriteResult {
-			status,
-			v: stored,
-			seq: 0,
-		};
+		let reject = |status| WriteResult { status, v: stored };
 
 		if write.payload.len() > NOTE_MAX {
 			return reject(Status::TooLarge);
@@ -48,14 +44,14 @@ impl Server {
 			return reject(Status::Conflict);
 		}
 
+		self.record(write.clone());
 		WriteResult {
 			status: Status::Accepted,
 			v: write.v,
-			seq: self.record(write.clone()),
 		}
 	}
 
-	fn record(&mut self, write: Write) -> u64 {
+	fn record(&mut self, write: Write) {
 		self.seq += 1;
 		self.notes.insert(
 			write.blinded_id,
@@ -64,7 +60,6 @@ impl Server {
 				write,
 			},
 		);
-		self.seq
 	}
 
 	pub fn changes_since(&self, since: u64) -> Vec<Write> {
@@ -86,8 +81,11 @@ impl Server {
 	) -> Option<Vec<u8>> {
 		let request_nonce = sealed.first_chunk()?;
 		let unpadded = envelope::open_request(envelope_key, sealed).ok()?;
-		let response = match unpadded.and_then(|inner| frame::decode_request(&inner).ok()) {
-			Some(Request::Sync { since, writes }) => {
+		let request = unpadded
+			.ok_or(Reason::Malformed)
+			.and_then(|inner| frame::decode_request(&inner).map_err(|e| Reason::for_request(&e)));
+		let response = match request {
+			Ok(Request::Sync { since, writes }) => {
 				let (results, changes) = self.sync(since, &writes);
 				Response::Sync {
 					results,
@@ -96,9 +94,9 @@ impl Server {
 					more: false,
 				}
 			}
-			Some(Request::GetRecovery) => self.get_recovery(),
-			Some(Request::PutRecovery { v, blob }) => self.put_recovery(v, &blob),
-			None => Response::Error,
+			Ok(Request::GetRecovery) => self.get_recovery(),
+			Ok(Request::PutRecovery { v, blob }) => self.put_recovery(v, &blob),
+			Err(reason) => Response::Error(reason),
 		};
 		let inner = frame::encode_response(&response);
 		Some(
@@ -176,7 +174,6 @@ mod tests {
 			let result = server.apply(&write(v, 0));
 			assert_eq!(result.status, Status::Conflict, "v {v}");
 			assert_eq!(result.v, u32::MAX, "v {v}");
-			assert_eq!(result.seq, 0, "v {v}");
 		}
 		assert_eq!(server.seq(), 1);
 	}

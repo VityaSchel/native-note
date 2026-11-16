@@ -98,23 +98,15 @@ impl Model {
 			Status::Conflict
 		};
 		match status {
-			Status::Accepted => WriteResult {
-				status,
-				v: write.v,
-				seq: Seq(self.latest.0 + 1),
-			},
-			_ => WriteResult {
-				status,
-				v: stored,
-				seq: Seq(0),
-			},
+			Status::Accepted => WriteResult { status, v: write.v },
+			_ => WriteResult { status, v: stored },
 		}
 	}
 
 	pub fn apply(&mut self, write: &'static Record) -> WriteResult {
 		let result = self.judge(write);
 		if result.status == Status::Accepted {
-			self.store(result.seq, write);
+			self.store(Seq(self.latest.0 + 1), write);
 		}
 		result
 	}

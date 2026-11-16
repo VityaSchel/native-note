@@ -43,12 +43,21 @@ final class ScriptedServer: SyncTransport, @unchecked Sendable {
 }
 
 func misfiled(_ content: Content, under blindedId: Data, v: UInt32, contentKey: SymmetricKey = sharedContentKey) throws -> Write {
+	try sealed(content.encoded(), under: blindedId, v: v, contentKey: contentKey)
+}
+
+func sealed(_ plaintext: Data, under blindedId: Data, v: UInt32, contentKey: SymmetricKey = sharedContentKey) throws -> Write {
 	let writeId = NoteCipher.randomWriteId()
 	var binding = WireWriter()
 	binding.fixed(blindedId)
 	binding.u32(v)
 	binding.fixed(writeId)
 	let key = KeyDerivation.derive(ikm: contentKey, salt: writeId, info: KeyDerivation.note)
-	let sealed = try AES.GCM.seal(content.encoded(), using: key, authenticating: binding.data)
+	let sealed = try AES.GCM.seal(plaintext, using: key, authenticating: binding.data)
 	return Write(blindedId: blindedId, v: v, writeId: writeId, payload: try #require(sealed.combined))
+}
+
+func newerContent(of id: UUID, version: UInt8 = 0x02, kind: UInt8 = 0x01, fields: Data = Data("a field this version cannot read".utf8)) -> Data {
+	let content = Data([version, kind]) + id.bytes + fields
+	return content + Data(count: (Content.block - content.count % Content.block) % Content.block)
 }

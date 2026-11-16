@@ -1,12 +1,13 @@
-use crate::support::client::{Response, Status, WriteResult};
+use crate::support::client::{Reason, Response, Status, WriteResult};
 use crate::support::harness::{Failure, Harness, Http};
+use crate::support::memory::Injected;
 use crate::support::memory::MemoryStorage;
 use crate::support::vectors::{
 	Listing, REGISTRY, case, cases, hex, hex_array, replayed, vectors_dir,
 };
 use crate::support::{BODY_MAX, NOTE_MAX, client, open, server_key};
 use native_note_core::{
-	BlindedNoteId, DecodeError, EnvelopeKey, Record, Rejection, Request, Seq, Version,
+	BlindedNoteId, DecodeError, EnvelopeKey, Fault, Record, Rejection, Request, Seq, Version,
 };
 use serde_json::Value;
 use std::panic;
@@ -218,16 +219,23 @@ fn the_envelope_vectors_a_server_must_reject_do_not_open() {
 	}
 }
 
+fn reason_name(reason: native_note_core::Reason) -> &'static str {
+	match reason {
+		native_note_core::Reason::Malformed => "malformed",
+		native_note_core::Reason::Unsupported => "unsupported",
+		native_note_core::Reason::Fault => "fault",
+	}
+}
+
 #[test]
 fn an_envelope_vector_that_fails_to_unpad_or_decode_is_answered_with_the_reference_error() {
 	for (name, error) in [
 		("errorForUnpaddableRequest", DecodeError::Padding),
-		(
-			"errorForUndecodableRequest",
-			DecodeError::UnknownDiscriminant,
-		),
+		("errorForUndecodableRequest", DecodeError::Truncated),
+		("errorForUnknownAction", DecodeError::UnknownDiscriminant),
 	] {
 		let case = envelope_case(name);
+		assert_eq!(case["reason"], reason_name(error.reason()), "{name}");
 		let mut harness = Harness::new(vector_api_key(), MemoryStorage::default());
 		assert_eq!(
 			harness.exchange(hex(&case["frame"]), hex_array(&case["responseNonce"])),
@@ -239,12 +247,11 @@ fn an_envelope_vector_that_fails_to_unpad_or_decode_is_answered_with_the_referen
 	}
 }
 
-fn one_result(status: Status, v: u32, seq: u64) -> Response {
+fn one_result(status: Status, v: u32) -> Response {
 	Response::Sync {
 		results: vec![WriteResult {
 			status,
 			v: Version(v),
-			seq: Seq(seq),
 		}],
 		changes: Vec::new(),
 		next_seq: Seq(1),
@@ -254,10 +261,10 @@ fn one_result(status: Status, v: u32, seq: u64) -> Response {
 
 fn expected_response(name: &str) -> Response {
 	match name {
-		"syncAccepted" => one_result(Status::Accepted, 1, 1),
-		"syncConflict" => one_result(Status::Conflict, 1, 0),
-		"syncConflictAtLastVersion" => one_result(Status::Conflict, u32::MAX, 0),
-		"syncTooLarge" => one_result(Status::TooLarge, 1, 0),
+		"syncAccepted" => one_result(Status::Accepted, 1),
+		"syncConflict" => one_result(Status::Conflict, 1),
+		"syncConflictAtLastVersion" => one_result(Status::Conflict, u32::MAX),
+		"syncTooLarge" => one_result(Status::TooLarge, 1),
 		"syncChanges" => Response::Sync {
 			results: Vec::new(),
 			changes: vec![change(2)],
@@ -276,7 +283,9 @@ fn expected_response(name: &str) -> Response {
 			status: Status::Accepted,
 			v: Version(3),
 		},
-		"error" => Response::Error,
+		"errorMalformed" => Response::Error(Reason::Malformed),
+		"errorUnsupported" => Response::Error(Reason::Unsupported),
+		"errorFault" | "errorUnknownReason" => Response::Error(Reason::Fault),
 		_ => panic!("frames.json response case {name} is not replayed"),
 	}
 }
@@ -313,7 +322,7 @@ fn the_test_client_decodes_every_response_vector_and_rejects_every_malformed_one
 			decoded += 1;
 		}
 	}
-	assert_eq!((decoded, rejected), (9, 7));
+	assert_eq!((decoded, rejected), (12, 7));
 }
 
 #[test]
@@ -371,7 +380,12 @@ fn reproduce(name: &str) -> (MemoryStorage, Vec<u8>) {
 				blob: vec![0x58; 60],
 			}
 		}
-		"error" => return (storage, vec![0x04]),
+		"errorMalformed" => return (storage, vec![0x01]),
+		"errorUnsupported" => return (storage, vec![0x04]),
+		"errorFault" => {
+			storage.fail_next_at(0);
+			Request::Get
+		}
 		_ => panic!("frames.json response case {name} is not reproduced"),
 	};
 	(storage, client::encode_request(&request))
@@ -389,13 +403,23 @@ fn every_response_vector_is_answered_by_the_core_from_a_seeded_store() {
 		let mut harness = Harness::new(vector_api_key(), storage);
 		assert_eq!(harness.send(&inner), hex(&case["encoded"]), "{name}");
 		let failures = match name {
-			"error" => vec![Failure::Decode(DecodeError::UnknownDiscriminant)],
+			"errorMalformed" => vec![Failure::Decode(DecodeError::Truncated)],
+			"errorUnsupported" => vec![Failure::Decode(DecodeError::UnknownDiscriminant)],
+			"errorFault" => vec![Failure::Fault(Fault::Storage(Injected(0)))],
 			_ => Vec::new(),
 		};
+		if let Some(reason) = case["reason"].as_str() {
+			let expected = match &failures[..] {
+				[Failure::Decode(error)] => error.reason(),
+				[Failure::Fault(fault)] => fault.reason(),
+				other => panic!("{name} failed with {other:?}"),
+			};
+			assert_eq!(reason, reason_name(expected), "{name}");
+		}
 		assert_eq!(harness.failures, failures, "{name}");
 		reproduced += 1;
 	}
-	assert_eq!(reproduced, 9);
+	assert_eq!(reproduced, 11);
 }
 
 fn vector_api_key() -> [u8; 32] {

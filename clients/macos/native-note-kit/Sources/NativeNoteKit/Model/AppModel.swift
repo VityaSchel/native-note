@@ -479,6 +479,7 @@ import Observation
 					throw LibraryArchive.Failure.tooLarge
 				}
 				let file = try Data(contentsOf: url, options: .mappedIfSafe)
+				try ExportEnvelope.refuseNewerVersion(file)
 				return try LibraryArchive.notes(in: passphrase.map { try ExportEnvelope.open(file, passphrase: $0) } ?? file)
 			}
 		} catch {
@@ -489,7 +490,7 @@ import Observation
 		guard store === self.store else { return ImportSummary(notImported: incoming.count) }
 		let added: [Note]
 		do {
-			added = try await store.insertMissing(incoming.map(Self.atVersionZero))
+			added = try await store.insertMissing(incoming)
 		} catch {
 			guard store === self.store else { return ImportSummary(notImported: incoming.count) }
 			report(error, as: "The file could not be imported.")
@@ -501,12 +502,6 @@ import Observation
 			sync.soon()
 		}
 		return ImportSummary(added: added.count, skipped: incoming.count - added.count)
-	}
-
-	nonisolated private static func atVersionZero(_ imported: Note) -> Note {
-		var note = imported
-		note.v = 0
-		return note
 	}
 
 	nonisolated private static func search(_ store: NoteStore, for text: String) async throws -> [Note] {

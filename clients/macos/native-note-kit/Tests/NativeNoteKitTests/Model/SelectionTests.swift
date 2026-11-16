@@ -128,7 +128,7 @@ struct SelectionTests {
 	private func firstPushAccepted(of pushed: Note) throws -> Commit {
 		let content = Content.note(id: pushed.id, createdAt: pushed.createdAt, updatedAt: pushed.updatedAt, body: pushed.body)
 		let sent = SealedWrite(note: pushed, write: try NoteCipher(contentKey: sharedContentKey).seal(content, v: 1))
-		return .exchange(Exchange(sent: [sent], results: [WriteResult(status: .accepted, v: 1, seq: 1)], nextSeq: 1))
+		return .exchange(Exchange(sent: [sent], results: [WriteResult(status: .accepted, v: 1)], nextSeq: 1))
 	}
 
 	@Test(arguments: [false, true])

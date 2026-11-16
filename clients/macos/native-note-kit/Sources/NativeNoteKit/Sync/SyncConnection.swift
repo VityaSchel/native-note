@@ -8,8 +8,22 @@ nonisolated protocol SyncTransport: Sendable {
 nonisolated enum SyncError: Error, Equatable {
 	case refused(status: Int)
 	case unopenable
+	case requestMalformed
+	case unsupported
 	case serverFault
 	case protocolViolation
+
+	init(_ reason: ErrorReason) {
+		switch reason {
+		case .malformed: self = .requestMalformed
+		case .unsupported: self = .unsupported
+		case .fault: self = .serverFault
+		}
+	}
+
+	var refusedUnread: Bool {
+		self == .requestMalformed || self == .unsupported
+	}
 }
 
 nonisolated struct HTTPTransport: SyncTransport {
@@ -84,7 +98,7 @@ nonisolated struct SyncConnection: Sendable {
 			throw SyncError.unopenable
 		}
 		guard let response = try? Response.decode(inner) else { throw SyncError.protocolViolation }
-		if response == .error { throw SyncError.serverFault }
+		if case let .error(reason) = response { throw SyncError(reason) }
 		return response
 	}
 }

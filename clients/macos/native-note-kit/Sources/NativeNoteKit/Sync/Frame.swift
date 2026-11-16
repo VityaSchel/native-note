@@ -34,7 +34,12 @@ nonisolated enum Status: UInt8, Sendable {
 nonisolated struct WriteResult: Equatable, Sendable {
 	let status: Status
 	let v: UInt32
-	let seq: UInt64
+}
+
+nonisolated enum ErrorReason: UInt8, Sendable {
+	case malformed = 0x01
+	case unsupported = 0x02
+	case fault = 0x03
 }
 
 nonisolated enum Request: Equatable, Sendable {
@@ -67,7 +72,7 @@ nonisolated enum Response: Equatable, Sendable {
 	case sync(results: [WriteResult], changes: [Write], nextSeq: UInt64, more: Bool)
 	case get(v: UInt32, blob: Data)
 	case put(status: Status, v: UInt32)
-	case error
+	case error(ErrorReason)
 
 	static func decode(_ bytes: Data) throws(WireError) -> Response {
 		var reader = WireReader(bytes)
@@ -84,7 +89,7 @@ nonisolated enum Response: Equatable, Sendable {
 			guard status != .tooLarge else { throw .unknownDiscriminant }
 			response = .put(status: status, v: try reader.u32())
 		case Action.error:
-			response = .error
+			response = .error(ErrorReason(rawValue: try reader.u8()) ?? .fault)
 		default:
 			throw .unknownDiscriminant
 		}
@@ -98,9 +103,7 @@ nonisolated enum Response: Equatable, Sendable {
 	}
 
 	private static func result(from reader: inout WireReader) throws(WireError) -> WriteResult {
-		let result = WriteResult(status: try status(from: &reader), v: try reader.u32(), seq: try reader.u64())
-		guard result.status == .accepted || result.seq == 0 else { throw .notCanonical }
-		return result
+		WriteResult(status: try status(from: &reader), v: try reader.u32())
 	}
 }
 

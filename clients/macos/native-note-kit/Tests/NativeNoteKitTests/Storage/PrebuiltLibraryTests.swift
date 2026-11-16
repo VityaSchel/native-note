@@ -146,6 +146,25 @@ struct PrebuiltLibraryTests {
 		try connection.execute("INSERT INTO note_fts (note_fts) VALUES ('integrity-check')")
 	}
 
+	@Test func migratesFromItsSchemaKeepingEveryRowAndAddingAnEmptyExt() async throws {
+		let url = try copiedLibrary()
+		let rows = "SELECT group_concat(hex(uuid) || '|' || body || '|' || createdAt || '|' || updatedAt || '|' || deleted || '|' || dirty || '|' || v || '|' || pulled, char(10)) FROM (SELECT * FROM note ORDER BY uuid)"
+		let meta = "SELECT group_concat(k || '=' || hex(v), ',') FROM (SELECT * FROM meta ORDER BY k)"
+		let before = try SQLiteConnection(url: url, rawKey: PrebuiltLibrary.key, create: false)
+		#expect(try before.scalar("PRAGMA user_version") == "2")
+		let rowsBefore = try #require(try before.scalar(rows))
+		let metaBefore = try #require(try before.scalar(meta))
+
+		_ = try await NoteStore.open(url: url, key: PrebuiltLibrary.key)
+
+		let after = try SQLiteConnection(url: url, rawKey: PrebuiltLibrary.key, create: false)
+		#expect(try after.scalar("PRAGMA user_version") == String(Schema.migrations.count))
+		#expect(try after.scalar(rows) == rowsBefore)
+		#expect(try after.scalar(meta) == metaBefore)
+		#expect(try after.scalar("SELECT count(*) FROM note WHERE ext = x''") == (try after.scalar("SELECT count(*) FROM note")))
+		#expect(try after.scalar("SELECT count(*) FROM pragma_table_info('note') WHERE name = 'seq'") == "0")
+	}
+
 	@Test func refusesAnyOtherKey() async throws {
 		let url = try copiedLibrary()
 

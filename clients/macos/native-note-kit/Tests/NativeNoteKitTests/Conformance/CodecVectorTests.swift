@@ -16,6 +16,13 @@ struct CodecVectorTests {
 				#expect(throws: try wireError(named: vector.string("error")), "\(vector.name)") {
 					try Content.decode(encoded)
 				}
+				if let prefixUuid = vector.bytes("prefixUuid") {
+					let prefix = try Content.prefix(of: encoded)
+					#expect(prefix.id.bytes == prefixUuid, "\(vector.name)")
+					#expect(!prefix.isKnown, "\(vector.name)")
+				} else {
+					#expect((try? Content.prefix(of: encoded))?.isKnown != false, "\(vector.name) reads as a newer version")
+				}
 			}
 		}
 	}
@@ -32,7 +39,13 @@ struct CodecVectorTests {
 			case ("request", true):
 				#expect(try RequestDecoding.decode(encoded).encoded() == encoded, "\(vector.name)")
 			case ("response", true):
-				#expect(try responseBytes(Response.decode(encoded)) == encoded, "\(vector.name)")
+				let response = try Response.decode(encoded)
+				#expect(responseBytes(response) == encoded, "\(vector.name)")
+				if let reason = vector.string("reason") {
+					#expect(response == .error(try errorReason(named: reason)), "\(vector.name)")
+				}
+			case ("response", false) where vector.bool("decodes") == true:
+				#expect(try Response.decode(encoded) == .error(try errorReason(named: vector.string("reason"))), "\(vector.name)")
 			case ("response", false):
 				#expect(throws: try wireError(named: vector.string("error")), "\(vector.name)") {
 					try Response.decode(encoded)
@@ -43,7 +56,7 @@ struct CodecVectorTests {
 			}
 			replayed.insert(vector.name)
 		}
-		#expect(replayed.count >= 19)
+		#expect(replayed.count >= 23)
 	}
 
 	@Test func paddingFillsTheSmallestBucketAndUnpadsOnlyItsOwnOutput() throws {

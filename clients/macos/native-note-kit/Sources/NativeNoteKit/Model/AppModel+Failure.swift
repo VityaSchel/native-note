@@ -41,6 +41,8 @@ extension AppModel {
 				"The file is too large to be a Native Note export."
 			case ZipArchive.Failure.tooLarge:
 				"The library is too large to export as one zip."
+			case ExportEnvelope.Failure.newerVersion:
+				"This export was made by a newer version of Native Note. Update Native Note to import it."
 			case ExportEnvelope.Failure.parametersOutOfBounds:
 				"The export asks for more memory or time than Native Note allows."
 			case ExportEnvelope.Failure.notAnExport, is ZipArchive.Failure, is NoteMarkdown.Failure, is LibraryArchive.Failure:

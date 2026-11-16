@@ -5,7 +5,7 @@ use super::{
 	API_KEY, BLINDED_ID, NONCE, PAYLOAD, RESPONSE_NONCE, WRITE_ID, file, seq_array, seq_bytes,
 };
 use crate::codec::DecodeError;
-use crate::frame::{self, Request, Response, Status, Write, WriteResult};
+use crate::frame::{self, Reason, Request, Response, Status, Write, WriteResult};
 use crate::hex::encode as hx;
 use crate::server::Server;
 use crate::{aead, envelope, kdf};
@@ -19,9 +19,9 @@ fn sample_write(v: u32) -> Write {
 	}
 }
 
-fn one_result(status: Status, v: u32, seq: u64) -> Response {
+fn one_result(status: Status, v: u32) -> Response {
 	Response::Sync {
-		results: vec![WriteResult { status, v, seq }],
+		results: vec![WriteResult { status, v }],
 		changes: vec![],
 		next_seq: 1,
 		more: false,
@@ -47,6 +47,23 @@ fn response_case(name: &str, response: Response) -> Value {
 		"encoded": hx(&encoded),
 		"length": encoded.len(),
 		"roundTrips": frame::decode_response(&encoded).as_ref() == Ok(&response),
+	})
+}
+
+fn error_case(name: &str, reason: Reason) -> Value {
+	let mut case = response_case(name, Response::Error(reason));
+	case["reason"] = json!(reason.name());
+	case
+}
+
+fn unknown_reason_case(name: &str, bytes: Vec<u8>) -> Value {
+	let treated_as = Reason::Fault;
+	json!({
+		"name": name,
+		"direction": "response",
+		"encoded": hx(&bytes),
+		"decodes": frame::decode_response(&bytes) == Ok(Response::Error(treated_as)),
+		"reason": treated_as.name(),
 	})
 }
 
@@ -91,19 +108,15 @@ pub fn frames() -> Value {
 
 	let trailing = [encoded_sync, vec![0]].concat();
 
-	let conflict = one_result(Status::Conflict, 1, 0);
+	let conflict = one_result(Status::Conflict, 1);
 	let status_at = 1 + 4;
 	let mut unknown_status = frame::encode_response(&conflict);
 	unknown_status[status_at] = 0x04;
 
-	let mut seq_on_conflict = frame::encode_response(&conflict);
-	let seq_at = status_at + 1 + 4;
-	seq_on_conflict[seq_at..seq_at + 8].copy_from_slice(&9u64.to_be_bytes());
-
 	let mut short_count_bad_item = frame::encode_response(&conflict);
 	short_count_bad_item[1..5].copy_from_slice(&2u32.to_be_bytes());
 	short_count_bad_item[status_at] = 0x04;
-	short_count_bad_item.truncate(seq_at + 8);
+	short_count_bad_item.truncate(status_at + 1 + 4);
 
 	let mut bad_bool = frame::encode_response(&conflict);
 	*bad_bool.last_mut().unwrap() = 0x02;
@@ -113,13 +126,16 @@ pub fn frames() -> Value {
 		v: 1,
 	});
 
-	let encoded_error = frame::encode_response(&Response::Error);
+	let encoded_error = frame::encode_response(&Response::Error(Reason::Fault));
 	let trailing_error = [encoded_error.clone(), vec![0]].concat();
+	let truncated_error = encoded_error[..1].to_vec();
+	let mut unknown_reason = encoded_error.clone();
+	unknown_reason[1] = 0x7f;
 	let mut unknown_response_action = encoded_error.clone();
 	unknown_response_action[0] = 0xfe;
 
 	file(
-		"Request and response frames. Fixed-width big-endian fields, length-prefixed byte strings, exactly one valid encoding per message.",
+		"Request and response frames. Fixed-width big-endian fields, length-prefixed byte strings, exactly one valid encoding per message, except that an error response decodes any reason byte and reads an unknown one as fault.",
 		vec![
 			request_case(
 				"syncEmpty",
@@ -137,13 +153,13 @@ pub fn frames() -> Value {
 					blob: sample_blob(),
 				},
 			),
-			response_case("syncAccepted", one_result(Status::Accepted, 1, 1)),
+			response_case("syncAccepted", one_result(Status::Accepted, 1)),
 			response_case("syncConflict", conflict),
 			response_case(
 				"syncConflictAtLastVersion",
-				one_result(Status::Conflict, u32::MAX, 0),
+				one_result(Status::Conflict, u32::MAX),
 			),
-			response_case("syncTooLarge", one_result(Status::TooLarge, 1, 0)),
+			response_case("syncTooLarge", one_result(Status::TooLarge, 1)),
 			response_case(
 				"syncChanges",
 				Response::Sync {
@@ -171,7 +187,10 @@ pub fn frames() -> Value {
 					v: 3,
 				},
 			),
-			response_case("error", Response::Error),
+			error_case("errorMalformed", Reason::Malformed),
+			error_case("errorUnsupported", Reason::Unsupported),
+			error_case("errorFault", Reason::Fault),
+			unknown_reason_case("errorUnknownReason", unknown_reason),
 			reject_request(
 				"rejectUnknownAction",
 				unknown_action,
@@ -195,11 +214,6 @@ pub fn frames() -> Value {
 				DecodeError::NotCanonical,
 			),
 			reject_response(
-				"rejectSeqOnNonAcceptedResult",
-				seq_on_conflict,
-				DecodeError::NotCanonical,
-			),
-			reject_response(
 				"rejectUnknownStatus",
 				unknown_status,
 				DecodeError::UnknownDiscriminant,
@@ -218,6 +232,11 @@ pub fn frames() -> Value {
 				"rejectUnknownResponseAction",
 				unknown_response_action,
 				DecodeError::UnknownDiscriminant,
+			),
+			reject_response(
+				"rejectTruncatedError",
+				truncated_error,
+				DecodeError::Truncated,
 			),
 			reject_response(
 				"rejectTrailingBytesAfterError",
@@ -256,20 +275,22 @@ pub fn envelope() -> Value {
 	let mut dirty_fill = envelope::pad(&request_inner).unwrap();
 	*dirty_fill.last_mut().unwrap() = 0x01;
 	let unpaddable = aead::seal(&key, &req_nonce, &dirty_fill, &[]);
-	let undecodable = envelope::seal_request(&key, &req_nonce, &[0x7f]).unwrap();
-	let answered = |name: &str, sealed: &[u8]| {
+	let undecodable = envelope::seal_request(&key, &req_nonce, &request_inner[..1]).unwrap();
+	let unknown_action = envelope::seal_request(&key, &req_nonce, &[0x7f]).unwrap();
+	let answered = |name: &str, sealed: &[u8], reason: Reason| {
 		json!({
 			"name": name,
 			"envelopeKey": hx(&key),
 			"frame": hx(sealed),
 			"responseNonce": hx(&resp_nonce),
 			"response": hx(&Server::new().handle(&key, sealed, &resp_nonce).unwrap()),
-			"responseInner": hx(&frame::encode_response(&Response::Error)),
+			"responseInner": hx(&frame::encode_response(&Response::Error(reason))),
+			"reason": reason.name(),
 		})
 	};
 
 	file(
-		"Sealed envelopes. Requests are sealed with an empty AAD; responses bind the request nonce as AAD. A request that opens but fails to unpad or decode is answered with a sealed error.",
+		"Sealed envelopes. Requests are sealed with an empty AAD; responses bind the request nonce as AAD. A request that opens but fails to unpad or decode is answered with a sealed error carrying its reason.",
 		vec![
 			json!({
 				"name": "request",
@@ -315,8 +336,17 @@ pub fn envelope() -> Value {
 				"frame": hx(&response),
 				"opens": envelope::open_request(&key, &response).is_ok(),
 			}),
-			answered("errorForUnpaddableRequest", &unpaddable),
-			answered("errorForUndecodableRequest", &undecodable),
+			answered("errorForUnpaddableRequest", &unpaddable, Reason::Malformed),
+			answered(
+				"errorForUndecodableRequest",
+				&undecodable,
+				Reason::Malformed,
+			),
+			answered(
+				"errorForUnknownAction",
+				&unknown_action,
+				Reason::Unsupported,
+			),
 		],
 	)
 }

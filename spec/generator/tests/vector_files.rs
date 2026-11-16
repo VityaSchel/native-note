@@ -3,7 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use native_note_vectors::content;
-use native_note_vectors::frame::{self, Request, Response};
+use native_note_vectors::envelope;
+use native_note_vectors::frame::{self, Reason, Request, Response};
 use native_note_vectors::vectors::{self, CONTENT_KEY, seq_bytes};
 use native_note_vectors::{hex, kdf, mnemonic, note};
 use serde_json::Value;
@@ -145,4 +146,92 @@ fn sync_scenario_payloads_decrypt_to_their_declared_shape() {
 		checked, 17,
 		"scenario should carry seven writes and ten changes"
 	);
+}
+
+fn vector_file(name: &str) -> Value {
+	serde_json::from_str(&fs::read_to_string(vectors_dir().join(name)).unwrap()).unwrap()
+}
+
+fn hex_field(case: &Value, field: &str) -> Vec<u8> {
+	hex::decode(case[field].as_str().unwrap()).unwrap()
+}
+
+#[test]
+fn each_error_vector_names_the_reason_its_frame_carries() {
+	let mut errors = 0;
+	for case in vector_file("frames.json")["cases"].as_array().unwrap() {
+		let Some(name) = case["reason"].as_str() else {
+			continue;
+		};
+		let Ok(Response::Error(reason)) = frame::decode_response(&hex_field(case, "encoded"))
+		else {
+			panic!("{} is an error response", case["name"]);
+		};
+		assert_eq!(reason.name(), name, "{}", case["name"]);
+		errors += 1;
+	}
+	assert_eq!(errors, 4);
+
+	let mut answered = 0;
+	for case in vector_file("envelope.json")["cases"].as_array().unwrap() {
+		let Some(name) = case["reason"].as_str() else {
+			continue;
+		};
+		let frame = hex_field(case, "frame");
+		let request_nonce: [u8; 12] = frame[..12].try_into().unwrap();
+		let inner = envelope::open_response(
+			&hex_field(case, "envelopeKey"),
+			&request_nonce,
+			&hex_field(case, "response"),
+		)
+		.unwrap();
+		assert_eq!(inner, hex_field(case, "responseInner"), "{}", case["name"]);
+		assert_eq!(
+			frame::decode_response(&inner).map(|response| match response {
+				Response::Error(reason) => reason.name(),
+				_ => "not an error",
+			}),
+			Ok(name),
+			"{}",
+			case["name"]
+		);
+		answered += 1;
+	}
+	assert_eq!(answered, 3);
+	assert_eq!(Reason::from_code(0x02), Reason::Unsupported);
+}
+
+#[test]
+fn content_from_a_newer_version_still_names_the_uuid_its_blinded_id_derives_from() {
+	let blinding_key = kdf::blinding_key(&seq_bytes(CONTENT_KEY, 32));
+	let mut prefixed = 0;
+	for file in ["content.json", "note.json"] {
+		for case in vector_file(file)["cases"].as_array().unwrap() {
+			let Some(uuid) = case["prefixUuid"].as_str() else {
+				continue;
+			};
+			let field = if file == "note.json" {
+				"plaintext"
+			} else {
+				"encoded"
+			};
+			let bytes = hex_field(case, field);
+			assert_eq!(
+				content::prefix_uuid(&bytes)
+					.map(|uuid| hex::encode(&uuid))
+					.as_deref(),
+				Ok(uuid)
+			);
+			assert!(content::decode(&bytes).is_err(), "{}", case["name"]);
+			if file == "note.json" {
+				let uuid: [u8; 16] = hex::decode(uuid).unwrap().try_into().unwrap();
+				assert_eq!(
+					note::blinded_id(&blinding_key, &uuid).to_vec(),
+					hex_field(case, "blindedId")
+				);
+			}
+			prefixed += 1;
+		}
+	}
+	assert_eq!(prefixed, 4);
 }

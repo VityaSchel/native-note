@@ -57,14 +57,9 @@ fn apply<S: Storage>(
 			Ok(WriteResult {
 				status: Status::Accepted,
 				v: write.v,
-				seq,
 			})
 		}
-		status => Ok(WriteResult {
-			status,
-			v: stored,
-			seq: Seq(0),
-		}),
+		status => Ok(WriteResult { status, v: stored }),
 	}
 }
 

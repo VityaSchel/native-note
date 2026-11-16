@@ -66,13 +66,19 @@ struct ExportVectorTests {
 			let file = try vector.require("file")
 			let passphrase = try #require(vector.string("passphrase"))
 			let opens = try #require(vector.bool("opens") as Bool?, "case \(vector.name)")
-			#expect(ExportEnvelope.isEncrypted(file) == (vector.name != "rejectBadMagic"), "case \(vector.name)")
+			let newer = vector.string("outcome") == "newerVersion"
+			#expect(ExportEnvelope.isEncrypted(file) == !newer, "case \(vector.name)")
+			if newer {
+				#expect(throws: ExportEnvelope.Failure.newerVersion, "case \(vector.name)") { try ExportEnvelope.refuseNewerVersion(file) }
+			} else {
+				#expect(throws: Never.self, "case \(vector.name)") { try ExportEnvelope.refuseNewerVersion(file) }
+			}
 
 			if opens {
 				#expect(try ExportEnvelope.open(file, passphrase: passphrase) == (try vector.require("zip")), "case \(vector.name)")
 			} else {
 				let expected: ExportEnvelope.Failure = switch vector.name {
-				case "rejectBadMagic": .notAnExport
+				case _ where newer: .newerVersion
 				case let name where name.hasPrefix("rejectParameters"): .parametersOutOfBounds
 				default: .wrongPassphraseOrDamaged
 				}

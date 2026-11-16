@@ -45,8 +45,8 @@ private struct GarbledReplies: SyncTransport {
 }
 
 private func acceptingEveryWrite(_ request: Request) -> Response {
-	guard case let .sync(since, writes) = request else { return .error }
-	let results = writes.enumerated().map { WriteResult(status: .accepted, v: $1.v, seq: since + UInt64($0) + 1) }
+	guard case let .sync(since, writes) = request else { return .error(.malformed) }
+	let results = writes.map { WriteResult(status: .accepted, v: $0.v) }
 	return .sync(results: results, changes: [], nextSeq: since + UInt64(writes.count), more: false)
 }
 
@@ -156,10 +156,14 @@ struct SyncLoopTests {
 		#expect(model.syncStatus.phase == .off)
 	}
 
-	@Test func aServerThatCannotStoreSaysSoWhenSyncingAndWhenSettingUp() async throws {
+	@Test(arguments: [
+		(ErrorReason.fault, "The server could not store the changes. Its disk may be full."),
+		(.malformed, "The server could not read Native Note's request."),
+		(.unsupported, "This server needs a newer version of Native Note."),
+	])
+	func aServerErrorSaysItsReasonWhenSyncingAndWhenSettingUp(error: ErrorReason, reason: String) async throws {
 		let server = ScriptedServer()
-		server.answerEvery { _ in .error }
-		let reason = "The server could not store the changes. Its disk may be full."
+		server.answerEvery { _ in .error(error) }
 		let syncing = try await library(through: server)
 		try await startSync(of: syncing, apiKey: server.apiKey)
 
@@ -187,11 +191,40 @@ struct SyncLoopTests {
 		#expect(try await settingUp.store?.syncSettings() == nil)
 	}
 
+	@Test func changesFromANewerVersionAndTheNoteStuckBehindThemAreNamedOnceEachUntilUpdated() async throws {
+		let server = ScriptedServer()
+		let cipher = NoteCipher(contentKey: sharedContentKey)
+		let newer = try [UUID(), UUID()].map { try sealed(newerContent(of: $0), under: cipher.blindedId(for: $0), v: 1) }
+		let unreadable = try [UUID(), UUID()].map { try misfiled(.tombstone(id: UUID(), deletedAt: 1), under: cipher.blindedId(for: $0), v: 1) }
+		server.answerEvery { request in
+			guard case let .sync(since, writes) = request else { return .error(.malformed) }
+			return .sync(results: writes.map { _ in WriteResult(status: .conflict, v: 3) }, changes: newer + unreadable, nextSeq: since, more: false)
+		}
+		let model = try await library(through: server, holding: ["stuck here"])
+		try await startSync(of: model, apiKey: server.apiKey)
+
+		await model.syncNow()
+
+		let problems = [
+			"A change on the server was made by a newer version of Native Note. Update Native Note to read it.",
+			"A change on the server could not be read with this library's key, so it was skipped.",
+			"A note can't sync until Native Note is updated: the server holds a newer version of it.",
+		]
+		#expect(model.syncStatus.phase == .idle)
+		#expect(model.syncStatus.problems == problems)
+		#expect(model.notes.map(\.body) == ["stuck here"])
+
+		await model.syncNow()
+
+		#expect(model.syncStatus.problems == problems)
+		#expect(try await model.store?.pendingPushes().map { ($0.body, $0.v) }.elementsEqual([("stuck here", 0)], by: ==) == true)
+	}
+
 	@Test func aNoteTheServerAnswersTooLargeIsNamedInTheStatusAndStaysToBePushed() async throws {
 		let server = ScriptedServer()
 		server.answerEvery { request in
-			guard case let .sync(since, writes) = request else { return .error }
-			return .sync(results: writes.map { _ in WriteResult(status: .tooLarge, v: 0, seq: 0) }, changes: [], nextSeq: since, more: false)
+			guard case let .sync(since, writes) = request else { return .error(.malformed) }
+			return .sync(results: writes.map { _ in WriteResult(status: .tooLarge, v: 0) }, changes: [], nextSeq: since, more: false)
 		}
 		let model = try await library(through: server, holding: ["kept on this Mac"])
 		try await startSync(of: model, apiKey: server.apiKey)

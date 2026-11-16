@@ -1,4 +1,4 @@
-use crate::support::client::{self, INNER_MAX, Response, Status, WriteResult};
+use crate::support::client::{self, INNER_MAX, Reason, Response, Status, WriteResult};
 use crate::support::corpus::{SplitMix64, payload};
 use crate::support::harness::{Failure, Harness, Http, nonce_of};
 use crate::support::memory::{Injected, MemoryStorage};
@@ -9,7 +9,7 @@ const API_KEY: [u8; 32] = [
 	0x71, 0xe4, 0x0a, 0x9f, 0x36, 0xcb, 0x58, 0x13, 0xd2, 0x87, 0x4d, 0xb0, 0x65, 0x1e, 0xf3, 0x2a,
 	0x9c, 0x07, 0x5b, 0xe8, 0x41, 0xa6, 0x3d, 0xc9, 0x12, 0x7f, 0xb4, 0x68, 0x0e, 0xd5, 0x23, 0x96,
 ];
-const MOST_RESULTS: usize = (INNER_MAX - 18) / 13;
+const MOST_RESULTS: usize = (INNER_MAX - 18) / 5;
 
 fn note(rng: &mut SplitMix64, v: u32, len: usize) -> Record {
 	Record {
@@ -80,7 +80,7 @@ fn fault_every_call(storage: &MemoryStorage, request: &Request) -> usize {
 		harness.storage.fail_next_at(call);
 		assert_eq!(
 			client::decode_response(&harness.send(&inner)),
-			Response::Error,
+			Response::Error(Reason::Fault),
 			"call {call}"
 		);
 		assert_eq!(
@@ -166,15 +166,14 @@ fn a_sync_that_would_pass_the_last_seq_rolls_back_and_answers_error() {
 	};
 
 	let both = sync(u64::MAX - 1, &[first.clone(), second.clone()]);
-	assert_eq!(harness.call(&both), Response::Error);
+	assert_eq!(harness.call(&both), Response::Error(Reason::Fault));
 	assert_eq!(harness.failures, [Failure::Fault(Fault::SeqExhausted)]);
 	assert!(harness.storage.state() == &before);
 
-	let last_seq = |status, v, seq, changes| Response::Sync {
+	let last_seq = |status, v, changes| Response::Sync {
 		results: vec![WriteResult {
 			status,
 			v: Version(v),
-			seq: Seq(seq),
 		}],
 		changes,
 		next_seq: Seq(u64::MAX),
@@ -182,15 +181,18 @@ fn a_sync_that_would_pass_the_last_seq_rolls_back_and_answers_error() {
 	};
 	assert_eq!(
 		harness.call(&sync(u64::MAX - 1, std::slice::from_ref(&first))),
-		last_seq(Status::Accepted, 1, u64::MAX, vec![first])
+		last_seq(Status::Accepted, 1, vec![first])
 	);
 	assert_eq!(
 		harness.call(&sync(u64::MAX, std::slice::from_ref(&held))),
-		last_seq(Status::Conflict, 1, 0, Vec::new())
+		last_seq(Status::Conflict, 1, Vec::new())
 	);
 
 	let after = harness.storage.state().clone();
-	assert_eq!(harness.call(&sync(u64::MAX, &[second])), Response::Error);
+	assert_eq!(
+		harness.call(&sync(u64::MAX, &[second])),
+		Response::Error(Reason::Fault)
+	);
 	assert_eq!(harness.failures.len(), 2);
 	assert_eq!(
 		harness.failures.pop(),
@@ -218,7 +220,13 @@ fn a_stored_note_or_blob_that_fits_no_response_answers_error() {
 			assert!(matches!(got, Response::Get { blob, .. } if blob.len() == largest));
 			assert!(harness.failures.is_empty());
 		} else {
-			assert_eq!((pulled, got), (Response::Error, Response::Error));
+			assert_eq!(
+				(pulled, got),
+				(
+					Response::Error(Reason::Fault),
+					Response::Error(Reason::Fault)
+				)
+			);
 			assert_eq!(
 				harness.failures,
 				[
@@ -295,10 +303,14 @@ fn a_body_that_does_not_unseal_gets_a_bare_status_and_one_that_does_not_decode_o
 	assert_eq!(harness.exchange(foreign, nonce), Http::BadRequest);
 	assert!(harness.failures.is_empty());
 
-	for inner in [&[0x04][..], &[0x02, 0x00], &[0x03, 0x00]] {
+	for (inner, reason) in [
+		(&[0x04][..], Reason::Unsupported),
+		(&[0x02, 0x00], Reason::Malformed),
+		(&[0x03, 0x00], Reason::Malformed),
+	] {
 		assert_eq!(
 			client::decode_response(&harness.send(inner)),
-			Response::Error
+			Response::Error(reason)
 		);
 	}
 	assert_eq!(

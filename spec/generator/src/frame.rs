@@ -10,6 +10,10 @@ const STATUS_ACCEPTED: u8 = 0x01;
 const STATUS_CONFLICT: u8 = 0x02;
 const STATUS_TOO_LARGE: u8 = 0x03;
 
+const REASON_MALFORMED: u8 = 0x01;
+const REASON_UNSUPPORTED: u8 = 0x02;
+const REASON_FAULT: u8 = 0x03;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
 	Accepted,
@@ -44,6 +48,46 @@ impl Status {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+	Malformed,
+	Unsupported,
+	Fault,
+}
+
+impl Reason {
+	pub fn name(self) -> &'static str {
+		match self {
+			Reason::Malformed => "malformed",
+			Reason::Unsupported => "unsupported",
+			Reason::Fault => "fault",
+		}
+	}
+
+	pub fn code(self) -> u8 {
+		match self {
+			Reason::Malformed => REASON_MALFORMED,
+			Reason::Unsupported => REASON_UNSUPPORTED,
+			Reason::Fault => REASON_FAULT,
+		}
+	}
+
+	pub fn from_code(code: u8) -> Self {
+		match code {
+			REASON_MALFORMED => Reason::Malformed,
+			REASON_UNSUPPORTED => Reason::Unsupported,
+			_ => Reason::Fault,
+		}
+	}
+
+	pub fn for_request(error: &DecodeError) -> Self {
+		match error {
+			DecodeError::UnknownDiscriminant => Reason::Unsupported,
+			_ => Reason::Malformed,
+		}
+	}
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Write {
 	pub blinded_id: BlindedId,
@@ -56,7 +100,6 @@ pub struct Write {
 pub struct WriteResult {
 	pub status: Status,
 	pub v: u32,
-	pub seq: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +125,7 @@ pub enum Response {
 		status: Status,
 		v: u32,
 	},
-	Error,
+	Error(Reason),
 }
 
 fn put_write(w: &mut Writer, write: &Write) {
@@ -167,7 +210,7 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
 		} => {
 			w.u8(ACTION_SYNC).count(results.len());
 			for result in results {
-				w.u8(result.status.code()).u32(result.v).u64(result.seq);
+				w.u8(result.status.code()).u32(result.v);
 			}
 			w.count(changes.len());
 			for change in changes {
@@ -181,8 +224,8 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
 		Response::PutRecovery { status, v } => {
 			w.u8(ACTION_PUT_RECOVERY).u8(status.code()).u32(*v);
 		}
-		Response::Error => {
-			w.u8(ACTION_ERROR);
+		Response::Error(reason) => {
+			w.u8(ACTION_ERROR).u8(reason.code());
 		}
 	}
 	w.into_bytes()
@@ -191,11 +234,7 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
 fn get_result(r: &mut Reader) -> Result<WriteResult, DecodeError> {
 	let status = Status::from_code(r.u8()?)?;
 	let v = r.u32()?;
-	let seq = r.u64()?;
-	if status != Status::Accepted && seq != 0 {
-		return Err(DecodeError::NotCanonical);
-	}
-	Ok(WriteResult { status, v, seq })
+	Ok(WriteResult { status, v })
 }
 
 pub fn decode_response(input: &[u8]) -> Result<Response, DecodeError> {
@@ -226,7 +265,7 @@ pub fn decode_response(input: &[u8]) -> Result<Response, DecodeError> {
 			let v = r.u32()?;
 			Response::PutRecovery { status, v }
 		}
-		ACTION_ERROR => Response::Error,
+		ACTION_ERROR => Response::Error(Reason::from_code(r.u8()?)),
 		_ => return Err(DecodeError::UnknownDiscriminant),
 	};
 	r.finish()?;

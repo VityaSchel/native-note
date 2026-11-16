@@ -72,7 +72,7 @@ fn step(
 	let (results, changes) = server.sync(since, &writes);
 	let outcome = json!({
 		"results": results.iter().map(|r| json!({
-			"status": r.status.name(), "v": r.v, "seq": r.seq,
+			"status": r.status.name(), "v": r.v,
 		})).collect::<Vec<_>>(),
 		"changes": changes.len(),
 	});
@@ -116,7 +116,7 @@ pub fn scenario() -> Value {
 			&mut server,
 			2,
 			Some("B"),
-			"B holds the same note unsynced at v = 0, as after importing the same export, and produced v = 1 offline. storedV is already 1, so the write is rejected with the server's current v and seq 0. The same response carries A's version, newer than B's unpushed edit, so B saves its own text as a new note under copyUuid, keeping its createdAt and updatedAt, and applies A's version.",
+			"B holds the same note unsynced at v = 0, as after importing the same export, and produced v = 1 offline. storedV is already 1, so the write is rejected with the server's current v. The same response carries A's version, newer than B's unpushed edit, so B saves its own text as a new note under copyUuid, keeping its createdAt, updatedAt and ext, and applies A's version.",
 			0,
 			vec![b.write(1, &sample_note("written by B"))],
 		),
@@ -166,6 +166,7 @@ pub fn scenario() -> Value {
 						created_at: UPDATED_AT + MINUTE,
 						updated_at: UPDATED_AT + MINUTE,
 						body: "new on B".to_string(),
+						ext: Vec::new(),
 					},
 				),
 				b.write(
@@ -175,6 +176,7 @@ pub fn scenario() -> Value {
 						created_at: CREATED_AT,
 						updated_at: UPDATED_AT + 2 * MINUTE,
 						body: "written by B, edited".to_string(),
+						ext: Vec::new(),
 					},
 				),
 			],

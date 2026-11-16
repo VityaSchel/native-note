@@ -17,7 +17,13 @@ func content(from object: [String: Any]) throws -> Content {
 	let int = { (key: String) throws -> Int64 in Int64(try #require(object[key] as? Int, "content has no \(key)")) }
 	switch object["kind"] as? String {
 	case "note":
-		return .note(id: id, createdAt: try int("createdAt"), updatedAt: try int("updatedAt"), body: try #require(object["body"] as? String))
+		return .note(
+			id: id,
+			createdAt: try int("createdAt"),
+			updatedAt: try int("updatedAt"),
+			body: try #require(object["body"] as? String),
+			ext: try #require((object["ext"] as? String).flatMap(Hex.decode), "content has no ext")
+		)
 	case "tombstone":
 		return .tombstone(id: id, deletedAt: try int("deletedAt"))
 	default:
@@ -31,6 +37,15 @@ func wireError(named name: String?) throws -> WireError {
 	case "TrailingBytes": .trailingBytes
 	case "UnknownDiscriminant": .unknownDiscriminant
 	case "NotCanonical": .notCanonical
+	default: throw WireError.unknownDiscriminant
+	}
+}
+
+func errorReason(named name: String?) throws -> ErrorReason {
+	switch name {
+	case "malformed": .malformed
+	case "unsupported": .unsupported
+	case "fault": .fault
 	default: throw WireError.unknownDiscriminant
 	}
 }
@@ -67,7 +82,6 @@ func responseBytes(_ response: Response) -> Data {
 		for result in results {
 			writer.u8(result.status.rawValue)
 			writer.u32(result.v)
-			writer.u64(result.seq)
 		}
 		writer.fixed(Request.sync(since: 0, writes: changes).encoded().dropFirst(Request.syncHeaderLength - 4))
 		writer.u64(nextSeq)
@@ -80,8 +94,9 @@ func responseBytes(_ response: Response) -> Data {
 		writer.u8(0x03)
 		writer.u8(status.rawValue)
 		writer.u32(v)
-	case .error:
+	case let .error(reason):
 		writer.u8(0xff)
+		writer.u8(reason.rawValue)
 	}
 	return writer.data
 }

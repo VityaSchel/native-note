@@ -26,6 +26,8 @@ nonisolated struct RecoveryFlow: Sendable {
 			response = try await sendAgainIfLost(request) { mayHaveLanded = mayHaveLanded || !Self.neverSent.contains($0.code) }
 		} catch let error as URLError where !mayHaveLanded {
 			throw error
+		} catch let error as SyncError where error.refusedUnread {
+			throw error
 		} catch {
 			return try await pinAfterLostAnswer(contentKey, under: recoveryKey, pin: pin, failure: error)
 		}

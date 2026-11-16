@@ -33,7 +33,6 @@ pub fn export() -> Value {
 		&uuid_bytes(),
 		CREATED_AT,
 		UPDATED_AT,
-		3,
 		"Groceries\nmilk\nbread",
 	);
 	let zip = zip::stored(&[(ENTRY_NAME, markdown.as_bytes())]);
@@ -47,8 +46,8 @@ pub fn export() -> Value {
 
 	let truncated = &sealed[..sealed.len() - 1];
 
-	let mut bad_magic = sealed.clone();
-	bad_magic[MAGIC.len() - 1] = b'2';
+	let mut newer_version = sealed.clone();
+	newer_version[MAGIC.len() - 1] = b'2';
 
 	let sealed_under =
 		|params: ArgonParams| export::seal(PASSPHRASE, params, &salt, &nonce, &zip).unwrap();
@@ -75,7 +74,7 @@ pub fn export() -> Value {
 	});
 
 	file(
-		"Passphrase-encrypted exports. The header carries the Argon2id parameters and salt and is the AAD. Low-cost parameters; exports use the Argon2 floor. Before hashing, a reader refuses m (KiB) above 2 GiB or below 8p, t outside 1 to 10, and p outside 1 to 16. The sealed zip holds the listed entries.",
+		"Passphrase-encrypted exports. The header carries the Argon2id parameters and salt and is the AAD. Low-cost parameters; exports use the Argon2 floor. Before hashing, a reader refuses m (KiB) above 2 GiB or below 8p, t outside 1 to 10, and p outside 1 to 16. A file that starts with NNEXPORT and then any byte but 1 is refused as written by a newer version, never read as a zip. The sealed zip holds the listed entries.",
 		vec![
 			json!({
 				"name": "export",
@@ -101,7 +100,13 @@ pub fn export() -> Value {
 			reject("rejectFlippedHeaderByte", &flipped_salt),
 			reject("rejectFlippedCiphertextByte", &flipped_ciphertext),
 			reject("rejectTruncated", truncated),
-			reject("rejectBadMagic", &bad_magic),
+			json!({
+				"name": "rejectNewerVersion",
+				"passphrase": PASSPHRASE,
+				"file": hx(&newer_version),
+				"opens": export::read(PASSPHRASE, &newer_version).is_ok(),
+				"outcome": export::read(PASSPHRASE, &newer_version).map_err(|e| e.name()).err(),
+			}),
 			reject("rejectParametersTooManyPasses", &too_many_passes),
 			reject("rejectParametersZeroPasses", &no_passes),
 			reject("rejectParametersTooManyLanes", &too_many_lanes),

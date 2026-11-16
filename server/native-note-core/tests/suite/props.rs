@@ -1,4 +1,4 @@
-use crate::support::client::{self, Response, Status, WriteResult};
+use crate::support::client::{self, Reason, Response, Status, WriteResult};
 use crate::support::harness::{Failure, Harness};
 use crate::support::memory::{Injected, MemoryStorage};
 use crate::support::{NOTE_MAX, open, server_key};
@@ -375,7 +375,7 @@ proptest! {
 				Some(at) => {
 					prop_assert_eq!(
 						client::decode_response(&inner),
-						Response::Error,
+						Response::Error(Reason::Fault),
 						"step {}",
 						index
 					);

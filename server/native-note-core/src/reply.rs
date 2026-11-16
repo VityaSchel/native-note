@@ -4,14 +4,31 @@ use crate::types::{Record, Seq};
 
 const INNER_MAX: usize = BODY_MAX - LEN_PREFIX;
 const EMPTY_SYNC_LEN: usize = 1 + 4 + 4 + 8 + 1;
-const RESULT_LEN: usize = 1 + 4 + 8;
+const RESULT_LEN: usize = 1 + 4;
 const CHANGE_HEADER_LEN: usize = 16 + 4 + 16 + 4;
 
 pub struct Reply(pub(crate) Vec<u8>);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+	Malformed,
+	Unsupported,
+	Fault,
+}
+
+impl Reason {
+	fn code(self) -> u8 {
+		match self {
+			Reason::Malformed => 0x01,
+			Reason::Unsupported => 0x02,
+			Reason::Fault => 0x03,
+		}
+	}
+}
+
 impl Reply {
-	pub fn error() -> Reply {
-		Reply(pad(&[ACTION_ERROR]).unwrap_or_default())
+	pub fn error(reason: Reason) -> Reply {
+		Reply(pad(&[ACTION_ERROR, reason.code()]).unwrap_or_default())
 	}
 }
 
@@ -20,6 +37,14 @@ pub enum Fault<E> {
 	Storage(E),
 	SeqExhausted,
 	Unanswerable,
+}
+
+impl<E> Fault<E> {
+	pub fn reason(&self) -> Reason {
+		match self {
+			Fault::Storage(_) | Fault::SeqExhausted | Fault::Unanswerable => Reason::Fault,
+		}
+	}
 }
 
 pub(crate) fn collect_changes<E>(

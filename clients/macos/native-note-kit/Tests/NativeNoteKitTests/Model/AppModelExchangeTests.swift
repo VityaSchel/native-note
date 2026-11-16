@@ -247,6 +247,22 @@ struct AppModelExchangeTests {
 		#expect(await model.importLibrary(from: file, passphrase: nil) == nil)
 		#expect(model.failure == .failed("This file is not a Native Note export, or it is damaged.", title: "The file could not be imported."))
 	}
+
+	@Test(arguments: [nil, "any passphrase"])
+	func anExportFromANewerVersionIsRefusedAndNeverReadAsAZip(passphrase: String?) async throws {
+		let (model, directory) = try await library.unlocked(holding: [])
+		let file = exportFile(in: directory)
+		let zip = try LibraryArchive.archive([sampleNote(body: "Written by a newer Native Note")])
+		try (Data("NNEXPORT2".utf8) + zip).write(to: file)
+
+		#expect(!AppModel.isEncryptedExport(at: file))
+		#expect(await model.importLibrary(from: file, passphrase: passphrase) == nil)
+
+		let reason = "This export was made by a newer version of Native Note. Update Native Note to import it."
+		#expect(model.failure == .failed(reason, title: "The file could not be imported."))
+		#expect(model.notes.isEmpty)
+		#expect(try await observer(of: directory).liveNotes().isEmpty)
+	}
 }
 
 private func hold(_ semaphore: DispatchSemaphore) {

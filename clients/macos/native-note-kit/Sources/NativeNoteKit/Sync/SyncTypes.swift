@@ -46,7 +46,9 @@ nonisolated enum Commit: Sendable {
 enum SyncProblem: Equatable, Sendable {
 	case serverBehind
 	case unverifiableChange
+	case newerChange
 	case tooLarge(UUID)
+	case stuckConflict(UUID)
 }
 
 nonisolated struct Applied: Sendable {
