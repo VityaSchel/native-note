@@ -99,4 +99,4 @@ The [systemd unit](native-note-server.service) runs `/usr/local/bin/native-note-
 
 ## Server release
 
-[server-release.sh](../.forgejo/scripts/server-release.sh) builds a clean checkout into static `x86_64` and `aarch64` musl binaries with the toolchain pinned in [rust-toolchain.toml](../rust-toolchain.toml), the pinned `zig` as the C compiler and `rust-lld` as the linker, remapping every local path, and packs each with the systemd unit into a tarball with fixed owner, modes, order and time, in `releases/`, printing its SHA-256. Two builds on the same build host produce identical tarballs; builds on different hosts do not, since Cargo hashes `rustc -vV`, which names the host, into every crate.
+[server-release.sh](../.forgejo/scripts/server-release.sh) builds one tarball per `x86_64` and `aarch64` Linux, each holding the static musl binary and the systemd unit. Once a release is published, [release.yml](../.forgejo/workflows/release.yml) builds them at two cloud providers and attaches them only when both builds match. What a tarball depends on and which hosts reproduce it: [REPRODUCIBILITY.md](../REPRODUCIBILITY.md#sync-server).

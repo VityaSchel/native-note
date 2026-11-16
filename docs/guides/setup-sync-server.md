@@ -4,7 +4,7 @@ One static Linux binary that stores sealed notes in SQLite. It works over bare I
 
 ## Install
 
-Download the tarball for the host, `x86_64` or `aarch64` Linux, from [Releases](https://git.hloth.dev/hloth/native-note/releases); each holds the static binary and [the systemd unit](../../server/native-note-server.service). To build them yourself, see [CONTRIBUTING.md](../../CONTRIBUTING.md#server). On the host:
+Download the tarball for the host, `x86_64` or `aarch64` Linux, from [Releases](https://git.hloth.dev/hloth/native-note/releases); each holds the static binary and [the systemd unit](../../server/native-note-server.service). To rebuild them from the source and compare, see [REPRODUCIBILITY.md](../../REPRODUCIBILITY.md#sync-server). On the host:
 
 ```sh
 tar -xzf native-note-server-0.1.0-aarch64-unknown-linux-musl.tar.gz

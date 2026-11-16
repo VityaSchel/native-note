@@ -43,15 +43,7 @@ App Transport Security allows arbitrary loads, for plain-`http` servers.
 
 ### Release
 
-Apart from the signature, the stapled ticket and the provisioning profile, a [release zip](../../.forgejo/scripts/macos-release.sh) depends only on the commit and Xcode 27A266a on an Apple silicon Mac:
-
-- The commit is exported with `git archive` to `/private/tmp/native-note-release`, since Swift and the linker record absolute paths no flag removes; the SQLCipher amalgamation must match the commit's pinned hashes.
-- `xcodebuild` and `zip` run under `env -i` with `TZ=UTC`, `LC_ALL=C`, `SOURCE_DATE_EPOCH` at the commit time and no Git config. `BuildMachineOSBuild` is the SDK's build. The version and build number are the project's.
-- Each app is archived signed ad-hoc without a team. Files take the commit time and modes `755` and `644`; the zip holds sorted entries and no extra fields.
-- Before signing, a zip holding the builder's home path, user, host or computer name, Git identity, hardware UUID or serial number is refused, outside the bundle identifier, the repository URL and the copyright line.
-- Signing adds the team's application identifier, team identifier and keychain group to the archive's entitlements and embeds the team's Developer ID provisioning profile.
-
-[macos-verify.sh](../../.forgejo/scripts/macos-verify.sh) grafts each published app's signature, `_CodeSignature`, `CodeResources` and `embedded.provisionprofile` onto the rebuild, requires the published entitlements to be the rebuild's plus exactly those three keys and the hardened runtime, then every file to match byte for byte and the published signature to verify. `actool` names the icon's fallback image after a random temporary file, so `Assets.car` is compared by its renditions. Who signed it and its notarization are checked with `spctl -a -vv`, not by the script.
+[macos-release.sh](../../.forgejo/scripts/macos-release.sh) builds, signs and notarizes one zip per architecture, and [macos-verify.sh](../../.forgejo/scripts/macos-verify.sh) checks a published one; what a zip depends on and which hosts reproduce it: [REPRODUCIBILITY.md](../../REPRODUCIBILITY.md#macos-app).
 
 ### Unlock parameters
 

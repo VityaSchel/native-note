@@ -3,6 +3,7 @@ set -euo pipefail
 
 zig_version="0.16.0"
 targets=(x86_64-unknown-linux-musl aarch64-unknown-linux-musl)
+canonical_host="x86_64-unknown-linux-gnu"
 
 case "$(uname -s)-$(uname -m)" in
 	Darwin-arm64) zig_host="aarch64-macos" zig_sha256="b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489" ;;
@@ -18,12 +19,12 @@ sha256() {
 pack_reproducibly() {
 	local tarball="$1" dir="$2"
 	shift 2
-	if tar --version 2>/dev/null | grep -q "GNU tar"; then
-		tar --format=ustar --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -C "$dir" -cf - "$@"
+	if [[ "$(uname -s)" == Darwin ]]; then
+		(cd "$dir" && TZ=UTC /usr/bin/touch -t "$(/bin/date -u -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)" "$@")
+		/usr/bin/tar --format=ustar --uid 0 --gid 0 --uname root --gname root --no-xattrs --no-mac-metadata --no-acls --no-fflags -C "$dir" -cf - "$@" | /usr/bin/gzip -n -9 >"$tarball"
 	else
-		(cd "$dir" && TZ=UTC touch -t "$(date -u -r "$SOURCE_DATE_EPOCH" +%Y%m%d%H%M.%S)" "$@")
-		tar --format=ustar --uid 0 --gid 0 --uname root --gname root --no-xattrs --no-mac-metadata --no-acls --no-fflags -C "$dir" -cf - "$@"
-	fi | gzip -n -9 >"$tarball"
+		tar --format=ustar --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" -C "$dir" -cf - "$@" | gzip -n -9 >"$tarball"
+	fi
 }
 
 root="$(cd -P "$(dirname "$0")/../.." && pwd -P)"
@@ -45,6 +46,8 @@ version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Ca
 [[ -n "$version" ]] || { echo "no workspace version in server/Cargo.toml" >&2; exit 1; }
 sysroot="$(rustc --print sysroot)"
 commit="$(rustc -vV | sed -n 's/^commit-hash: //p')"
+host="$(rustc -vV | sed -n 's/^host: //p')"
+[[ "$host" == "$canonical_host" ]] || echo "building on $host: only a build on $canonical_host matches a release" >&2
 cargo_home="${CARGO_HOME:-$HOME/.cargo}"
 case "$root$cargo_home$sysroot$work" in
 	*" "*) echo "paths with spaces cannot be remapped in CFLAGS" >&2; exit 1 ;;
@@ -75,11 +78,16 @@ for target in "${targets[@]}"; do
 		cargo build --release --locked -p native-note-server --target "$target"
 	package="$work/package-$target"
 	mkdir -p "$package"
-	install -m 0755 "$work/target/$target/release/native-note-server" "$package/native-note-server"
+	binary="$work/target/$target/release/native-note-server"
+	if LC_ALL=C grep -aqF -e "$root" -e "$cargo_home" -e "$sysroot" -e "$work" "$binary"; then
+		echo "a local path survived into the $target binary, so no other host can reproduce it" >&2
+		exit 1
+	fi
+	install -m 0755 "$binary" "$package/native-note-server"
 	install -m 0644 "$root/server/native-note-server.service" "$package/native-note-server.service"
 	pack_reproducibly "$out/native-note-server-$version-$target.tar.gz" "$package" native-note-server native-note-server.service
 done
-echo "built on $(rustc -vV | sed -n 's/^host: //p')"
+echo "built on $host"
 cd "$out"
 tarballs=("${targets[@]/#/native-note-server-$version-}")
 sha256 "${tarballs[@]/%/.tar.gz}"

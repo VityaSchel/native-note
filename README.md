@@ -11,7 +11,7 @@ A FLOSS personal native note-taking app for Windows, Linux, macOS, Android and i
 - ☁️ **Multi-device:** set up sync via self-hosted server with E2EE
 - 🪶 **Lightweight:** the sync server is a single 🚀Rust🚀 binary
 
-100% free. No ads. No data collection. No telemetry or analytics. All releases are reproducible.
+100% free. No ads. No data collection. No telemetry or analytics. All releases are [reproducible](./REPRODUCIBILITY.md).
 
 ## Download
 

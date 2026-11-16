@@ -13,7 +13,7 @@ devtools/          development-only tools, never shipped
 
 ## Checks
 
-CI runs repository hygiene, the link check and the Rust checks below with `--locked` on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), and the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)).
+CI runs repository hygiene, the link check and the Rust checks below with `--locked` on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server tarballs for each published release ([release.yml](.forgejo/workflows/release.yml)).
 
 ### Conformance vectors
 
@@ -40,7 +40,7 @@ cargo test
 
 - Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
 - Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
-- Release tarballs: `.forgejo/scripts/server-release.sh`, per [server/DESIGN.md § Server release](server/DESIGN.md#server-release).
+- Release tarballs: `.forgejo/scripts/server-release.sh`, per [REPRODUCIBILITY.md](REPRODUCIBILITY.md#sync-server).
 
 ### Supply chain
 
@@ -69,7 +69,7 @@ xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 
 (cd native-note-kit && swift test)
 ```
 
-The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`, built from a clean tree with the version set in the project, needs Xcode 27A266a, the team's Developer ID certificate and provisioning profile and the `native-note` notarytool profile: `.forgejo/scripts/macos-release.sh [<tag>]`. To check published zips against the checked-out commit, with the same Xcode: `.forgejo/scripts/macos-verify.sh <zip>...`, per [clients/macos/README.md § Release](clients/macos/README.md#release).
+The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`, built from a clean tree with the version set in the project, needs Xcode 27A266a, the team's Developer ID certificate and provisioning profile and the `native-note` notarytool profile: `.forgejo/scripts/macos-release.sh [<tag>]`. To check published zips against the checked-out commit, with the same Xcode: `.forgejo/scripts/macos-verify.sh <zip>...`, per [REPRODUCIBILITY.md](REPRODUCIBILITY.md#macos-app).
 
 - Every feature gets unit tests and headless end-to-end tests, which run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`.
 - Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.
