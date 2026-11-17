@@ -1,20 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-zig_version="0.16.0"
-targets=(x86_64-unknown-linux-musl aarch64-unknown-linux-musl)
 canonical_host="x86_64-unknown-linux-gnu"
-
-case "$(uname -s)-$(uname -m)" in
-	Darwin-arm64) zig_host="aarch64-macos" zig_sha256="b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489" ;;
-	Linux-x86_64) zig_host="x86_64-linux" zig_sha256="70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00" ;;
-	Linux-aarch64) zig_host="aarch64-linux" zig_sha256="ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17" ;;
-	*) echo "no pinned zig for $(uname -s)-$(uname -m)" >&2; exit 1 ;;
-esac
-
-sha256() {
-	if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi
-}
+# shellcheck source=server-cross.sh
+source "$(dirname "$0")/server-cross.sh"
 
 pack_reproducibly() {
 	local tarball="$1" dir="$2"
@@ -36,10 +25,7 @@ out="$root/releases"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-zig="zig-$zig_host-$zig_version"
-curl -fsSLo "$work/$zig.tar.xz" "https://ziglang.org/download/$zig_version/$zig.tar.xz"
-echo "$zig_sha256  $work/$zig.tar.xz" | sha256 -c - >/dev/null
-tar -xJf "$work/$zig.tar.xz" -C "$work"
+install_zig "$work"
 
 cd "$root/server"
 version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)"
@@ -63,19 +49,11 @@ CARGO_ENCODED_RUSTFLAGS="$(IFS=$'\x1f'; echo "${rustflags[*]}")"
 SOURCE_DATE_EPOCH="$(git -C "$root" log -1 --format=%ct)"
 export CARGO_ENCODED_RUSTFLAGS SOURCE_DATE_EPOCH
 export CARGO_TARGET_DIR="$work/target"
-export ZIG_GLOBAL_CACHE_DIR="$work/zig-cache" ZIG_LOCAL_CACHE_DIR="$work/zig-cache"
 
 mkdir -p "$out"
-for target in "${targets[@]}"; do
-	arch="${target%%-*}"
-	cc="$work/cc-$arch"
-	printf '#!/bin/sh\nfor arg do\n\tshift\n\tcase "$arg" in --target=*) ;; *) set -- "$@" "$arg" ;; esac\ndone\nexec "%s" cc -target %s-linux-musl "$@"\n' "$work/$zig/zig" "$arch" >"$cc"
-	printf '#!/bin/sh\nexec "%s" ar "$@"\n' "$work/$zig/zig" >"$work/ar"
-	chmod +x "$cc" "$work/ar"
-	variable="$(echo "$target" | tr '[:lower:]-' '[:upper:]_')"
-	env "CC_${target//-/_}=$cc" "AR_${target//-/_}=$work/ar" "CFLAGS_${target//-/_}=${cflags[*]}" \
-		"CARGO_TARGET_${variable}_LINKER=rust-lld" \
-		cargo build --release --locked -p native-note-server --target "$target"
+for target in "${server_targets[@]}"; do
+	cross_env "$target" "$work"
+	env "${cross[@]}" "CFLAGS_${target//-/_}=${cflags[*]}" cargo build --release --locked -p native-note-server --target "$target"
 	package="$work/package-$target"
 	mkdir -p "$package"
 	binary="$work/target/$target/release/native-note-server"
@@ -83,11 +61,12 @@ for target in "${targets[@]}"; do
 		echo "a local path survived into the $target binary, so no other host can reproduce it" >&2
 		exit 1
 	fi
+	check_arm_cpu "$target" "$binary"
 	install -m 0755 "$binary" "$package/native-note-server"
 	install -m 0644 "$root/server/native-note-server.service" "$package/native-note-server.service"
 	pack_reproducibly "$out/native-note-server-$version-$target.tar.gz" "$package" native-note-server native-note-server.service
 done
 echo "built on $host"
 cd "$out"
-tarballs=("${targets[@]/#/native-note-server-$version-}")
+tarballs=("${server_targets[@]/#/native-note-server-$version-}")
 sha256 "${tarballs[@]/%/.tar.gz}"

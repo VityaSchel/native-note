@@ -99,4 +99,4 @@ The [systemd unit](native-note-server.service) runs `/usr/local/bin/native-note-
 
 ## Server release
 
-[server-release.sh](../.forgejo/scripts/server-release.sh) builds one tarball per `x86_64` and `aarch64` Linux, each holding the static musl binary and the systemd unit. Once a release is published, [release.yml](../.forgejo/workflows/release.yml) builds them at two cloud providers and attaches them only when both builds match. What a tarball depends on and which hosts reproduce it: [REPRODUCIBILITY.md](../REPRODUCIBILITY.md#sync-server).
+[server-release.sh](../.forgejo/scripts/server-release.sh) builds one tarball per `x86_64`, `aarch64`, `armv7` and ARMv6 Linux, each holding the static musl binary and the systemd unit. Once a release is published, [release.yml](../.forgejo/workflows/release.yml) builds them at two cloud providers and attaches them only when both builds match. What a tarball depends on and which hosts reproduce it: [REPRODUCIBILITY.md](../REPRODUCIBILITY.md#sync-server).

@@ -13,7 +13,7 @@ devtools/          development-only tools, never shipped
 
 ## Checks
 
-CI runs repository hygiene, the link check and the Rust checks below with `--locked` on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server tarballs for each published release ([release.yml](.forgejo/workflows/release.yml)).
+CI runs repository hygiene, the link check and the Rust checks below with `--locked`, and the server tests on arm64, armv7 and ARMv6 under qemu, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server tarballs for each published release ([release.yml](.forgejo/workflows/release.yml)).
 
 ### Conformance vectors
 
@@ -40,7 +40,7 @@ cargo test
 
 - Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
 - Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
-- Release tarballs: `.forgejo/scripts/server-release.sh`, per [REPRODUCIBILITY.md](REPRODUCIBILITY.md#sync-server).
+- Release tarballs: `.forgejo/scripts/server-release.sh`, per [REPRODUCIBILITY.md](REPRODUCIBILITY.md#sync-server). The tests for the other release targets: `.forgejo/scripts/server-cross-test.sh [<target>...]`, on Linux with `qemu-user` registered through binfmt.
 
 ### Supply chain
 

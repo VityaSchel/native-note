@@ -68,10 +68,10 @@ spctl -a -vv "$unzipped/Native Note.app"
 
 ## Sync server
 
-- **Canonical builder:** Linux on x86_64 (`x86_64-unknown-linux-gnu`), for both the `x86_64` and `aarch64` tarball.
+- **Canonical builder:** Linux on x86_64 (`x86_64-unknown-linux-gnu`), for all four tarballs: `x86_64`, `aarch64`, `armv7` and `arm` (ARMv6).
 - **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) on Debian 12 at two cloud providers, Vultr and Hetzner, once a release is published, and attached with their SHA-256 only when both builds match byte for byte.
 
-Build hosts for both tarballs:
+Build hosts for all four tarballs:
 
 |            | On x86_64         | On arm64             |
 | ---------- | ----------------- | -------------------- |
@@ -81,14 +81,14 @@ Build hosts for both tarballs:
 
 Pinned inputs:
 
-| Component                           | Where it's pinned                                     |
-| ----------------------------------- | ----------------------------------------------------- |
-| Rust toolchain and the musl targets | `rust-toolchain.toml`                                 |
-| Crates, bundled SQLite among them   | `server/Cargo.lock`                                   |
-| `zig`, the C compiler               | `server-release.sh`, its version and SHA-256 per host |
-| `rust-lld`, the linker              | the pinned Rust toolchain                             |
+| Component                                | Where it's pinned                                     |
+| ---------------------------------------- | ----------------------------------------------------- |
+| Rust toolchain and the musl targets      | `rust-toolchain.toml`                                 |
+| Crates, bundled SQLite among them        | `server/Cargo.lock`                                   |
+| `zig`, the C compiler, and each ARM CPU  | `server-cross.sh`, its version and SHA-256 per host   |
+| `rust-lld`, the linker                   | the pinned Rust toolchain                             |
 
-[server-release.sh](.forgejo/scripts/server-release.sh) builds a clean checkout into static musl binaries, remapping every local path and refusing a binary that still holds one, and packs each with [the systemd unit](server/native-note-server.service) into a tarball with fixed owner, modes, order and time, in `releases/`. GNU `tar` and `gzip` come from the host; the official builds use Debian 12's.
+[server-release.sh](.forgejo/scripts/server-release.sh) builds a clean checkout into static musl binaries, remapping every local path and refusing a binary that still holds one or holds code for another ARM CPU, and packs each with [the systemd unit](server/native-note-server.service) into a tarball with fixed owner, modes, order and time, in `releases/`. GNU `tar` and `gzip` come from the host; the official builds use Debian 12's.
 
 ```sh
 # 1. Check out the release
@@ -98,7 +98,7 @@ git checkout v<version>
 .forgejo/scripts/server-release.sh
 # -> built on x86_64-unknown-linux-gnu
 
-# 3. Fetch both tarballs and native-note-server-<version>.sha256 into one directory from https://git.hloth.dev/hloth/native-note/releases
+# 3. Fetch the four tarballs and native-note-server-<version>.sha256 into one directory from https://git.hloth.dev/hloth/native-note/releases
 PUBLISHED=/path/to/published
 
 # 4. Confirm the published tarballs and the rebuild both match the published SHA-256
@@ -108,6 +108,6 @@ PUBLISHED=/path/to/published
 
 [^1]: Cargo hashes `rustc -vV`, which names the build host, into every crate, so only a build on `x86_64-unknown-linux-gnu` matches.
 
-[^2]: `server-release.sh` pins `zig` only for Linux on x86_64 and arm64 and macOS on Apple silicon.
+[^2]: `server-cross.sh` pins `zig` only for Linux on x86_64 and arm64 and macOS on Apple silicon.
 
 [^3]: Under WSL 2, which runs Linux on x86_64.
