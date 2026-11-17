@@ -385,7 +385,7 @@ struct BiometricEnableTests {
 		var probe: Set<ObjectIdentifier> = []
 		try #require(!keyMaterial(in: [databaseKey], at: "probe", seen: &probe).isEmpty)
 		try #require(!keyMaterial(in: ["probe": databaseKey.withUnsafeBytes { Data($0) }], at: "probe", seen: &probe).isEmpty)
-		try #require(Mirror(reflecting: model).children.contains { $0.label == "_unlockParameters" })
+		try #require(Mirror(reflecting: model).children.contains { $0.label == "_unlockRecord" })
 		let held = stateHolders(of: model).flatMap { Mirror(reflecting: $0).children }
 		try #require(Set(held.filter { isOpaque($0.value) }.compactMap(\.label)).isSuperset(of: modelDependencies.subtracting(["keyStore"])))
 		try #require(held.count { $0.label == "keyStore" } == 2)

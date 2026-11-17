@@ -36,7 +36,6 @@ private func throughThePragma(_ url: URL, key: String, _ statements: [String]) t
 
 @Suite(.scratch)
 struct RawKeyTests {
-	private let replacement = SymmetricKey(data: Data(repeating: 0x43, count: 32))
 
 	private func database() throws -> URL {
 		let url = temporaryDatabase()
@@ -70,34 +69,6 @@ struct RawKeyTests {
 		}
 
 		#expect(try throughThePragma(url, key: literal(databaseKey), ["SELECT x FROM kept"]) == "keyed directly")
-	}
-
-	@Test func aRekeyOpensThroughThePragmaWithOnlyTheNewKey() throws {
-		let url = try database()
-		do {
-			let connection = try SQLiteConnection(url: url, rawKey: databaseKey)
-			try connection.execute("CREATE TABLE kept (x); INSERT INTO kept VALUES ('rekeyed directly')")
-			try connection.rekey(to: replacement)
-		}
-
-		#expect(try throughThePragma(url, key: literal(replacement), ["SELECT x FROM kept"]) == "rekeyed directly")
-		#expect(throws: Refused(code: SQLITE_NOTADB)) {
-			try throughThePragma(url, key: literal(databaseKey), ["SELECT x FROM kept"])
-		}
-	}
-
-	@Test func aRekeyThroughThePragmaOpensWithOnlyTheNewKey() throws {
-		let url = try database()
-		try throughThePragma(url, key: literal(databaseKey), [
-			"CREATE TABLE kept (x)",
-			"INSERT INTO kept VALUES ('rekeyed through the pragma')",
-			"PRAGMA rekey = \"\(literal(replacement))\"",
-		])
-
-		#expect(try SQLiteConnection(url: url, rawKey: replacement).scalar("SELECT x FROM kept") == "rekeyed through the pragma")
-		#expect(throws: SQLiteError.wrongKey) {
-			_ = try SQLiteConnection(url: url, rawKey: databaseKey)
-		}
 	}
 
 	@Test func theKeyIsNeverTakenAsAPassphrase() throws {

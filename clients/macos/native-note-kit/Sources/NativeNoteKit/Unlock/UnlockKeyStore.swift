@@ -39,22 +39,24 @@ nonisolated struct KeychainFailure: Error, Equatable {
 	}
 }
 
-nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
+nonisolated enum Keychain {
 	static let accessGroupEntitlement = "keychain-access-groups"
 
+	static let holdsAccessGroup: Bool = {
+		guard let task = SecTaskCreateFromSelf(nil) else { return false }
+		return SecTaskCopyValueForEntitlement(task, accessGroupEntitlement as CFString, nil) != nil
+	}()
+}
+
+nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 	private let account: String
 
 	init(directory: URL) {
 		account = "localDbKey:" + directory.standardizedFileURL.path
 	}
 
-	private static let holdsAccessGroup: Bool = {
-		guard let task = SecTaskCreateFromSelf(nil) else { return false }
-		return SecTaskCopyValueForEntitlement(task, accessGroupEntitlement as CFString, nil) != nil
-	}()
-
 	var availability: BiometricAvailability {
-		guard Self.holdsAccessGroup else { return .unavailable }
+		guard Keychain.holdsAccessGroup else { return .unavailable }
 		var error: NSError?
 		let canEvaluate = LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
 		return Self.availability(canEvaluate: canEvaluate, error: error)
@@ -78,7 +80,7 @@ nonisolated struct KeychainUnlockKeyStore: UnlockKeyStore {
 	}
 
 	func hasKey(matching copyMatching: (CFDictionary, UnsafeMutablePointer<CFTypeRef?>?) -> OSStatus) -> Bool {
-		guard Self.holdsAccessGroup else { return false }
+		guard Keychain.holdsAccessGroup else { return false }
 		let context = LAContext()
 		context.interactionNotAllowed = true
 		var query = baseQuery

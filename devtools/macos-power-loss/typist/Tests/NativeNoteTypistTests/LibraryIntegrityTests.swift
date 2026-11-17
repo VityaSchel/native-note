@@ -8,8 +8,8 @@ import Testing
 struct LibraryIntegrityTests {
 	private func library(notes: Int) async throws -> URL {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		let store = try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey())
+		try await makeLibrary(in: directory)
+		let store = try await NoteStore.open(url: AppLock.databaseFile(in: directory), key: workspaceKey())
 		for index in 0 ..< notes {
 			try await store.save(sampleNote(body: String(repeating: "note \(index) ", count: 400)))
 		}
@@ -26,7 +26,7 @@ struct LibraryIntegrityTests {
 	@Test func theWrongPasswordOpensNothing() async throws {
 		let directory = try await library(notes: 1)
 
-		await #expect(throws: SQLiteError.wrongKey) {
+		await #expect(throws: Unlock.Failure.wrongPassword) {
 			try await LibraryIntegrity.check(libraryAt: directory, password: "wrong horse")
 		}
 	}

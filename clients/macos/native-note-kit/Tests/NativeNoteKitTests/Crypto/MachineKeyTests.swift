@@ -33,8 +33,8 @@ struct MachineKeyTests {
 		let localSalt = Data(repeating: 0x80, count: 16)
 		let machineId = try key.machineId()
 
-		let mine = KeyDerivation.localDbKey(argonOut: SymmetricKey(data: Data(repeating: 0xa5, count: 32)), machineId: machineId, localSalt: localSalt)
-		let theirs = KeyDerivation.localDbKey(argonOut: SymmetricKey(data: Data(repeating: 0x5a, count: 32)), machineId: machineId, localSalt: localSalt)
+		let mine = KeyDerivation.unlockKey(argonOut: SymmetricKey(data: Data(repeating: 0xa5, count: 32)), machineId: machineId, localSalt: localSalt)
+		let theirs = KeyDerivation.unlockKey(argonOut: SymmetricKey(data: Data(repeating: 0x5a, count: 32)), machineId: machineId, localSalt: localSalt)
 
 		#expect(mine != theirs)
 	}

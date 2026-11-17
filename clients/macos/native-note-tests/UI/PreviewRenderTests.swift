@@ -63,7 +63,7 @@ private enum Preview: String, CaseIterable, CustomTestStringConvertible {
 				Screen(SettingsView(model: .previewing([])), width: 440, height: 300),
 				Screen(SecuritySettings(touchIDAvailable: true, touchIDEnabled: true, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }), width: 440, height: 300),
 				Screen(SecuritySettings(touchIDAvailable: false, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }), width: 440, height: 300),
-				Screen(ChangePasswordView(turnsTouchIDOff: true, change: { _, _ in nil }, done: {}), width: 360, height: 300),
+				Screen(ChangePasswordView(change: { _, _ in nil }, done: {}), width: 360, height: 300),
 				Screen(TurnOnTouchIDView(turnOn: { _ in nil }, done: {}), width: 360, height: 160),
 				Screen(SecuritySettings(touchIDAvailable: true, touchIDEnabled: false, turnOnTouchID: { _ in nil }, turnOffTouchID: {}, changePassword: { _, _ in nil }, sync: SyncControls(status: status)), width: 440, height: 520),
 				Screen(SyncSetupView(mode: .setUp, controls: SyncControls(), done: {}), width: 440, height: 300),

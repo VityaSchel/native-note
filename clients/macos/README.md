@@ -45,15 +45,16 @@ App Transport Security allows arbitrary loads, for plain-`http` servers.
 
 [macos-release.sh](../../.forgejo/scripts/macos-release.sh) builds, signs and notarizes one zip per architecture, and [macos-verify.sh](../../.forgejo/scripts/macos-verify.sh) checks a published one; what a zip depends on and which hosts reproduce it: [REPRODUCIBILITY.md](../../REPRODUCIBILITY.md#macos-app).
 
-### Unlock parameters
+### Unlock record
 
-[Unlock parameters](../DESIGN.md#unlock-parameters) live in `app-lock.plist`, a binary plist beside the database, not `UserDefaults`, so they migrate with it and no configuration profile overrides them; mode `0600`, in `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`. A password change writes the pending `app-lock.next.plist`.
+The [unlock record](../DESIGN.md#unlock-record) is a binary plist, kept in a data-protection keychain item of the signing team's group: service `dev.hloth.nativenote.library`, account `unlockRecord:` and the library folder's path, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, never synchronizable. Other code running as the user cannot read it, and it stays out of backups. A build without `keychain-access-groups` writes it to `app-lock.plist` beside the database instead, mode `0600`, in `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`; a library made by a build of one kind, or signed by another team, does not open in the other.
 
 ```
 version     1
 localSalt   16 bytes
 argon       { m, t, p }                  # m in KiB, per clients/DESIGN.md
 enclaveKey  Secure Enclave key blob      # absent without a Secure Enclave
+wrappedKey  60 bytes                     # localDbKey under unlockKey
 ```
 
 ### Machine ID
@@ -65,4 +66,4 @@ enclaveKey = SecureEnclave.P256.KeyAgreement.PrivateKey    # device-bound, non-e
 hardwareOp() = ECDH(enclaveKey, publicKey(enclaveKey))     # d²G, runs on the chip
 ```
 
-`enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`. The key blob in `app-lock.plist` holds `dG` in the clear; recovering `d²G` from it is the computational Diffie-Hellman problem.
+`enclaveKey` is created with `kSecAccessControlPrivateKeyUsage`. The key blob in the unlock record holds `dG` in the clear; recovering `d²G` from it is the computational Diffie-Hellman problem.

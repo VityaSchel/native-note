@@ -2,6 +2,8 @@ import Foundation
 import Synchronization
 import Testing
 
+@testable import NativeNoteKit
+
 struct Scratch: SuiteTrait, TestTrait, TestScoping {
 	final class Directories: Sendable {
 		private let made = Mutex<[URL]>([])
@@ -13,6 +15,9 @@ struct Scratch: SuiteTrait, TestTrait, TestScoping {
 		func removeAll() {
 			for directory in made.withLock({ $0 }) {
 				try? FileManager.default.removeItem(at: directory)
+				guard Keychain.holdsAccessGroup else { continue }
+				try? KeychainUnlockRecordStore(directory: directory).delete()
+				try? KeychainUnlockKeyStore(directory: directory).delete()
 			}
 		}
 	}

@@ -10,14 +10,15 @@ nonisolated enum Unlock {
 		case boundToAnotherMac
 		case passwordNotChanged
 		case storedKeyRejected
+		case keyRejected
 	}
 
 	struct Unlocked {
 		let store: NoteStore
-		let parameters: UnlockParameters
+		let record: UnlockRecord
 	}
 
-	static func localDbKey(password: String, parameters: UnlockParameters) throws -> SymmetricKey {
+	static func unlockKey(password: String, parameters: UnlockParameters) throws -> SymmetricKey {
 		let argonOut = try Argon2.hash(password: password, salt: parameters.localSalt, parameters: parameters.argon)
 		let machineId = try parameters.enclaveKey.map { representation in
 			do {
@@ -26,15 +27,21 @@ nonisolated enum Unlock {
 				throw Failure.boundToAnotherMac
 			}
 		}
-		return KeyDerivation.localDbKey(argonOut: argonOut, machineId: machineId, localSalt: parameters.localSalt)
+		return KeyDerivation.unlockKey(argonOut: argonOut, machineId: machineId, localSalt: parameters.localSalt)
 	}
 
-	@concurrent static func provenKey(password: String, parameters: UnlockParameters, in directory: URL) async throws -> SymmetricKey {
-		let key = try await BlockingWork.run { try localDbKey(password: password, parameters: parameters) }
+	static func databaseKey(password: String, record: UnlockRecord) throws -> SymmetricKey {
+		let unlockKey = try unlockKey(password: password, parameters: record.parameters)
+		guard let key = DatabaseKeyWrap.unwrap(record.wrappedKey, under: unlockKey) else { throw Failure.wrongPassword }
+		return key
+	}
+
+	@concurrent static func provenKey(password: String, record: UnlockRecord, in directory: URL) async throws -> SymmetricKey {
+		let key = try await BlockingWork.run { try databaseKey(password: password, record: record) }
 		do {
 			_ = try await NoteStore.open(url: AppLock.databaseFile(in: directory), key: key)
 		} catch SQLiteError.wrongKey {
-			throw Failure.wrongPassword
+			throw Failure.keyRejected
 		}
 		return key
 	}
@@ -47,12 +54,20 @@ nonisolated enum Unlock {
 		)
 	}
 
+	static func makeRecord(password: String, key: SymmetricKey, parameters: UnlockParameters) throws -> UnlockRecord {
+		let unlockKey = try unlockKey(password: password, parameters: parameters)
+		let record = UnlockRecord(parameters: parameters, wrappedKey: try DatabaseKeyWrap.wrap(key, under: unlockKey))
+		guard DatabaseKeyWrap.unwrap(record.wrappedKey, under: unlockKey) == key else { throw Failure.passwordNotChanged }
+		return record
+	}
+
 	@concurrent static func setUp(
 		password: String,
 		in directory: URL,
+		records: any UnlockRecordStore,
 		makeParameters: @escaping @Sendable () throws -> UnlockParameters = Unlock.makeParameters
 	) async throws -> Unlocked {
-		guard AppLock.parameterFiles(in: directory).isEmpty else { throw Failure.alreadySetUp }
+		guard try records.read() == nil else { throw Failure.alreadySetUp }
 		try FileManager.default.createDirectory(
 			at: directory,
 			withIntermediateDirectories: true,
@@ -60,84 +75,56 @@ nonisolated enum Unlock {
 		)
 		let database = AppLock.databaseFile(in: directory)
 		try AppLock.setAside(database)
-		let (parameters, key) = try await BlockingWork.run {
-			let parameters = try makeParameters()
-			return (parameters, try localDbKey(password: password, parameters: parameters))
-		}
+		let key = SymmetricKey(size: .bits256)
+		let record = try await BlockingWork.run { try makeRecord(password: password, key: key, parameters: makeParameters()) }
 		let store = try await NoteStore.create(url: database, key: key)
-		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
-		return Unlocked(store: store, parameters: parameters)
+		try records.write(record)
+		return Unlocked(store: store, record: record)
 	}
 
-	@concurrent static func open(password: String, in directory: URL) async throws -> Unlocked {
-		let (database, files) = try existingLibrary(in: directory)
-		var unreadable: Error?
-		for file in files {
-			let parameters: UnlockParameters
-			do {
-				parameters = try AppLock.read(from: file)
-			} catch {
-				unreadable = unreadable ?? error
-				continue
-			}
-			do {
-				let key = try await BlockingWork.run { try localDbKey(password: password, parameters: parameters) }
-				let store = try await NoteStore.open(url: database, key: key)
-				try AppLock.keep(file, in: directory)
-				return Unlocked(store: store, parameters: parameters)
-			} catch SQLiteError.wrongKey {
-				continue
-			}
-		}
-		throw unreadable ?? Failure.wrongPassword
-	}
-
-	@concurrent static func open(key: SymmetricKey, in directory: URL) async throws -> Unlocked {
-		let database = try existingLibrary(in: directory).database
-		let store: NoteStore
+	@concurrent static func open(password: String, in directory: URL, records: any UnlockRecordStore) async throws -> Unlocked {
+		let (database, record) = try existingLibrary(in: directory, records: records)
+		let key = try await BlockingWork.run { try databaseKey(password: password, record: record) }
 		do {
-			store = try await NoteStore.open(url: database, key: key)
+			return Unlocked(store: try await NoteStore.open(url: database, key: key), record: record)
+		} catch SQLiteError.wrongKey {
+			throw Failure.keyRejected
+		}
+	}
+
+	@concurrent static func open(key: SymmetricKey, in directory: URL, records: any UnlockRecordStore) async throws -> Unlocked {
+		let (database, record) = try existingLibrary(in: directory, records: records)
+		do {
+			return Unlocked(store: try await NoteStore.open(url: database, key: key), record: record)
 		} catch SQLiteError.wrongKey {
 			throw Failure.storedKeyRejected
 		}
-		return Unlocked(store: store, parameters: try AppLock.read(from: AppLock.currentFile(in: directory)))
 	}
 
-	private static func existingLibrary(in directory: URL) throws -> (database: URL, parameterFiles: [URL]) {
-		let files = AppLock.parameterFiles(in: directory)
-		guard !files.isEmpty else { throw Failure.neverSetUp }
+	private static func existingLibrary(in directory: URL, records: any UnlockRecordStore) throws -> (database: URL, record: UnlockRecord) {
+		guard let record = try records.read() else { throw Failure.neverSetUp }
 		let database = AppLock.databaseFile(in: directory)
 		let size = (try? FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int) ?? 0
 		guard size > 0 else { throw Failure.databaseMissing }
-		return (database, files)
+		return (database, record)
 	}
 
-	@discardableResult
 	@concurrent static func changePassword(
 		from oldPassword: String,
 		to newPassword: String,
-		parameters: UnlockParameters,
-		store: NoteStore,
+		record: UnlockRecord,
 		in directory: URL,
-		storedKey: (any UnlockKeyStore)? = nil,
+		records: any UnlockRecordStore,
 		calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { try Argon2.calibrateMemory() }
-	) async throws -> Unlocked {
-		let oldKey = try await provenKey(password: oldPassword, parameters: parameters, in: directory)
-
-		var next = parameters
+	) async throws -> UnlockRecord {
+		let key = try await provenKey(password: oldPassword, record: record, in: directory)
+		var next = record.parameters
 		next.localSalt = Data.random(.bits128)
 		let calibrated = try await BlockingWork.run(calibrate)
-		next.argon = calibrated.m > parameters.argon.m ? calibrated : parameters.argon
-		let newKey = try await BlockingWork.run { [next] in try localDbKey(password: newPassword, parameters: next) }
-
+		next.argon = calibrated.m > record.argon.m ? calibrated : record.argon
+		let changed = try await BlockingWork.run { [next] in try makeRecord(password: newPassword, key: key, parameters: next) }
 		guard !Task.isCancelled else { throw Failure.passwordNotChanged }
-		try AppLock.write(next, to: AppLock.pendingRekeyFile(in: directory))
-		guard try await store.rekey(from: oldKey, to: newKey) else {
-			try FileManager.default.removeItem(at: AppLock.pendingRekeyFile(in: directory))
-			throw Failure.passwordNotChanged
-		}
-		try? storedKey?.delete()
-		try AppLock.promoteRekey(to: next, in: directory)
-		return Unlocked(store: store, parameters: next)
+		try records.write(changed)
+		return changed
 	}
 }

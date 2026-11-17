@@ -79,17 +79,6 @@ struct LibraryEraseTests {
 		#expect(await model.flushPendingSaves())
 	}
 
-	@Test func erasingDuringARekeyRemovesBothParameterFiles() async throws {
-		let (model, directory) = try await library.unlocked()
-		await model.lock()
-		try AppLock.write(.fast, to: AppLock.pendingRekeyFile(in: directory))
-
-		await model.eraseLibrary()
-
-		#expect(AppLock.parameterFiles(in: directory).isEmpty)
-		#expect(try remaining(in: directory).isEmpty)
-	}
-
 	@Test func anEraseThatCannotDeleteAFileSaysSoAndStillReachesSetup() async throws {
 		let (model, directory) = try await library.unlocked()
 		let database = AppLock.databaseFile(in: directory)
@@ -102,7 +91,7 @@ struct LibraryEraseTests {
 		#expect(model.phase == .needsSetup)
 		#expect(model.failure != nil)
 		#expect(model.touchID == .hidden)
-		#expect(AppLock.parameterFiles(in: directory).isEmpty)
+		#expect(try FileUnlockRecordStore(directory: directory).read() == nil)
 	}
 
 	@Test func editsInTheNewLibraryAreSaved() async throws {

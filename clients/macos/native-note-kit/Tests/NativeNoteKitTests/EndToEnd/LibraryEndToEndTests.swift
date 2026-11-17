@@ -39,9 +39,9 @@ struct LibraryEndToEndTests {
 		let (model, directory) = try await realLibrary(password: "correct horse battery")
 		let saved = snapshot(model.notes)
 		#expect(saved.count == corpus.count)
-		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
-		#expect(parameters.argon.m >= Argon2.floor.m)
-		#expect((parameters.enclaveKey != nil) == MachineKey.isAvailable)
+		let record = try #require(try FileUnlockRecordStore(directory: directory).read())
+		#expect(record.argon.m >= Argon2.floor.m)
+		#expect((record.enclaveKey != nil) == MachineKey.isAvailable)
 
 		await model.lock()
 		await model.submit(password: "correct horse battery")
@@ -129,22 +129,25 @@ struct LibraryEndToEndTests {
 
 	@Test func changingThePasswordKeepsEveryNote() async throws {
 		let directory = temporaryDirectory()
-		let unlocked = try await Unlock.setUp(password: "old password", in: directory) {
+		let records = FileUnlockRecordStore(directory: directory)
+		let unlocked = try await Unlock.setUp(password: "old password", in: directory, records: records) {
 			var parameters = try Unlock.makeParameters()
 			parameters.argon.m = Argon2.floor.m / 2
 			return parameters
 		}
 		for body in corpus.prefix(200) { try await unlocked.store.save(sampleNote(body: body)) }
 		let saved = try await snapshot(unlocked.store.liveNotes())
-
-		try await Unlock.changePassword(from: "old password", to: "new password ✓", parameters: unlocked.parameters, store: unlocked.store, in: directory)
 		await unlocked.store.close()
+		let database = try Data(contentsOf: AppLock.databaseFile(in: directory))
 
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		let recalibrated = try AppLock.read(from: AppLock.currentFile(in: directory))
+		_ = try await Unlock.changePassword(from: "old password", to: "new password ✓", record: unlocked.record, in: directory, records: records)
+
+		#expect(try Data(contentsOf: AppLock.databaseFile(in: directory)) == database)
+		let recalibrated = try #require(try records.read())
 		#expect(recalibrated.argon.m >= Argon2.floor.m)
 		#expect(recalibrated.argon.t == Argon2.floor.t)
-		#expect(recalibrated.localSalt != unlocked.parameters.localSalt)
+		#expect(recalibrated.localSalt != unlocked.record.localSalt)
+		#expect(recalibrated.wrappedKey != unlocked.record.wrappedKey)
 		let relaunched = try await launch(in: directory, password: "new password ✓")
 		#expect(snapshot(relaunched.notes) == saved)
 		await relaunched.lock()

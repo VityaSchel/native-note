@@ -117,13 +117,13 @@ struct BoundaryTests {
 		let (model, directory) = try await unlockedModel { AppModel.testing(in: $0) }
 		try await fill(model, with: ["guessable"])
 		await model.lock()
-		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
-		#expect(parameters.enclaveKey == nil)
+		let record = try #require(try FileUnlockRecordStore(directory: directory).read())
+		#expect(record.enclaveKey == nil)
 
 		let database = AppLock.databaseFile(in: directory)
-		let found = try await Task.detached {
-			try ["123456", "password", "letmein", workspacePassword, "qwerty"].first { guess in
-				let key = try Unlock.localDbKey(password: guess, parameters: parameters)
+		let found = await Task.detached {
+			["123456", "password", "letmein", workspacePassword, "qwerty"].first { guess in
+				guard let key = try? Unlock.databaseKey(password: guess, record: record) else { return false }
 				return (try? SQLiteConnection(url: database, rawKey: key, create: false).scalar("SELECT count(*) FROM note")) == "1"
 			}
 		}.value
@@ -136,17 +136,15 @@ struct BoundaryTests {
 		let directory = temporaryDirectory()
 		let parameters = try UnlockParameters.fastBoundToThisMac()
 		let representation = try #require(parameters.enclaveKey)
-		try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
-		let database = AppLock.databaseFile(in: directory)
-		let key = try await Task.detached { try Unlock.localDbKey(password: workspacePassword, parameters: parameters) }.value
-		try await NoteStore.create(url: database, key: key).close()
+		try await makeLibrary(in: directory, parameters: parameters)
+		let record = try #require(try FileUnlockRecordStore(directory: directory).read())
 
 		let found = try await Task.detached {
 			let machineId = try MachineKey(representation: representation).machineId()
 			return try ["123456", "password", workspacePassword, "qwerty"].first { guess in
 				let argon = try Argon2.hash(password: guess, salt: parameters.localSalt, parameters: parameters.argon)
-				let key = KeyDerivation.localDbKey(argonOut: argon, machineId: machineId, localSalt: parameters.localSalt)
-				return (try? SQLiteConnection(url: database, rawKey: key, create: false).scalar("SELECT count(*) FROM note")) != nil
+				let unlockKey = KeyDerivation.unlockKey(argonOut: argon, machineId: machineId, localSalt: parameters.localSalt)
+				return DatabaseKeyWrap.unwrap(record.wrappedKey, under: unlockKey) != nil
 			}
 		}.value
 

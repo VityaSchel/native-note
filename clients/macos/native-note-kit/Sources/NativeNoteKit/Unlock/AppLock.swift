@@ -11,35 +11,16 @@ nonisolated enum AppLock {
 		directory.appending(path: "notes.db")
 	}
 
-	static func currentFile(in directory: URL) -> URL {
+	static func recordFile(in directory: URL) -> URL {
 		directory.appending(path: "app-lock.plist")
 	}
 
-	static func pendingRekeyFile(in directory: URL) -> URL {
-		directory.appending(path: "app-lock.next.plist")
-	}
-
-	static func parameterFiles(in directory: URL) -> [URL] {
-		[pendingRekeyFile(in: directory), currentFile(in: directory)].filter { FileManager.default.fileExists(atPath: $0.path) }
-	}
-
-	static func keep(_ opened: URL, in directory: URL) throws {
-		let pending = pendingRekeyFile(in: directory)
-		if opened == pending {
-			try promoteRekey(in: directory)
-		} else if FileManager.default.fileExists(atPath: pending.path) {
-			try FileManager.default.removeItem(at: pending)
-		}
-	}
-
-	static func erase(in directory: URL) throws {
+	static func eraseDatabase(in directory: URL) throws {
 		let database = databaseFile(in: directory)
 		let setAside = (try? FileManager.default.contentsOfDirectory(atPath: directory.path))?
 			.filter { $0.hasPrefix("notes-set-aside-") }
 			.map { directory.appending(path: $0) } ?? []
-		let files = [pendingRekeyFile(in: directory), currentFile(in: directory)]
-			+ ["", "-wal", "-shm"].map { URL(fileURLWithPath: database.path + $0) }
-			+ setAside
+		let files = ["", "-wal", "-shm"].map { URL(fileURLWithPath: database.path + $0) } + setAside
 		for file in files where FileManager.default.fileExists(atPath: file.path) {
 			try FileManager.default.removeItem(at: file)
 		}
@@ -61,31 +42,6 @@ nonisolated enum AppLock {
 		let number = identity[.systemFileNumber] as? Int ?? 0
 		let stamp = created.formatted(.iso8601.year().month().day().dateSeparator(.omitted).time(includingFractionalSeconds: false).timeSeparator(.omitted).timeZone(separator: .omitted))
 		return database.deletingLastPathComponent().appending(path: "notes-set-aside-\(stamp)-\(number).db")
-	}
-
-	static func promoteRekey(in directory: URL, sync: (Int32) throws -> Void = fullSync) throws {
-		try durablyReplace(currentFile(in: directory), with: Data(contentsOf: pendingRekeyFile(in: directory)), sync: sync)
-		try FileManager.default.removeItem(at: pendingRekeyFile(in: directory))
-	}
-
-	static func promoteRekey(to parameters: UnlockParameters, in directory: URL, sync: (Int32) throws -> Void = fullSync) throws {
-		try write(parameters, to: currentFile(in: directory), sync: sync)
-		let pending = pendingRekeyFile(in: directory)
-		if FileManager.default.fileExists(atPath: pending.path) { try FileManager.default.removeItem(at: pending) }
-	}
-
-	static func read(from url: URL) throws -> UnlockParameters {
-		let parameters = try PropertyListDecoder().decode(UnlockParameters.self, from: Data(contentsOf: url))
-		guard parameters.version == UnlockParameters.currentVersion else {
-			throw Unreadable.unsupportedVersion(parameters.version)
-		}
-		return parameters
-	}
-
-	static func write(_ parameters: UnlockParameters, to url: URL, sync: (Int32) throws -> Void = fullSync) throws {
-		let encoder = PropertyListEncoder()
-		encoder.outputFormat = .binary
-		try durablyReplace(url, with: encoder.encode(parameters), sync: sync)
 	}
 
 	static func durablyReplace(_ url: URL, with data: Data, sync: (Int32) throws -> Void = fullSync) throws {

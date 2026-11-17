@@ -87,8 +87,7 @@ struct TypistTests {
 
 	@Test func theVerifierReportsALibraryThatDoesNotUnlock() async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
+		try await makeLibrary(in: directory)
 
 		let report = try await verify(directory, password: "wrong horse")
 
@@ -104,14 +103,14 @@ struct TypistTests {
 
 		#expect(report.phase == "needsSetup")
 		#expect(report.walCheckpoints == nil)
-		#expect(AppLock.parameterFiles(in: directory).isEmpty)
+		#expect(try FileUnlockRecordStore(directory: directory).read() == nil)
 	}
 
 	@Test func theTypistsLibraryIsNotBoundToThisMacAndStillOpens() async throws {
 		let directory = temporaryDirectory()
 		#expect(try await runTypist(["prepare", directory.path, workspacePassword]).status == 0)
 
-		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)).enclaveKey == nil)
+		#expect(try #require(try FileUnlockRecordStore(directory: directory).read()).enclaveKey == nil)
 		let relaunched = AppModel.testing(in: directory)
 		relaunched.start()
 		await relaunched.submit(password: workspacePassword)

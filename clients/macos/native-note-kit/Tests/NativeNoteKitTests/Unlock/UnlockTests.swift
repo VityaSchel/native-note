@@ -4,15 +4,18 @@ import Testing
 
 @testable import NativeNoteKit
 
-private func seed(_ password: String, in directory: URL) async throws -> UnlockParameters {
-	let parameters = try UnlockParameters.fastBoundToThisMac()
-	try AppLock.write(parameters, to: AppLock.currentFile(in: directory))
-	let store = try await NoteStore.create(
-		url: AppLock.databaseFile(in: directory),
-		key: try Unlock.localDbKey(password: password, parameters: parameters)
-	)
+private let seededKey = SymmetricKey(data: Data(repeating: 0x5E, count: 32))
+
+private func records(_ directory: URL) -> FileUnlockRecordStore {
+	FileUnlockRecordStore(directory: directory)
+}
+
+private func seed(_ password: String, in directory: URL) async throws -> UnlockRecord {
+	try await makeLibrary(in: directory, password: password, key: seededKey, parameters: try UnlockParameters.fastBoundToThisMac())
+	let store = try await NoteStore.open(url: AppLock.databaseFile(in: directory), key: seededKey)
 	try await store.save(Note(id: UUID(), body: "seeded", createdAt: Date().epochMilliseconds, updatedAt: Date().epochMilliseconds))
-	return parameters
+	await store.close()
+	return try #require(try records(directory).read())
 }
 
 @Suite(.scratch, .serialized)
@@ -21,11 +24,11 @@ struct UnlockTests {
 		let directory = temporaryDirectory()
 		_ = try await seed("correct horse", in: directory)
 
-		let opened = try await Unlock.open(password: "correct horse", in: directory)
+		let opened = try await Unlock.open(password: "correct horse", in: directory, records: records(directory))
 		#expect(try await opened.store.liveNotes().map(\.body) == ["seeded"])
 
 		await #expect(throws: Unlock.Failure.wrongPassword) {
-			_ = try await Unlock.open(password: "wrong horse", in: directory)
+			_ = try await Unlock.open(password: "wrong horse", in: directory, records: records(directory))
 		}
 	}
 
@@ -33,23 +36,23 @@ struct UnlockTests {
 		let directory = temporaryDirectory()
 
 		await #expect(throws: Unlock.Failure.neverSetUp) {
-			_ = try await Unlock.open(password: "anything", in: directory)
+			_ = try await Unlock.open(password: "anything", in: directory, records: records(directory))
 		}
 	}
 
 	@Test(arguments: [
-		("correct horse", "63f259a7aee3dae7d92bac742af34bfbce10488206ae90098bd660d90cba6a18"),
-		("пароль ✓", "855eda921ce38c5f1998dfb90da9656fd96b7d03e59bc6b3e9fae2805e551c00"),
-		("", "9b86b8b83b34928dfe4b4d5a9c78ce3b9bc7ee7054516f2d0c34319eb186c689"),
+		("correct horse", "21106e3337936a6b4e57bb3be316d082d5fce5898d97fab1a498a17f1e9edb67"),
+		("пароль ✓", "3a334c2037ef58bb4e8fd48d1049cc2094adde9142a9d3b0187e96f9eb827638"),
+		("", "b09534360cf060df49cee48b4f0128f241041ce13c280554ed1c9fc594c7a2de"),
 	])
-	func aPasswordDerivesTheSameKeyItAlwaysHas(password: String, hex: String) throws {
-		let key = try Unlock.localDbKey(password: password, parameters: .fast)
+	func aPasswordDerivesTheSameUnlockKeyItAlwaysHas(password: String, hex: String) throws {
+		let key = try Unlock.unlockKey(password: password, parameters: .fast)
 
 		#expect(key.withUnsafeBytes { $0.map { String(format: "%02x", $0) }.joined() } == hex)
 	}
 
 	@Test(.enabled(if: MachineKey.isAvailable))
-	func aKeyBoundToThisMacIsHKDFOverTheArgonOutputThenTheMachineId() throws {
+	func anUnlockKeyBoundToThisMacIsHKDFOverTheArgonOutputThenTheMachineId() throws {
 		let parameters = try UnlockParameters.fastBoundToThisMac()
 		let argonOut = try Argon2.hash(password: "same", salt: parameters.localSalt, parameters: parameters.argon)
 		let machineId = try MachineKey(representation: try #require(parameters.enclaveKey)).machineId()
@@ -57,168 +60,166 @@ struct UnlockTests {
 		let expected = HKDF<SHA256>.deriveKey(
 			inputKeyMaterial: SymmetricKey(data: argonOut.withUnsafeBytes { Data($0) } + machineId.withUnsafeBytes { Data($0) }),
 			salt: parameters.localSalt,
-			info: Data("native-note/localdb/v1".utf8),
+			info: Data("native-note/unlock/v1".utf8),
 			outputByteCount: 32
 		)
 
-		#expect(try Unlock.localDbKey(password: "same", parameters: parameters) == expected)
+		#expect(try Unlock.unlockKey(password: "same", parameters: parameters) == expected)
+	}
+
+	@Test func setUpWrapsARandomKeyRatherThanOneDerivedFromThePassword() async throws {
+		let first = temporaryDirectory()
+		let second = temporaryDirectory()
+
+		_ = try await Unlock.setUp(password: "same", in: first, records: records(first), makeParameters: { .fast })
+		_ = try await Unlock.setUp(password: "same", in: second, records: records(second), makeParameters: { .fast })
+
+		let firstKey = try Unlock.databaseKey(password: "same", record: try #require(try records(first).read()))
+		let secondKey = try Unlock.databaseKey(password: "same", record: try #require(try records(second).read()))
+		#expect(firstKey != secondKey)
+		#expect(firstKey != (try Unlock.unlockKey(password: "same", parameters: .fast)))
 	}
 
 	@Test func provingTheRightPasswordGivesTheKeyThatOpensTheLibrary() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("correct horse", in: directory)
+		let record = try await seed("correct horse", in: directory)
 
-		let key = try await Unlock.provenKey(password: "correct horse", parameters: parameters, in: directory)
+		let key = try await Unlock.provenKey(password: "correct horse", record: record, in: directory)
 
-		#expect(key == (try Unlock.localDbKey(password: "correct horse", parameters: parameters)))
+		#expect(key == seededKey)
 	}
 
 	@Test func provingAWrongPasswordSaysSo() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("correct horse", in: directory)
+		let record = try await seed("correct horse", in: directory)
 
 		await #expect(throws: Unlock.Failure.wrongPassword) {
-			_ = try await Unlock.provenKey(password: "wrong horse", parameters: parameters, in: directory)
+			_ = try await Unlock.provenKey(password: "wrong horse", record: record, in: directory)
 		}
 	}
 
-	@Test func aDifferentSaltProducesADifferentKey() throws {
+	@Test func aDatabaseItsRecordDoesNotOpenIsNamed() async throws {
+		let directory = temporaryDirectory()
+		let other = temporaryDirectory()
+		let record = try await seed("correct horse", in: directory)
+		try await makeLibrary(in: other, password: "correct horse", key: SymmetricKey(size: .bits256))
+		try FileManager.default.removeItem(at: AppLock.databaseFile(in: directory))
+		try FileManager.default.copyItem(at: AppLock.databaseFile(in: other), to: AppLock.databaseFile(in: directory))
+
+		await #expect(throws: Unlock.Failure.keyRejected) {
+			_ = try await Unlock.open(password: "correct horse", in: directory, records: records(directory))
+		}
+		await #expect(throws: Unlock.Failure.keyRejected) {
+			_ = try await Unlock.provenKey(password: "correct horse", record: record, in: directory)
+		}
+	}
+
+	@Test func aDifferentSaltProducesADifferentUnlockKey() throws {
 		let first = try UnlockParameters.fastBoundToThisMac()
 		var second = first
 		second.localSalt = Data(repeating: 0x99, count: 16)
 
 		#expect(
-			try Unlock.localDbKey(password: "same", parameters: first)
-				!= Unlock.localDbKey(password: "same", parameters: second)
+			try Unlock.unlockKey(password: "same", parameters: first)
+				!= Unlock.unlockKey(password: "same", parameters: second)
 		)
 	}
 
 	@Test(.enabled(if: MachineKey.isAvailable))
-	func aDifferentDeviceKeyProducesADifferentKey() throws {
+	func aDifferentDeviceKeyProducesADifferentUnlockKey() throws {
 		let mine = try UnlockParameters.fastBoundToThisMac()
 		var theirs = mine
 		theirs.enclaveKey = try MachineKey().representation
 
 		#expect(
-			try Unlock.localDbKey(password: "same", parameters: mine)
-				!= Unlock.localDbKey(password: "same", parameters: theirs)
+			try Unlock.unlockKey(password: "same", parameters: mine)
+				!= Unlock.unlockKey(password: "same", parameters: theirs)
 		)
 	}
 
-	@Test func changingThePasswordRekeysAndLeavesOneParameterFile() async throws {
+	@Test func changingThePasswordRewrapsTheSameKeyAndLeavesTheDatabaseAsItWas() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-
+		let record = try await seed("old password", in: directory)
+		let database = try Data(contentsOf: AppLock.databaseFile(in: directory))
 		let recalibrated = Argon2.Parameters(m: 2048, t: 1, p: 1)
 
-		try await Unlock.changePassword(
+		let changed = try await Unlock.changePassword(
 			from: "old password",
 			to: "new password",
-			parameters: parameters,
-			store: opened.store,
+			record: record,
 			in: directory,
+			records: records(directory),
 			calibrate: { recalibrated }
 		)
 
-		let reopened = try await Unlock.open(password: "new password", in: directory)
+		#expect(try Data(contentsOf: AppLock.databaseFile(in: directory)) == database)
+		#expect(changed == (try records(directory).read()))
+		#expect(changed.argon == recalibrated)
+		#expect(changed.enclaveKey == record.enclaveKey)
+		#expect(changed.localSalt != record.localSalt)
+		#expect(try Unlock.databaseKey(password: "new password", record: changed) == seededKey)
+		let reopened = try await Unlock.open(password: "new password", in: directory, records: records(directory))
 		#expect(try await reopened.store.liveNotes().map(\.body) == ["seeded"])
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		let current = try AppLock.read(from: AppLock.currentFile(in: directory))
-		#expect(current.argon == recalibrated)
-		#expect(current.enclaveKey == parameters.enclaveKey)
-
 		await #expect(throws: Unlock.Failure.wrongPassword) {
-			_ = try await Unlock.open(password: "old password", in: directory)
+			_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 		}
 	}
 
-	@Test func survivesACrashBetweenWritingPendingParametersAndRekeying() async throws {
+	@Test func aKeySavedForTouchIDStillOpensTheLibraryAfterAPasswordChange() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
+		let record = try await seed("old password", in: directory)
 
-		var pending = parameters
-		pending.localSalt = Data(repeating: 0x99, count: 16)
-		try AppLock.write(pending, to: AppLock.pendingRekeyFile(in: directory))
+		_ = try await Unlock.changePassword(from: "old password", to: "new password", record: record, in: directory, records: records(directory), calibrate: { UnlockParameters.fast.argon })
 
-		#expect(AppLock.parameterFiles(in: directory).count == 2)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-		#expect(try await opened.store.liveNotes().map(\.body) == ["seeded"])
-		#expect(opened.parameters == parameters)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
+		let unlocked = try await Unlock.open(key: seededKey, in: directory, records: records(directory))
+		#expect(try await unlocked.store.liveNotes().map(\.body) == ["seeded"])
 	}
 
 	@Test func setUpPersistsCalibratedParametersBoundToThisMac() async throws {
 		let directory = temporaryDirectory()
 
-		_ = try await Unlock.setUp(password: "correct horse", in: directory)
+		_ = try await Unlock.setUp(password: "correct horse", in: directory, records: records(directory))
 
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		let stored = try AppLock.read(from: AppLock.currentFile(in: directory))
+		let stored = try #require(try records(directory).read())
 		#expect(stored.localSalt.count == 16)
 		#expect(stored.argon.t == Argon2.floor.t)
 		#expect(stored.argon.p == Argon2.floor.p)
 		#expect(stored.argon.m >= Argon2.floor.m)
 		#expect((stored.enclaveKey != nil) == MachineKey.isAvailable)
+		#expect(stored.wrappedKey.count == DatabaseKeyWrap.wrappedLength)
 		let mode = try FileManager.default.attributesOfItem(atPath: directory.path)[.posixPermissions] as? Int
 		#expect(mode == 0o700)
-		_ = try await Unlock.open(password: "correct horse", in: directory)
-	}
-
-	@Test func survivesACrashAfterRekeyingBeforePromoting() async throws {
-		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		var pending = parameters
-		pending.localSalt = Data(repeating: 0x99, count: 16)
-		let store = try await Unlock.open(password: "old password", in: directory).store
-		try AppLock.write(pending, to: AppLock.pendingRekeyFile(in: directory))
-
-		#expect(try await store.rekey(
-			from: try Unlock.localDbKey(password: "old password", parameters: parameters),
-			to: try Unlock.localDbKey(password: "new password", parameters: pending)
-		))
-		await store.close()
-
-		let opened = try await Unlock.open(password: "new password", in: directory)
-		#expect(try await opened.store.liveNotes().map(\.body) == ["seeded"])
-		#expect(opened.parameters == pending)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)) == pending)
-		await #expect(throws: Unlock.Failure.wrongPassword) {
-			_ = try await Unlock.open(password: "old password", in: directory)
-		}
+		_ = try await Unlock.open(password: "correct horse", in: directory, records: records(directory))
 	}
 
 	@Test func openNeverCreatesTheDatabase() async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		try records(directory).write(.fast)
 
 		await #expect(throws: Unlock.Failure.databaseMissing) {
-			_ = try await Unlock.open(password: "correct horse", in: directory)
+			_ = try await Unlock.open(password: "correct horse", in: directory, records: records(directory))
 		}
 		#expect(!FileManager.default.fileExists(atPath: AppLock.databaseFile(in: directory).path))
 	}
 
-	@Test func aDamagedParameterFileIsReportedRatherThanAWrongPassword() async throws {
+	@Test func aDamagedRecordIsReportedRatherThanAWrongPassword() async throws {
 		let directory = temporaryDirectory()
 		_ = try await seed("old password", in: directory)
-		try Data("not a property list".utf8).write(to: AppLock.pendingRekeyFile(in: directory))
+		try Data("not a property list".utf8).write(to: AppLock.recordFile(in: directory))
 
 		await #expect(throws: DecodingError.self) {
-			_ = try await Unlock.open(password: "new password", in: directory)
+			_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 		}
-		_ = try await Unlock.open(password: "old password", in: directory)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 	}
 
-	@Test func parametersFromAFutureVersionAreReportedAsSuch() async throws {
+	@Test func aRecordFromAFutureVersionIsReportedAsSuch() async throws {
 		let directory = temporaryDirectory()
 		var future = try await seed("old password", in: directory)
 		future.version = 2
-		try AppLock.write(future, to: AppLock.currentFile(in: directory))
+		try AppLock.durablyReplace(AppLock.recordFile(in: directory), with: UnlockRecords.encode(future))
 
 		await #expect(throws: AppLock.Unreadable.unsupportedVersion(2)) {
-			_ = try await Unlock.open(password: "old password", in: directory)
+			_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 		}
 	}
 
@@ -226,10 +227,10 @@ struct UnlockTests {
 		let directory = temporaryDirectory()
 		var foreign = try await seed("old password", in: directory)
 		foreign.enclaveKey = Data(repeating: 0x11, count: 8)
-		try AppLock.write(foreign, to: AppLock.currentFile(in: directory))
+		try records(directory).write(foreign)
 
 		await #expect(throws: Unlock.Failure.boundToAnotherMac) {
-			_ = try await Unlock.open(password: "old password", in: directory)
+			_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 		}
 	}
 
@@ -238,7 +239,7 @@ struct UnlockTests {
 		let orphan = try await openStore(at: AppLock.databaseFile(in: directory))
 		try await orphan.save(sampleNote(body: "typed before the crash"))
 
-		let unlocked = try await Unlock.setUp(password: "correct horse", in: directory, makeParameters: { .fast })
+		let unlocked = try await Unlock.setUp(password: "correct horse", in: directory, records: records(directory), makeParameters: { .fast })
 
 		#expect(try await unlocked.store.liveNotes().isEmpty)
 		let asides = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasPrefix("notes-set-aside-") }
@@ -249,107 +250,80 @@ struct UnlockTests {
 		#expect(try await kept.liveNotes().map(\.body) == ["typed before the crash"])
 	}
 
-	@Test func setUpRefusesToReplaceExistingParameters() async throws {
+	@Test func setUpRefusesToReplaceAnExistingRecord() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
+		let record = try await seed("old password", in: directory)
 
 		await #expect(throws: Unlock.Failure.alreadySetUp) {
-			_ = try await Unlock.setUp(password: "another", in: directory, makeParameters: { .fast })
+			_ = try await Unlock.setUp(password: "another", in: directory, records: records(directory), makeParameters: { .fast })
 		}
-		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)) == parameters)
-		_ = try await Unlock.open(password: "old password", in: directory)
+		#expect(try records(directory).read() == record)
+		_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 	}
 
 	@Test func changingThePasswordNeverLowersTheMemoryCost() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-		let weaker = Argon2.Parameters(m: parameters.argon.m / 2, t: parameters.argon.t, p: parameters.argon.p)
+		let record = try await seed("old password", in: directory)
+		let weaker = Argon2.Parameters(m: record.argon.m / 2, t: record.argon.t, p: record.argon.p)
 
-		try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, calibrate: { weaker })
+		let changed = try await Unlock.changePassword(from: "old password", to: "new password", record: record, in: directory, records: records(directory), calibrate: { weaker })
 
-		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)).argon == parameters.argon)
-		_ = try await Unlock.open(password: "new password", in: directory)
+		#expect(changed.argon == record.argon)
+		_ = try await Unlock.open(password: "new password", in: directory, records: records(directory))
 	}
 
-	@Test func changingThePasswordReportsTheNewParameters() async throws {
+	@Test func changingThePasswordRefusesAWrongCurrentPasswordAndWritesNothing() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-
-		let changed = try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, calibrate: { parameters.argon })
-
-		#expect(changed.store === opened.store)
-		#expect(changed.parameters == (try AppLock.read(from: AppLock.currentFile(in: directory))))
-		_ = try await Unlock.open(key: try Unlock.localDbKey(password: "new password", parameters: changed.parameters), in: directory)
-	}
-
-	@Test func changingThePasswordRefusesAWrongCurrentPasswordAndKeepsTheKeySavedForTouchID() async throws {
-		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-		let key = try Unlock.localDbKey(password: "old password", parameters: parameters)
-		let keys = FakeKeyStore()
-		try keys.save(key)
+		let record = try await seed("old password", in: directory)
 
 		await #expect(throws: Unlock.Failure.wrongPassword) {
-			try await Unlock.changePassword(from: "guess", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
+			try await Unlock.changePassword(from: "guess", to: "new password", record: record, in: directory, records: records(directory), calibrate: { UnlockParameters.fast.argon })
 		}
-		#expect(keys.storedKey == key)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		_ = try await Unlock.open(password: "old password", in: directory)
+		#expect(try records(directory).read() == record)
+		_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 	}
 
-	@Test func aRekeyThatDoesNotTakeKeepsTheOldPasswordAndTheKeySavedForTouchID() async throws {
+	@Test func aPasswordChangeThatCannotWriteItsRecordKeepsTheOldPassword() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-		let key = try Unlock.localDbKey(password: "old password", parameters: parameters)
-		let keys = FakeKeyStore()
-		try keys.save(key)
-		let writer = try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: key)
-		try writer.execute("BEGIN IMMEDIATE")
-		try await opened.store.failAtOnceWhenLocked()
+		defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
+		let record = try await seed("old password", in: directory)
+		try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
 
-		await #expect(throws: Unlock.Failure.passwordNotChanged) {
-			try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
+		await #expect(throws: (any Error).self) {
+			try await Unlock.changePassword(from: "old password", to: "new password", record: record, in: directory, records: records(directory), calibrate: { UnlockParameters.fast.argon })
 		}
-		try writer.execute("ROLLBACK")
-		#expect(keys.storedKey == key)
-		try await opened.store.save(sampleNote(body: "typed after"))
-		await opened.store.close()
 
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		let reopened = try await Unlock.open(password: "old password", in: directory)
-		#expect(try await reopened.store.liveNotes().map(\.body).sorted() == ["seeded", "typed after"])
+		try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+		#expect(try records(directory).read() == record)
+		_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 		await #expect(throws: Unlock.Failure.wrongPassword) {
-			_ = try await Unlock.open(password: "new password", in: directory)
+			_ = try await Unlock.open(password: "new password", in: directory, records: records(directory))
 		}
 	}
 
 	@Test func anEmptyDatabaseFileIsReportedMissing() async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		try records(directory).write(.fast)
 		let database = AppLock.databaseFile(in: directory)
 		FileManager.default.createFile(atPath: database.path, contents: Data())
 
 		await #expect(throws: Unlock.Failure.databaseMissing) {
-			_ = try await Unlock.open(password: "correct horse", in: directory)
+			_ = try await Unlock.open(password: "correct horse", in: directory, records: records(directory))
 		}
 		#expect(try FileManager.default.attributesOfItem(atPath: database.path)[.size] as? Int == 0)
 	}
 
-	@Test func aSetUpThatCannotCreateTheDatabaseLeavesNoParameters() async throws {
+	@Test func aSetUpThatCannotCreateTheDatabaseLeavesNoRecord() async throws {
 		let directory = temporaryDirectory()
 		let database = AppLock.databaseFile(in: directory)
 
 		await #expect(throws: SQLiteError.self) {
-			_ = try await Unlock.setUp(password: "correct horse", in: directory, makeParameters: {
+			_ = try await Unlock.setUp(password: "correct horse", in: directory, records: records(directory), makeParameters: {
 				try FileManager.default.createDirectory(at: database, withIntermediateDirectories: false)
 				return .fast
 			})
 		}
-		#expect(AppLock.parameterFiles(in: directory).isEmpty)
+		#expect(try records(directory).read() == nil)
 	}
 
 	@Test(.enabled(if: MachineKey.isAvailable))
@@ -359,10 +333,10 @@ struct UnlockTests {
 		var blob = try #require(damaged.enclaveKey)
 		blob[blob.count - 1] ^= 0xff
 		damaged.enclaveKey = blob
-		try AppLock.write(damaged, to: AppLock.currentFile(in: directory))
+		try records(directory).write(damaged)
 
 		await #expect(throws: Unlock.Failure.boundToAnotherMac) {
-			_ = try await Unlock.open(password: "old password", in: directory)
+			_ = try await Unlock.open(password: "old password", in: directory, records: records(directory))
 		}
 	}
 
@@ -380,7 +354,7 @@ struct UnlockTests {
 			try FileManager.default.moveItem(atPath: database.path + suffix, toPath: aside.path + suffix)
 		}
 
-		_ = try await Unlock.setUp(password: "correct horse", in: directory, makeParameters: { .fast })
+		_ = try await Unlock.setUp(password: "correct horse", in: directory, records: records(directory), makeParameters: { .fast })
 
 		let kept = try await NoteStore.open(url: aside, key: databaseKey)
 		#expect(try await kept.liveNotes().map(\.body) == ["typed before the crash"])
@@ -399,24 +373,23 @@ struct UnlockTests {
 		try FileManager.default.createDirectory(at: blocker, withIntermediateDirectories: false)
 
 		await #expect(throws: (any Error).self) {
-			_ = try await Unlock.setUp(password: "correct horse", in: directory, makeParameters: { .fast })
+			_ = try await Unlock.setUp(password: "correct horse", in: directory, records: records(directory), makeParameters: { .fast })
 		}
 		try FileManager.default.removeItem(at: blocker)
-		_ = try await Unlock.setUp(password: "correct horse", in: directory, makeParameters: { .fast })
+		_ = try await Unlock.setUp(password: "correct horse", in: directory, records: records(directory), makeParameters: { .fast })
 
 		let kept = try await NoteStore.open(url: aside, key: databaseKey)
 		#expect(try await kept.liveNotes().map(\.body) == ["typed before the crash"])
 	}
 
-	@Test func aStoredKeyOpensTheLibraryAndReportsItsParameters() async throws {
+	@Test func aStoredKeyOpensTheLibraryAndReportsItsRecord() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let key = try Unlock.localDbKey(password: "old password", parameters: parameters)
+		let record = try await seed("old password", in: directory)
 
-		let unlocked = try await Unlock.open(key: key, in: directory)
+		let unlocked = try await Unlock.open(key: seededKey, in: directory, records: records(directory))
 
 		#expect(try await unlocked.store.liveNotes().map(\.body) == ["seeded"])
-		#expect(unlocked.parameters == parameters)
+		#expect(unlocked.record == record)
 	}
 
 	@Test func aStoredKeyThatNoLongerFitsIsRejected() async throws {
@@ -424,72 +397,31 @@ struct UnlockTests {
 		_ = try await seed("old password", in: directory)
 
 		await #expect(throws: Unlock.Failure.storedKeyRejected) {
-			_ = try await Unlock.open(key: SymmetricKey(data: Data(repeating: 0x42, count: 32)), in: directory)
+			_ = try await Unlock.open(key: SymmetricKey(data: Data(repeating: 0x42, count: 32)), in: directory, records: records(directory))
 		}
 	}
 
 	@Test func aStoredKeyNeverCreatesTheDatabase() async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		try records(directory).write(.fast)
 
 		await #expect(throws: Unlock.Failure.databaseMissing) {
-			_ = try await Unlock.open(key: SymmetricKey(data: Data(repeating: 0x42, count: 32)), in: directory)
+			_ = try await Unlock.open(key: SymmetricKey(data: Data(repeating: 0x42, count: 32)), in: directory, records: records(directory))
 		}
 		#expect(!FileManager.default.fileExists(atPath: AppLock.databaseFile(in: directory).path))
+		let elsewhere = temporaryDirectory()
 		await #expect(throws: Unlock.Failure.neverSetUp) {
-			_ = try await Unlock.open(key: SymmetricKey(data: Data(repeating: 0x42, count: 32)), in: temporaryDirectory())
+			_ = try await Unlock.open(key: SymmetricKey(data: Data(repeating: 0x42, count: 32)), in: elsewhere, records: records(elsewhere))
 		}
-	}
-
-	@Test func changingThePasswordForgetsTheKeySavedForTouchID() async throws {
-		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-		let keys = FakeKeyStore()
-		try keys.save(try Unlock.localDbKey(password: "old password", parameters: parameters))
-
-		try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
-
-		#expect(keys.storedKey == nil)
 	}
 
 	@Test func aStoredKeyOnANewerDatabaseSaysSoRatherThanRejectingTheKey() async throws {
 		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		let key = try Unlock.localDbKey(password: "old password", parameters: parameters)
-		try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: key).execute("PRAGMA user_version = 99")
+		_ = try await seed("old password", in: directory)
+		try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: seededKey).execute("PRAGMA user_version = 99")
 
 		await #expect(throws: SQLiteError.self) {
-			_ = try await Unlock.open(key: key, in: directory)
+			_ = try await Unlock.open(key: seededKey, in: directory, records: records(directory))
 		}
-	}
-
-	@Test func aStoredKeyReportsTheCurrentParametersWhenARekeyIsPending() async throws {
-		let directory = temporaryDirectory()
-		let parameters = try await seed("old password", in: directory)
-		var pending = parameters
-		pending.localSalt = Data(repeating: 0x99, count: 16)
-		try AppLock.write(pending, to: AppLock.pendingRekeyFile(in: directory))
-
-		let unlocked = try await Unlock.open(key: try Unlock.localDbKey(password: "old password", parameters: parameters), in: directory)
-
-		#expect(unlocked.parameters == parameters)
-	}
-
-	@Test func aPasswordChangeThatCannotPromoteStillForgetsTheOldKey() async throws {
-		let directory = temporaryDirectory()
-		let current = AppLock.currentFile(in: directory)
-		defer { try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: current.path) }
-		let parameters = try await seed("old password", in: directory)
-		let opened = try await Unlock.open(password: "old password", in: directory)
-		let keys = FakeKeyStore()
-		try keys.save(try Unlock.localDbKey(password: "old password", parameters: parameters))
-		try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: current.path)
-
-		await #expect(throws: (any Error).self) {
-			try await Unlock.changePassword(from: "old password", to: "new password", parameters: parameters, store: opened.store, in: directory, storedKey: keys, calibrate: { UnlockParameters.fast.argon })
-		}
-
-		#expect(keys.storedKey == nil)
 	}
 }

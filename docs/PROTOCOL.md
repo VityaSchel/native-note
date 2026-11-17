@@ -197,7 +197,7 @@ New labels must not collide; a changed derivation bumps its `/v`, and a changed 
 | `native-note/envelope/v1`                      | `envelopeKey`       | API key                |
 | `native-note/id-blind/v1`                      | `blindingKey`       | Content key            |
 | `native-note/note/v1`                          | `noteKey` per write | Content key            |
-| `native-note/localdb/v1`                       | `localDbKey`        | `argonOut ‖ machineId` |
+| `native-note/unlock/v1`                        | `unlockKey`         | `argonOut ‖ machineId` |
 | `native-note/machine-id/v1`                    | `machineId`         | hardware agreement     |
 
 ## Limits

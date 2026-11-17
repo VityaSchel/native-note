@@ -48,8 +48,7 @@ extension TypistTests {
 	@Test(arguments: [UInt64(0xf0_0002)])
 	func aKilledSessionLosesOnlyTheLastSaveWindow(seed: UInt64) async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
+		try await makeLibrary(in: directory)
 		var random = SeededGenerator(seed: seed)
 		var survivedTyping = 0
 

@@ -4,7 +4,6 @@ import Foundation
 actor NoteStore {
 	static let columns = "uuid, body, createdAt, updatedAt, deleted, dirty, v, ext"
 
-	private let url: URL
 	private var opened: SQLiteConnection?
 
 	static func create(url: URL, key: SymmetricKey) async throws -> NoteStore {
@@ -22,7 +21,6 @@ actor NoteStore {
 	private init(url: URL, key: SymmetricKey, create: Bool) throws {
 		let connection = try SQLiteConnection(url: url, rawKey: key, create: create)
 		try Schema.prepare(connection)
-		self.url = url
 		opened = connection
 	}
 
@@ -111,18 +109,6 @@ actor NoteStore {
 		try statement.bind(7, Int64(note.v))
 		try statement.bind(8, note.ext)
 		try statement.bind(9, pulled ? 1 : 0)
-	}
-
-	func rekey(from oldKey: SymmetricKey, to newKey: SymmetricKey) throws -> Bool {
-		try connection.rekey(to: newKey)
-		do {
-			_ = try SQLiteConnection(url: url, rawKey: newKey, create: false)
-			return true
-		} catch SQLiteError.wrongKey {
-			opened = nil
-			opened = try SQLiteConnection(url: url, rawKey: oldKey, create: false)
-			return false
-		}
 	}
 
 	func note(id: UUID) throws -> Note? {

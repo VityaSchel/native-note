@@ -60,9 +60,9 @@ struct AppModelTests {
 		#expect(model.phase == .unlocked && !model.isOnboarding && model.screen == .library)
 	}
 
-	@Test func startsLockedWhenParametersAlreadyExist() async throws {
+	@Test func startsLockedWhenARecordAlreadyExists() async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.sample, to: AppLock.currentFile(in: directory))
+		try FileUnlockRecordStore(directory: directory).write(.sample)
 
 		let model = AppModel.testing(in: directory)
 		model.start()
@@ -95,14 +95,14 @@ struct AppModelTests {
 		await model.unlock(password: workspacePassword)
 
 		#expect(model.phase != .unlocked)
-		#expect(model.failure == .unexpected("No unlock parameters were found beside the notes database."))
+		#expect(model.failure == .unexpected("No unlock record was found for the notes database."))
 	}
 
-	@Test func parametersBoundToAnotherMacSaySo() async throws {
+	@Test func aRecordBoundToAnotherMacSaysSo() async throws {
 		let directory = temporaryDirectory()
-		var foreign = UnlockParameters.fast
+		var foreign = UnlockRecord.fast
 		foreign.enclaveKey = Data(repeating: 0x11, count: 8)
-		try AppLock.write(foreign, to: AppLock.currentFile(in: directory))
+		try FileUnlockRecordStore(directory: directory).write(foreign)
 		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
 		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 		model.start()
@@ -113,11 +113,11 @@ struct AppModelTests {
 		#expect(model.failure == .unexpected(AppModel.Failure.reason(for: Unlock.Failure.boundToAnotherMac)))
 	}
 
-	@Test func setUpFindingParametersFromElsewhereLocks() async throws {
+	@Test func setUpFindingARecordFromElsewhereLocks() async throws {
 		let directory = temporaryDirectory()
 		let model = AppModel.testing(in: directory)
 		model.start()
-		try await Unlock.setUp(password: "other instance", in: directory).store.close()
+		try await Unlock.setUp(password: "other instance", in: directory, records: FileUnlockRecordStore(directory: directory)).store.close()
 
 		await model.submit(password: "correct horse")
 		#expect(model.phase == .locked)
@@ -127,10 +127,10 @@ struct AppModelTests {
 		#expect(model.phase == .unlocked)
 	}
 
-	@Test func aDamagedParameterFileLocksRatherThanOfferingSetup() async throws {
+	@Test func aDamagedRecordLocksRatherThanOfferingSetup() async throws {
 		let directory = temporaryDirectory()
 		try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-		try Data("not a property list".utf8).write(to: AppLock.currentFile(in: directory))
+		try Data("not a property list".utf8).write(to: AppLock.recordFile(in: directory))
 		FileManager.default.createFile(atPath: AppLock.databaseFile(in: directory).path, contents: Data("placeholder".utf8))
 		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 
@@ -139,7 +139,7 @@ struct AppModelTests {
 
 		await model.unlock(password: workspacePassword)
 		#expect(model.phase == .locked)
-		#expect(model.failure == .unexpected("The unlock parameters file is damaged."))
+		#expect(model.failure == .unexpected("The unlock record is damaged."))
 	}
 
 	@Test func aDatabaseFromANewerVersionAsksForAnUpdate() async throws {
@@ -155,7 +155,8 @@ struct AppModelTests {
 
 	@Test func aDatabaseThatCannotBeOpenedSaysWhy() async throws {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
+		let record = try await BlockingWork.run { try Unlock.makeRecord(password: workspacePassword, key: workspaceDatabaseKey, parameters: .fast) }
+		try FileUnlockRecordStore(directory: directory).write(record)
 		try FileManager.default.createDirectory(at: AppLock.databaseFile(in: directory), withIntermediateDirectories: true)
 		let model = AppModel.testing(in: directory, scheduler: alarm.scheduler)
 		model.start()

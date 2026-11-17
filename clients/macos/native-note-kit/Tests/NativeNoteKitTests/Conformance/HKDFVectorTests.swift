@@ -30,15 +30,15 @@ struct HKDFVectorTests {
 		#expect(labels["envelopeKey"] == KeyDerivation.envelope)
 		#expect(labels["blindingKey"] == KeyDerivation.idBlind)
 		#expect(labels["noteKey"] == KeyDerivation.note)
-		#expect(labels["localDbKey"] == KeyDerivation.localDb)
+		#expect(labels["unlockKey"] == KeyDerivation.unlock)
 		#expect(labels["machineId"] == KeyDerivation.machineId)
 	}
 
-	@Test(arguments: ["localDbKey", "localDbKeyWithoutMachineId"])
-	func localDbKeyMatchesItsVector(name: String) throws {
+	@Test(arguments: ["unlockKey", "unlockKeyWithoutMachineId"])
+	func unlockKeyMatchesItsVector(name: String) throws {
 		let vector = try #require(try Vectors.load(.hkdf).first { $0.name == name })
 
-		let key = KeyDerivation.localDbKey(
+		let key = KeyDerivation.unlockKey(
 			argonOut: SymmetricKey(data: try vector.bytes("argonOut") ?? vector.require("ikm")),
 			machineId: vector.bytes("machineId").map { SymmetricKey(data: $0) },
 			localSalt: try vector.require("salt")

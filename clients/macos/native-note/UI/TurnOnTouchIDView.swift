@@ -5,8 +5,6 @@ struct TurnOnTouchIDView: View {
 	let turnOn: (String) async -> AppModel.Failure?
 	let done: () -> Void
 	var touchID = TouchIDControls()
-	var changedPassword: String?
-	var declineTitle = "Cancel"
 
 	@State private var form = TurnOnTouchIDForm()
 	@FocusState private var typing: Bool
@@ -14,9 +12,7 @@ struct TurnOnTouchIDView: View {
 	var body: some View {
 		SheetScaffold(
 			title: "Turn On Touch ID Unlock",
-			explanation: changedPassword != nil
-				? "The new password turned Touch ID unlock off. Touch ID turns it on again."
-				: awaitsTouch ? nil : "Enter your password to unlock with Touch ID instead.",
+			explanation: awaitsTouch ? nil : "Enter your password to unlock with Touch ID instead.",
 			error: awaitsTouch ? nil : form.inlineMessage,
 			working: form.working && !awaitsTouch,
 			width: 380,
@@ -35,7 +31,7 @@ struct TurnOnTouchIDView: View {
 				.formStyle(.columns)
 			}
 		} buttons: {
-			Button(declineTitle, role: .cancel, action: cancel)
+			Button("Cancel", role: .cancel, action: cancel)
 				.keyboardShortcut(.cancelAction)
 				.disabled(form.working && !awaitsTouch)
 			if !awaitsTouch {
@@ -46,11 +42,6 @@ struct TurnOnTouchIDView: View {
 		}
 		.defaultFocus($typing, true)
 		.onDisappear(perform: touchID.cancel)
-		.onAppear {
-			guard let changedPassword else { return }
-			form.password = changedPassword
-			send()
-		}
 	}
 
 	var awaitsTouch: Bool {
@@ -63,7 +54,6 @@ struct TurnOnTouchIDView: View {
 	private func cancel() {
 		guard awaitsTouch else { return done() }
 		touchID.cancel()
-		if changedPassword != nil { done() }
 	}
 
 	private func send() {

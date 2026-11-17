@@ -64,34 +64,6 @@ struct DatabaseEncryptionTests {
 		#expect(!thrown.lowercased().contains("pragma key ="))
 	}
 
-	@Test func rekeyReplacesTheKeyAndRetiresTheOldOne() async throws {
-		let url = temporaryDatabase()
-		let replacement = SymmetricKey(data: Data(repeating: 0x43, count: 32))
-		let note = sampleNote(body: "survives a password change")
-
-		let notes = try await openStore(at: url)
-		try await notes.save(note)
-		#expect(try await notes.rekey(from: databaseKey, to: replacement))
-		await notes.close()
-
-		let reopened = try await openStore(at: url, key: replacement)
-		#expect(try await reopened.note(id: note.id)?.body == note.body)
-
-		await #expect(throws: SQLiteError.wrongKey) {
-			_ = try await NoteStore.open(url: url, key: databaseKey)
-		}
-	}
-
-	@Test func rekeyRefusesAKeyThatIsNotThirtyTwoBytes() async throws {
-		let url = temporaryDatabase()
-		let notes = try await openStore(at: url)
-
-		await #expect(throws: SQLiteError.keyMustBe32Bytes(count: 16)) {
-			_ = try await notes.rekey(from: databaseKey, to: SymmetricKey(data: Data(repeating: 0x43, count: 16)))
-		}
-		#expect(try await notes.liveNotes().isEmpty)
-	}
-
 	@Test func appliesTheDurabilityPragmas() throws {
 		let url = temporaryDatabase()
 		try makeDirectory(for: url)

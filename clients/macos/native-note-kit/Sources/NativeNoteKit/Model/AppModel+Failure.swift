@@ -22,7 +22,7 @@ extension AppModel {
 		static func reason(for error: Error) -> String {
 			switch error {
 			case Unlock.Failure.neverSetUp:
-				"No unlock parameters were found beside the notes database."
+				"No unlock record was found for the notes database."
 			case Unlock.Failure.alreadySetUp:
 				"Native Note is already set up."
 			case Unlock.Failure.databaseMissing:
@@ -33,10 +33,12 @@ extension AppModel {
 				"Password not changed. Try again."
 			case Unlock.Failure.storedKeyRejected:
 				"The key saved for Touch ID no longer opens these notes. Unlock with your password."
+			case Unlock.Failure.keyRejected:
+				"The notes database does not open with its unlock record. It may have been replaced."
 			case AppLock.Unreadable.unsupportedVersion:
-				"The unlock parameters were written by a newer version of Native Note. Update the app to open them."
+				"The unlock record was written by a newer version of Native Note. Update the app to open it."
 			case is DecodingError:
-				"The unlock parameters file is damaged."
+				"The unlock record is damaged."
 			case LibraryArchive.Failure.tooLarge:
 				"The file is too large to be a Native Note export."
 			case ZipArchive.Failure.tooLarge:

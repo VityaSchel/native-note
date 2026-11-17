@@ -13,7 +13,7 @@ SQLCipher in WAL mode with `synchronous=FULL`, `fullfsync` and `checkpoint_fullf
 
 The library locks when the device sleeps, its screen locks or the user session switches away. Locking cancels a sync or Change Server check in flight and waits for it before closing the database; an unlock that finishes after one of these events locks again. Locking ends an open export or import panel and forgets an import waiting for its passphrase, and a locked library refuses an export. Closing the window keeps the app running and the library unlocked.
 
-Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`: a locked library on disk is `notes.db`, indistinguishable from random, beside the public `app-lock.plist`. The sidecars, whose headers read as SQLite, exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock.
+Locking and quitting close the database, which checkpoints the WAL and deletes `-wal` and `-shm`: a locked library on disk is `notes.db`, indistinguishable from random, with its [unlock record](#unlock-record) in the key store or, in a build that cannot reach it, the `app-lock.plist` beside it. The sidecars, whose headers read as SQLite, exist while unlocked, while a lock keeps the database open to retry a failing save, and after a crash until the next lock.
 
 ```sql
 CREATE TABLE note (
@@ -52,20 +52,21 @@ Search matches whole words, and the last word as a prefix from two characters, r
 
 ### Local DB encryption
 
-`localDbKey` encrypts the local database and never leaves the device. It derives from the unlock password, bound to the device's secure hardware where there is one.
+`localDbKey` encrypts the local database and never leaves the device. It is 256 random bits drawn at setup and stored only wrapped by `unlockKey`, which derives from the unlock password, bound to the device's secure hardware where there is one.
 
 ```
 localSalt  = 128-bit random
 argonOut   = Argon2id(password, localSalt, argonParams, 32)
 machineId  = hardwareBinding()
-localDbKey = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-note/localdb/v1", 32)
+unlockKey  = HKDF-SHA256(argonOut ‖ machineId, salt: localSalt, info: "native-note/unlock/v1", 32)
+wrappedKey = AES-256-GCM(unlockKey, nonce: 96-bit random, aad: "native-note/localdb-key/v1", localDbKey)   # nonce ‖ ciphertext ‖ tag, 60 bytes
 ```
 
 Argon2id is version `0x13` with no secret or associated data, `m` in KiB. A password or passphrase enters it as UTF-8 bytes, unnormalized.
 
-`localDbKey` is a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2` and `sqlite3_rekey_v2`, never a passphrase; it opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`.
+`localDbKey` is a **raw key**, the literal `x'<64 hex>'` through `sqlite3_key_v2`, never a passphrase; it opens libraries keyed with `PRAGMA key = "x'<64 hex>'"`. A `wrappedKey` whose tag fails reads as a wrong password; one that unwraps to a key the database refuses is reported as a database its record does not open.
 
-The app keeps no copy of `localDbKey` while unlocked, except while turning on biometrics waits for the touch that reads it back; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and scratch buffers holding key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
+The app keeps no copy of `localDbKey` while unlocked, except while turning on biometrics waits for the touch that reads it back and while a password change wraps it again; SQLCipher holds it until the database closes. Derived keys stay in zeroizing key types, and scratch buffers holding key or password bytes are wiped after use. Strings are not wiped: the password, the API key's hex and the recovery words pass through them.
 
 #### `hardwareBinding`
 
@@ -83,23 +84,21 @@ machineId = HKDF-SHA256(hardwareOp(), info: "native-note/machine-id/v1", 32)
 
 Without secure hardware, `machineId` is omitted, the UI warns, and Argon2id alone protects the library. A hardware key that cannot load, as on another device, is reported as notes bound to another device.
 
-#### Unlock parameters
+#### Unlock record
 
-`localSalt` and `argonParams` are public and stored outside the database. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, in multiples of `8p` KiB, to the largest of up to four timed in-process runs that takes at most 0.4 s, capped at 2 GiB; a password change never lowers it.
+The unlock record holds `localSalt`, `argonParams`, the hardware key blob and `wrappedKey`, outside the database: in the platform key store, readable only by the app and never backed up or synced, or, in a build that cannot reach the key store, in a file beside the database. `argonParams` is calibrated at setup and at every password change: from the floor `m=256 MiB, t=3, p=4`, only `m` rises, in multiples of `8p` KiB, to the largest of up to four timed in-process runs that takes at most 0.4 s, capped at 2 GiB; a password change never lowers it.
 
 #### Changing the password
 
-1. Confirm the current password with a fresh open
-2. Write the new unlock parameters, with a fresh salt and recalibrated `argonParams`, to a pending file, keeping the current one
-3. Rekey with `sqlite3_rekey_v2`
-4. Verify a fresh open with the new key; on failure, reconnect with the old key, delete the pending file and keep the old password
-5. Write the new parameters over the current parameter file, then delete the pending one
+1. Confirm the current password: unwrap `localDbKey` and open the database with it
+2. Wrap `localDbKey` under the new `unlockKey`, with a fresh salt and recalibrated `argonParams`, and check the new record unwraps
+3. Replace the unlock record in one atomic write
 
-One change runs at a time. Lock and quit cancel a running change only before step 2 and wait for it either way; unlock and erase wait for it too. Unlock tries the pending file, then the current one, and keeps whichever opens the database, so a crash between steps leaves it openable. A parameter file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed, before the rekey it enables. An unreadable parameter file is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside, never deletes, a database left without parameter files, moving its sidecars first so an interrupted set-aside finishes on the next setup.
+The database and the key saved for biometrics stay as they are. One change runs at a time. Lock and quit cancel a running change only before step 3 and wait for it either way; unlock and erase wait for it too. A record file is written to a temporary file, flushed with `F_FULLFSYNC`, renamed into place and its directory flushed; a key store item is updated in place. An unreadable record is an error, never a first run. Unlock never creates the database and treats an empty one as missing; setup sets aside, never deletes, a database left without an unlock record, moving its sidecars first so an interrupted set-aside finishes on the next setup.
 
 #### Forgotten password
 
-The unlock screen offers to erase the library, behind a confirmation. Erasing deletes the biometric key, then the unlock parameters, then the database with its sidecars and set-aside copies, and returns to setup. A file that cannot be deleted is reported; once the parameters are gone, setup follows anyway.
+The unlock screen offers to erase the library, behind a confirmation. Erasing deletes the biometric key, then the unlock record, then the database with its sidecars and set-aside copies, and returns to setup. Without its record the database cannot be opened. A file that cannot be deleted is reported; once the record is gone, setup follows anyway.
 
 #### Unlocking with biometrics
 
@@ -117,7 +116,7 @@ Biometric unlock stops on the unlock screen, with no retry click, after a lockou
 
 Turning it on takes the password, checks the derived key opens the database, stores it, and is on only once a touch reads it back; waiting for the touch pauses while another app is active. A wrong password stores nothing; a wrong finger waits for a click to retry, and an attempt the OS ends waits for a click or the next return to the app; anything else short of a matching touch deletes the key: cancel, a lockout, biometrics becoming unavailable, a failed read, a key that reads back differently, quit, lock, or a password change. Turning it off asks nothing.
 
-Onboarding offers it after the password step, with the password just set, held only until that step ends. Changing the password, or setting up a new library in the same place, deletes the stored key; after a password change the same sheet offers to turn it on again.
+Onboarding offers it after the password step, with the password just set, held only until that step ends. A password change keeps the stored key; setting up a new library in the same place deletes it.
 
 ## Recovery flow
 

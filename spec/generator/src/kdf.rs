@@ -6,7 +6,7 @@ pub mod label {
 	pub const ENVELOPE: &str = "native-note/envelope/v1";
 	pub const ID_BLIND: &str = "native-note/id-blind/v1";
 	pub const NOTE: &str = "native-note/note/v1";
-	pub const LOCAL_DB: &str = "native-note/localdb/v1";
+	pub const UNLOCK: &str = "native-note/unlock/v1";
 	pub const MACHINE_ID: &str = "native-note/machine-id/v1";
 }
 
@@ -37,9 +37,9 @@ pub fn note_key(content_key: &[u8], write_id: &[u8]) -> Vec<u8> {
 	hkdf(content_key, Some(write_id), label::NOTE.as_bytes(), 32)
 }
 
-pub fn local_db_key(argon_out: &[u8], machine_id: &[u8], local_salt: &[u8]) -> Vec<u8> {
+pub fn unlock_key(argon_out: &[u8], machine_id: &[u8], local_salt: &[u8]) -> Vec<u8> {
 	let mut ikm = Vec::with_capacity(argon_out.len() + machine_id.len());
 	ikm.extend_from_slice(argon_out);
 	ikm.extend_from_slice(machine_id);
-	hkdf(&ikm, Some(local_salt), label::LOCAL_DB.as_bytes(), 32)
+	hkdf(&ikm, Some(local_salt), label::UNLOCK.as_bytes(), 32)
 }

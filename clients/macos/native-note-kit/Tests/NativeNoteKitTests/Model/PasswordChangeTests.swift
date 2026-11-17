@@ -10,13 +10,32 @@ private extension Gate {
 	}
 }
 
+private struct GatedRecords: UnlockRecordStore {
+	let records: FileUnlockRecordStore
+	let gate: Gate
+
+	func read() throws -> UnlockRecord? { try records.read() }
+
+	func write(_ record: UnlockRecord) throws {
+		gate.hold()
+		try records.write(record)
+	}
+
+	func delete() throws { try records.delete() }
+}
+
+private func recordBytes(in directory: URL) throws -> Data {
+	try Data(contentsOf: AppLock.recordFile(in: directory))
+}
+
 @MainActor @Suite(.scratch, .timeLimit(.minutes(1)))
 struct PasswordChangeTests {
 	private let alarm = Alarm()
 
-	private func library(calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { UnlockParameters.fast.argon }) -> Workspace {
+	private func library(calibrate: @escaping @Sendable () throws -> Argon2.Parameters = { UnlockParameters.fast.argon }, holdingWritesAt gate: Gate? = nil) -> Workspace {
 		Workspace(holding: ["Shopping", "Trip"]) { [alarm] directory, keys in
-			AppModel.testing(in: directory, scheduler: alarm.scheduler, calibrate: calibrate, keyStore: keys)
+			let records = gate.map { GatedRecords(records: FileUnlockRecordStore(directory: directory), gate: $0) }
+			return AppModel.testing(in: directory, scheduler: alarm.scheduler, calibrate: calibrate, keyStore: keys, records: records)
 		}
 	}
 
@@ -44,25 +63,24 @@ struct PasswordChangeTests {
 
 	@Test func aWrongCurrentPasswordChangesNothing() async throws {
 		let (model, directory) = try await library().unlocked()
-		let parameters = try Data(contentsOf: AppLock.currentFile(in: directory))
+		let record = try recordBytes(in: directory)
 
 		#expect(await model.changePassword(from: "a guess", to: "a new password") == .wrongPassword)
 
 		#expect(model.failure == nil)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		#expect(try Data(contentsOf: AppLock.currentFile(in: directory)) == parameters)
+		#expect(try recordBytes(in: directory) == record)
 		await model.createNote()
 		#expect(model.failure == nil)
 	}
 
 	@Test func aLockedLibraryKeepsItsPassword() async throws {
 		let (model, directory) = try await library().unlocked()
-		let parameters = try Data(contentsOf: AppLock.currentFile(in: directory))
+		let record = try recordBytes(in: directory)
 		await model.lock()
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") != nil)
 
-		#expect(try Data(contentsOf: AppLock.currentFile(in: directory)) == parameters)
+		#expect(try recordBytes(in: directory) == record)
 	}
 
 	@Test func aSecondChangeStartsFromTheFirst() async throws {
@@ -86,17 +104,17 @@ struct PasswordChangeTests {
 		#expect(await relaunch(directory, password: "a new password").notes.contains { $0.body == "typed before the change" })
 	}
 
-	@Test func changingThePasswordTurnsTouchIDOffUntilItIsTurnedOnAgain() async throws {
+	@Test func changingThePasswordKeepsTouchIDOn() async throws {
 		let keys = FakeKeyStore()
 		let (model, _) = try await library().unlocked(keys)
 		try await turnOnTouchID(model)
+		let key = keys.storedKey
 
 		#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
-		#expect(!model.isBiometricUnlockEnabled)
-		#expect(keys.storedKey == nil)
+		#expect(model.isBiometricUnlockEnabled)
+		#expect(keys.storedKey == key)
 
 		#expect(await model.enableBiometricUnlock(password: workspacePassword) == .wrongPassword)
-		try await turnOnTouchID(model, password: "a new password")
 		await model.lock()
 		#expect(await touch(model))
 		#expect(model.phase == .unlocked)
@@ -107,6 +125,7 @@ struct PasswordChangeTests {
 		let gate = Gate()
 		defer { gate.open() }
 		let (model, directory) = try await library(calibrate: gate.holdCalibration).unlocked()
+		let record = try recordBytes(in: directory)
 
 		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
 		try await gate.untilHolding()
@@ -117,8 +136,8 @@ struct PasswordChangeTests {
 		await locking.value
 
 		#expect(await change.value != nil)
+		#expect(try recordBytes(in: directory) == record)
 		#expect(await relaunch(directory, password: workspacePassword).phase == .unlocked)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 	}
 
 	@Test func aSecondChangeWhileOneRunsIsRefused() async throws {
@@ -132,20 +151,16 @@ struct PasswordChangeTests {
 		gate.open()
 
 		#expect(await first.value == nil)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 		await model.lock()
 		#expect(await relaunch(directory, password: "second password").phase == .unlocked)
 	}
 
-	@Test func lockingAndUnlockingWaitForAChangePastItsRekey() async throws {
+	@Test func lockingAndUnlockingWaitForAChangeWritingItsRecord() async throws {
 		let gate = Gate()
 		defer { gate.open() }
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library().unlocked(keys)
-		keys.whileDeleting { gate.hold() }
+		let (model, directory) = try await library(holdingWritesAt: gate).unlocked()
 		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
 		try await gate.untilHolding()
-		try #require(AppLock.parameterFiles(in: directory).count == 2)
 
 		let locked = Flag()
 		let locking = Task {
@@ -161,24 +176,19 @@ struct PasswordChangeTests {
 		try await Task.sleep(for: .milliseconds(200))
 		#expect(!locked.isRaised)
 		#expect(!answered.isRaised)
-		#expect(AppLock.parameterFiles(in: directory).count == 2)
-		keys.whileDeleting {}
 		gate.open()
 
 		#expect(await change.value == nil)
 		await locking.value
 		await unlocking.value
 		#expect(model.failure == .wrongPassword)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
 	}
 
-	@Test func quittingWaitsForAChangePastItsRekey() async throws {
+	@Test func quittingWaitsForAChangeWritingItsRecord() async throws {
 		let gate = Gate()
 		defer { gate.open() }
-		let keys = FakeKeyStore()
-		let (model, directory) = try await library().unlocked(keys)
-		keys.whileDeleting { gate.hold() }
+		let (model, directory) = try await library(holdingWritesAt: gate).unlocked()
 		let change = Task { await model.changePassword(from: workspacePassword, to: "a new password") }
 		try await gate.untilHolding()
 
@@ -189,53 +199,27 @@ struct PasswordChangeTests {
 		}
 		try await Task.sleep(for: .milliseconds(200))
 		#expect(!closed.isRaised)
-		keys.whileDeleting {}
 		gate.open()
 
 		#expect(await change.value == nil)
 		await closing.value
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
 		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
 	}
 
-	@Test func aPendingFileLostDuringTheRekeyStillLeavesTheNewPasswordInCharge() async throws {
-		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		let store = try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey())
-		try await store.save(sampleNote(body: "kept"))
-		let keys = FakeKeyStore()
-		keys.whileDeleting { try? FileManager.default.removeItem(at: AppLock.pendingRekeyFile(in: directory)) }
-
-		let changed = try await Unlock.changePassword(
-			from: workspacePassword,
-			to: "a new password",
-			parameters: .fast,
-			store: store,
-			in: directory,
-			storedKey: keys,
-			calibrate: { UnlockParameters.fast.argon }
-		)
-		await store.close()
-
-		#expect(try AppLock.read(from: AppLock.currentFile(in: directory)) == changed.parameters)
-		#expect(AppLock.parameterFiles(in: directory) == [AppLock.currentFile(in: directory)])
-		let reopened = try await Unlock.open(password: "a new password", in: directory)
-		#expect(try await reopened.store.liveNotes().map(\.body) == ["kept"])
-	}
-
-	@Test func aPasswordChangeDuringTheTouchIDCheckLeavesNoStaleKey() async throws {
+	@Test func aPasswordChangeDuringTheTouchIDCheckLeavesAKeyThatStillOpensTheLibrary() async throws {
 		let keys = FakeKeyStore()
 		let (model, directory) = try await library().unlocked(keys)
-		let staleKey = try await workspaceKey()
 		keys.whileLoading {
 			#expect(await model.changePassword(from: workspacePassword, to: "a new password") == nil)
-			keys.plant(staleKey)
 		}
 
 		#expect(await enableTouchID(model) == nil)
 
-		#expect(keys.storedKey == nil)
-		#expect(!model.isBiometricUnlockEnabled)
+		#expect(model.isBiometricUnlockEnabled)
+		await model.lock()
+		keys.whileLoading {}
+		#expect(await touch(model))
+		#expect(model.phase == .unlocked)
 		await model.lock()
 		#expect(await relaunch(directory, password: "a new password").phase == .unlocked)
 	}

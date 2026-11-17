@@ -76,11 +76,6 @@ nonisolated final class SQLiteConnection {
 		}
 	}
 
-	func rekey(to newKey: SymmetricKey) throws {
-		try Self.requireThirtyTwoBytes(newKey)
-		try Self.applyRawKey(newKey, on: handle, with: sqlite3_rekey_v2, named: "sqlite3_rekey_v2")
-	}
-
 	static let busyTimeoutMilliseconds: Int32 = 5_000
 
 	private static func waitForOtherConnections(on handle: OpaquePointer) throws {

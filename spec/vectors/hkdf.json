@@ -35,19 +35,19 @@
 		},
 		{
 			"argonOut": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
-			"info": "native-note/localdb/v1",
+			"info": "native-note/unlock/v1",
 			"length": 32,
 			"machineId": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
-			"name": "localDbKey",
-			"okm": "7109e93e1e74f41dd11152d6c0a840deb039a03e172737f83da930bf1a141913",
+			"name": "unlockKey",
+			"okm": "f2fc86c8b3d93b4d1c20d6bc5ef9ce5a1c6343a49fa8fd5029ce92dd9ebadc2f",
 			"salt": "808182838485868788898a8b8c8d8e8f"
 		},
 		{
 			"ikm": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
-			"info": "native-note/localdb/v1",
+			"info": "native-note/unlock/v1",
 			"length": 32,
-			"name": "localDbKeyWithoutMachineId",
-			"okm": "c158e26699bfb82c64e87eb1fcf631b3433a0d7a4249525aa18b595869fb232f",
+			"name": "unlockKeyWithoutMachineId",
+			"okm": "0aa1d45234522b7ea581f8f508bc057e29da10f48c5ec32ae5b5fc87302cf701",
 			"salt": "808182838485868788898a8b8c8d8e8f"
 		}
 	],

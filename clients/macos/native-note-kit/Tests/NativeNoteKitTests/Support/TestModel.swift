@@ -12,6 +12,7 @@ extension AppModel {
 		searchNotes: @escaping @Sendable (NoteStore, String) async throws -> [Note] = AppModel.search,
 		exportParameters: Argon2.Parameters = Argon2.floor,
 		keyStore: any UnlockKeyStore = FakeKeyStore(),
+		records: (any UnlockRecordStore)? = nil,
 		shakeTimer: @escaping SaveScheduler.Sleep = { try await Task.sleep(for: $0) },
 		transport: (any SyncTransport)? = nil,
 		syncDelay: Duration = .seconds(3600)
@@ -24,6 +25,7 @@ extension AppModel {
 			searchNotes: searchNotes,
 			exportParameters: exportParameters,
 			keyStore: keyStore,
+			records: records ?? FileUnlockRecordStore(directory: directory),
 			shakeTimer: shakeTimer,
 			makeTransport: { transport ?? HTTPTransport(url: $0) },
 			syncDelay: syncDelay

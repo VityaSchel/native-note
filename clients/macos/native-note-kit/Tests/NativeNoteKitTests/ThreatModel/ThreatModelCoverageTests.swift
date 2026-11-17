@@ -112,7 +112,7 @@ struct ThreatModelCoverageTests {
 		"A short password or pin without hardware binding": [.swift("ThreatModel/BoundaryTests", "aLibraryWithoutHardwareBindingCanBeGuessedFromItsFilesAlone")],
 		"No in-app unlock attempt limiting": [.swift("ThreatModel/BoundaryTests", "anyNumberOfWrongPasswordsLeavesTheRightOneWorking")],
 		"Hardware binding does not add per-guess cost": [
-			.swift("Unlock/UnlockTests", "aDifferentDeviceKeyProducesADifferentKey"),
+			.swift("Unlock/UnlockTests", "aDifferentDeviceKeyProducesADifferentUnlockKey"),
 			.swift("ThreatModel/BoundaryTests", "withTheMachineIdReadOnceGuessingCostsOnlyArgon2"),
 		],
 		"The content key never rotates": [

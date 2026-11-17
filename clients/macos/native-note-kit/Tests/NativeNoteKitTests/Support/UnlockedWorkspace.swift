@@ -24,8 +24,7 @@ struct Workspace {
 
 	func unlocked(_ keys: any UnlockKeyStore = FakeKeyStore(), holding bodies: [String]? = nil) async throws -> (AppModel, URL) {
 		let directory = temporaryDirectory()
-		try AppLock.write(.fast, to: AppLock.currentFile(in: directory))
-		try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: workspaceKey()).close()
+		try await makeLibrary(in: directory)
 		let model = make(directory, keys)
 		model.start()
 		await model.unlock(password: workspacePassword)
@@ -82,8 +81,22 @@ func turnOnTouchID(_ model: AppModel, password: String = workspacePassword) asyn
 	try #require(model.isBiometricUnlockEnabled)
 }
 
+let workspaceDatabaseKey = SymmetricKey(data: Data(repeating: 0x57, count: 32))
+
 func workspaceKey() async throws -> SymmetricKey {
-	try await Task.detached { try Unlock.localDbKey(password: workspacePassword, parameters: .fast) }.value
+	workspaceDatabaseKey
+}
+
+func makeLibrary(
+	in directory: URL,
+	password: String = workspacePassword,
+	key: SymmetricKey = workspaceDatabaseKey,
+	parameters: UnlockParameters = .fast
+) async throws {
+	try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+	let record = try await BlockingWork.run { try Unlock.makeRecord(password: password, key: key, parameters: parameters) }
+	try FileUnlockRecordStore(directory: directory).write(record)
+	try await NoteStore.create(url: AppLock.databaseFile(in: directory), key: key).close()
 }
 
 func connection(to directory: URL) async throws -> SQLiteConnection {
@@ -91,7 +104,7 @@ func connection(to directory: URL) async throws -> SQLiteConnection {
 }
 
 func observer(of directory: URL) async throws -> NoteStore {
-	try await Unlock.open(password: workspacePassword, in: directory).store
+	try await Unlock.open(password: workspacePassword, in: directory, records: FileUnlockRecordStore(directory: directory)).store
 }
 
 extension NoteStore {

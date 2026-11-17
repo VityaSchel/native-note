@@ -21,3 +21,8 @@ extension UnlockParameters {
 		return parameters
 	}
 }
+
+extension UnlockRecord {
+	static let fast = UnlockRecord(parameters: .fast, wrappedKey: Data(repeating: 0xA1, count: DatabaseKeyWrap.wrappedLength))
+	static let sample = UnlockRecord(parameters: .sample, wrappedKey: Data(repeating: 0xB2, count: DatabaseKeyWrap.wrappedLength))
+}

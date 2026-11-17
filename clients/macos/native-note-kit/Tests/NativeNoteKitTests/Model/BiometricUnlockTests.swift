@@ -568,7 +568,7 @@ struct BiometricUnlockTests {
 		#expect(model.phase == .unlocked)
 		#expect(model.failure == nil)
 		#expect(model.groups.flatMap(\.notes).map(\.body) == ["bank pin 4711"])
-		#expect(FileManager.default.fileExists(atPath: AppLock.currentFile(in: directory).path))
+		#expect(FileManager.default.fileExists(atPath: AppLock.recordFile(in: directory).path))
 	}
 
 	@Test func typingThePasswordPausesTouchIDUntilItIsChecked() async throws {
@@ -782,9 +782,9 @@ struct BiometricUnlockTests {
 		let directory = temporaryDirectory()
 		let model = AppModel.testing(in: directory, keyStore: keys)
 		model.start()
-		let other = try await Unlock.setUp(password: "other instance", in: directory)
+		let other = try await Unlock.setUp(password: "other instance", in: directory, records: FileUnlockRecordStore(directory: directory), makeParameters: { .fast })
 		await other.store.close()
-		let otherKey = try await Task.detached { try Unlock.localDbKey(password: "other instance", parameters: .fast) }.value
+		let otherKey = SymmetricKey(size: .bits256)
 		try keys.save(otherKey)
 
 		await model.submit(password: "correct horse")

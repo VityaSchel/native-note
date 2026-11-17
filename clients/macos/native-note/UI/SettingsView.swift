@@ -84,13 +84,7 @@ struct SecuritySettings: View {
 		case .turnOnTouchID:
 			TurnOnTouchIDView(turnOn: turnOnTouchID, done: done, touchID: touchID)
 		case .changePassword:
-			ChangePasswordView(
-				turnsTouchIDOff: touchIDEnabled,
-				change: changePassword,
-				offerTouchID: touchIDAvailable ? turnOnTouchID : nil,
-				touchID: touchID,
-				done: done
-			)
+			ChangePasswordView(change: changePassword, done: done)
 		case .setUpSync:
 			SyncSetupView(mode: .setUp, controls: sync, done: done)
 		case .changeServer:

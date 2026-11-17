@@ -14,7 +14,7 @@ private final class Calls {
 struct ChangePasswordViewTests {
 	private func offscreen(_ calls: Calls, replying failure: AppModel.Failure? = nil) -> OffscreenWindow<ChangePasswordView> {
 		OffscreenWindow(
-			ChangePasswordView(turnsTouchIDOff: false, change: { current, new in
+			ChangePasswordView(change: { current, new in
 				calls.changes.append([current, new])
 				return failure
 			}, done: { calls.done += 1 })
@@ -33,52 +33,6 @@ struct ChangePasswordViewTests {
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(calls.changes == [["old password", "new password"]])
-		#expect(calls.done == 1)
-	}
-
-	@Test func aChangeThatTurnsTouchIDOffOffersItAgainWithTheNewPassword() async throws {
-		let calls = Calls()
-		var offered: [String] = []
-		let offscreen = OffscreenWindow(
-			ChangePasswordView(
-				turnsTouchIDOff: true,
-				change: { current, new in
-					calls.changes.append([current, new])
-					return nil
-				},
-				offerTouchID: { password in
-					offered.append(password)
-					return nil
-				},
-				done: { calls.done += 1 }
-			)
-		)
-		defer { offscreen.close() }
-
-		_ = try offscreen.type("old password", into: "Current Password:")
-		_ = try offscreen.type("new password", into: "New Password:")
-		try offscreen.type("new password", into: "Verify:").currentEditor()?.insertNewline(nil)
-		await offscreen.pump { calls.done > 0 }
-
-		#expect(calls.changes == [["old password", "new password"]])
-		#expect(offered == ["new password"])
-		#expect(calls.done == 1)
-	}
-
-	@Test func aChangeWithTouchIDOffClosesWithoutOffering() async throws {
-		let calls = Calls()
-		var offered: [String] = []
-		let offscreen = OffscreenWindow(
-			ChangePasswordView(turnsTouchIDOff: false, change: { _, _ in nil }, offerTouchID: { offered.append($0); return nil }, done: { calls.done += 1 })
-		)
-		defer { offscreen.close() }
-
-		_ = try offscreen.type("old password", into: "Current Password:")
-		_ = try offscreen.type("new password", into: "New Password:")
-		try offscreen.type("new password", into: "Verify:").currentEditor()?.insertNewline(nil)
-		await offscreen.pump { calls.done > 0 }
-
-		#expect(offered.isEmpty)
 		#expect(calls.done == 1)
 	}
 

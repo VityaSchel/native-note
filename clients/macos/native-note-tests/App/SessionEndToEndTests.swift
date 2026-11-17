@@ -101,7 +101,7 @@ struct SessionEndToEndTests {
 			model.edit(try #require(model.selection), text)
 		}
 		var closed = false
-		let form = OffscreenWindow(ChangePasswordView(turnsTouchIDOff: false, change: model.changePassword(from:to:)) { closed = true })
+		let form = OffscreenWindow(ChangePasswordView(change: model.changePassword(from:to:)) { closed = true })
 		defer { form.close() }
 
 		try form.type(password, into: try form.field("Current Password:"))

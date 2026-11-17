@@ -2,35 +2,20 @@ import NativeNoteKit
 import SwiftUI
 
 struct ChangePasswordView: View {
-	let turnsTouchIDOff: Bool
 	let change: (String, String) async -> AppModel.Failure?
-	var offerTouchID: ((String) async -> AppModel.Failure?)?
-	var touchID = TouchIDControls()
 	let done: () -> Void
 
 	@State private var form = ChangePasswordForm()
 	@FocusState private var focus: Field?
-	@State private var changedTo: String?
 
 	private enum Field {
 		case current, password, confirmation
 	}
 
-	@ViewBuilder
 	var body: some View {
-		if let changedTo, let offerTouchID {
-			TurnOnTouchIDView(turnOn: offerTouchID, done: done, touchID: touchID, changedPassword: changedTo, declineTitle: "Not Now")
-		} else {
-			passwordForm
-		}
-	}
-
-	private var passwordForm: some View {
 		SheetScaffold(
 			title: "Change Password",
-			explanation: turnsTouchIDOff
-				? "Touch ID unlock turns off. Turn it on again after the change."
-				: "The new password unlocks your notes on this Mac. It cannot be recovered.",
+			explanation: "The new password unlocks your notes on this Mac. It cannot be recovered.",
 			error: form.inlineMessage,
 			working: form.working,
 			width: 400
@@ -64,20 +49,11 @@ struct ChangePasswordView: View {
 		Task {
 			let failure = await change(current, new)
 			form.finish(failure)
-			guard failure == nil else { return }
-			if turnsTouchIDOff, offerTouchID != nil {
-				changedTo = new
-			} else {
-				done()
-			}
+			if failure == nil { done() }
 		}
 	}
 }
 
 #Preview("Change password") {
-	ChangePasswordView(turnsTouchIDOff: false, change: { _, _ in nil }, done: {})
-}
-
-#Preview("Change password, Touch ID on") {
-	ChangePasswordView(turnsTouchIDOff: true, change: { _, _ in nil }, done: {})
+	ChangePasswordView(change: { _, _ in nil }, done: {})
 }

@@ -4,9 +4,9 @@ import Foundation
 
 nonisolated enum LibraryIntegrity {
 	static func check(libraryAt directory: URL, password: String) async throws -> String {
-		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
+		guard let record = try FileUnlockRecordStore(directory: directory).read() else { throw Unlock.Failure.neverSetUp }
 		return try await BlockingWork.run {
-			let key = try Unlock.localDbKey(password: password, parameters: parameters)
+			let key = try Unlock.databaseKey(password: password, record: record)
 			let connection = try SQLiteConnection(url: AppLock.databaseFile(in: directory), rawKey: key, create: false)
 			return try connection.scalar("PRAGMA integrity_check") ?? ""
 		}

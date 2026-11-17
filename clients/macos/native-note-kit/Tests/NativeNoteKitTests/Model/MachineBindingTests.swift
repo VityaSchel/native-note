@@ -13,8 +13,8 @@ struct MachineBindingTests {
 		try #require(model.phase == .unlocked)
 		await model.lock()
 
-		let parameters = try AppLock.read(from: AppLock.currentFile(in: directory))
+		let record = try #require(try FileUnlockRecordStore(directory: directory).read())
 
-		#expect((parameters.enclaveKey != nil) == MachineKey.isAvailable)
+		#expect((record.enclaveKey != nil) == MachineKey.isAvailable)
 	}
 }

@@ -31,14 +31,14 @@ A case whose name starts with `reject` is a negative test.
 
 | File            | Covers                                                                                                                                                                               |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `hkdf.json`     | Every `info` label in the protocol; `salt` is `null` for none. For `localDbKey`, concatenate `argonOut` and `machineId` into `ikm`; `localDbKeyWithoutMachineId` is `argonOut` alone |
+| `hkdf.json`     | Every `info` label in the protocol; `salt` is `null` for none. For `unlockKey`, concatenate `argonOut` and `machineId` into `ikm`; `unlockKeyWithoutMachineId` is `argonOut` alone   |
 | `blinding.json` | `blindingKey` from the Content key, then `blindedId`                                                                                                                                 |
 | `content.json`  | Note and tombstone content with its fill                                                                                                                                             |
 | `note.json`     | Sealed note payloads. `plaintext` is the encoded content; `aad` is the binding                                                                                                       |
 | `frames.json`   | Every request and response frame                                                                                                                                                     |
 | `envelope.json` | Sealed request and response envelopes                                                                                                                                                |
 | `padding.json`  | Envelope padding buckets                                                                                                                                                             |
-| `argon2.json`   | Argon2id at `m=1024, t=1, p=1`, with an NFD password also given as `passwordUtf8`; production parameters: [clients/DESIGN.md](../clients/DESIGN.md#unlock-parameters)                |
+| `argon2.json`   | Argon2id at `m=1024, t=1, p=1`, with an NFD password also given as `passwordUtf8`; production parameters: [clients/DESIGN.md](../clients/DESIGN.md#unlock-record)                    |
 | `mnemonic.json` | The Recovery key's 24 words                                                                                                                                                          |
 | `recovery.json` | `contentKeyEncrypted`, then `get` and `put` exchanges over the reference server semantics                                                                                            |
 | `sync.json`     | End-to-end sync over the reference server semantics                                                                                                                                  |
