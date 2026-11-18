@@ -43,7 +43,9 @@ App Transport Security allows arbitrary loads, for plain-`http` servers.
 
 ### Release
 
-[macos-build.sh](../../.forgejo/scripts/macos-build.sh) builds one zip per architecture, [macos-release.sh](../../.forgejo/scripts/macos-release.sh) signs and notarizes them, and [macos-verify.sh](../../.forgejo/scripts/macos-verify.sh) checks a published one against the build: [BUILD.md](../../BUILD.md#macos-app).
+[macos-build.sh](../../.forgejo/scripts/macos-build.sh) builds one zip per architecture, [macos-release.sh](../../.forgejo/scripts/macos-release.sh) signs and notarizes them, and [macos-verify.sh](../../.forgejo/scripts/macos-verify.sh) checks a published one against the build: [BUILD.md](../../BUILD.md#macos-app). [macos-appstore.sh](../../.forgejo/scripts/macos-appstore.sh) merges the same two builds with `lipo` into one universal app, since the App Store takes one upload per version, and signs it for the App Store into a `.pkg`.
+
+[PrivacyInfo.xcprivacy](native-note/PrivacyInfo.xcprivacy) declares no tracking and no collected data, and three required-reason APIs: `UserDefaults` for the editor zoom (`CA92.1`), and file timestamps (`C617.1`) and disk space (`E174.1`), which SQLite reads for files in the container, the reasons SQLCipher's own manifest gives.
 
 ### Unlock record
 

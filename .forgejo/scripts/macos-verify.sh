@@ -6,7 +6,7 @@ readonly root=/private/tmp/native-note-release
 readonly exe="Contents/MacOS/Native Note"
 readonly car="Contents/Resources/Assets.car"
 scripts=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
-team_id=$(sed -n 's/^readonly team_id=//p' "$scripts/macos-release.sh")
+team_id=$(sed -n 's/^readonly team_id=//p' "$scripts/macos-sign.sh")
 readonly scripts team_id
 readonly team_keys=(com.apple.application-identifier com.apple.developer.team-identifier keychain-access-groups)
 work=$(mktemp -d)
