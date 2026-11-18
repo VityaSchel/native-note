@@ -39,7 +39,10 @@ fn a_socket_path_serves_sealed_requests_and_lets_every_local_user_connect() {
 	let lines = log.lines();
 	assert_eq!(
 		lines.get(1),
-		Some(&format!("level=info event=listening address={socket:?}")),
+		Some(&format!(
+			"level=info event=listening address={socket:?} version={}",
+			env!("CARGO_PKG_VERSION")
+		)),
 		"{lines:?}"
 	);
 	assert_eq!(mode(&socket), 0o666);

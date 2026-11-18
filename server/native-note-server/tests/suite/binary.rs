@@ -39,7 +39,11 @@ impl Process {
 	fn address(&mut self) -> SocketAddr {
 		let line = self.line();
 		line.strip_prefix("level=info event=listening address=")
-			.and_then(|address| address.trim_end().parse().ok())
+			.and_then(|rest| {
+				rest.trim_end()
+					.strip_suffix(concat!(" version=", env!("CARGO_PKG_VERSION")))
+			})
+			.and_then(|address| address.parse().ok())
 			.unwrap_or_else(|| panic!("not listening: {line:?}"))
 	}
 

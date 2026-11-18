@@ -86,7 +86,11 @@ impl fmt::Display for Event<'_> {
 				write!(f, "level=info event=api_key_created path={path:?}")
 			}
 			Event::Listening { address } => {
-				write!(f, "level=info event=listening address={address}")
+				write!(
+					f,
+					"level=info event=listening address={address} version={}",
+					env!("CARGO_PKG_VERSION")
+				)
 			}
 			Event::StartupFailed { stage, cause } => {
 				write!(

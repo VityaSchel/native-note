@@ -68,7 +68,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://notes.example:8080/
 curl -s -o /dev/null -w '%{http_code}\n' -X POST --unix-socket /run/native-note-server/native-note.sock http://localhost/
 ```
 
-`journalctl -u native-note-server` shows `event=listening` on start and `event=request_failed` for each request that fails after it is unsealed; one sealed with the wrong API key logs nothing. Startup checks the database's integrity; a failure logs `event=startup_failed`, exits `1` and leaves the database untouched.
+`journalctl -u native-note-server` shows `event=listening` with the server's `version` on start and `event=request_failed` for each request that fails after it is unsealed; one sealed with the wrong API key logs nothing. Startup checks the database's integrity; a failure logs `event=startup_failed`, exits `1` and leaves the database untouched.
 
 ## Backup
 

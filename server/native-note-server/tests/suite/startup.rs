@@ -68,6 +68,7 @@ fn a_started_server_logs_its_key_file_and_address_then_answers_there() {
 	);
 	let address = lines[1]
 		.strip_prefix("level=info event=listening address=127.0.0.1:")
+		.and_then(|rest| rest.strip_suffix(concat!(" version=", env!("CARGO_PKG_VERSION"))))
 		.and_then(|port| port.parse::<u16>().ok())
 		.map(|port| SocketAddr::from(([127, 0, 0, 1], port)))
 		.unwrap_or_else(|| panic!("{lines:?}"));

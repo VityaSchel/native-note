@@ -17,13 +17,19 @@ fn each_event_is_one_line_of_fixed_keys_and_categories() {
 			Event::Listening {
 				address: &"[::]:8080".parse::<Listen>().expect("an address"),
 			},
-			"level=info event=listening address=[::]:8080",
+			concat!(
+				"level=info event=listening address=[::]:8080 version=",
+				env!("CARGO_PKG_VERSION")
+			),
 		),
 		(
 			Event::Listening {
 				address: &Listen::Unix("/run/native-note-server/native-note.sock".into()),
 			},
-			"level=info event=listening address=\"/run/native-note-server/native-note.sock\"",
+			concat!(
+				"level=info event=listening address=\"/run/native-note-server/native-note.sock\" version=",
+				env!("CARGO_PKG_VERSION")
+			),
 		),
 		(
 			Event::StartupFailed {
