@@ -39,7 +39,7 @@ Platforms that reproduced each release:
 # 1. Build into releases/, with rustup, cc, curl and xz installed
 .forgejo/scripts/server-release.sh
 
-# 2. Fetch the published binaries and the SHA-256 sums signed in the release notes
+# 2. Fetch the published binaries and the SHA-256 sums signed in the release notes, with gpg and jq installed
 curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-linux-{x86_64,aarch64,armv7l,armv6l}"
 curl -fsSL https://git.hloth.dev/api/v1/repos/hloth/native-note/releases/tags/v0.1.0 | jq -r .body | tr -d '\r' | sed -n '/^-----BEGIN PGP SIGNED MESSAGE-----$/,/^-----END PGP SIGNATURE-----$/p' > SHA256SUMS.asc
 

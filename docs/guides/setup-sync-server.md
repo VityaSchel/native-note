@@ -4,9 +4,10 @@ Native Note server is a static binary that stores sealed notes in SQLite. It wor
 
 ## Install
 
-Download the server for this machine, check it against the SHA-256 sums the maintainer's GPG key signs in the release notes, and install it, with `curl`, `gpg` and `jq`. `uname -m` picks the build: `x86_64`, `aarch64` (Raspberry Pi 3 or later on a 64-bit OS), `armv7l` (Raspberry Pi 2 or later on a 32-bit OS) or `armv6l` (Raspberry Pi 1, Zero or Zero W). Or [build it from source](../../BUILD.md#sync-server).
+Download the server for this machine, check it against the SHA-256 sums the maintainer's GPG key signs in the release notes, and install it. The first line installs `curl`, `gpg` and `jq` on Debian, Ubuntu or Raspberry Pi OS; elsewhere, install them yourself and skip it. `uname -m` picks the build: `x86_64`, `aarch64` (Raspberry Pi 3 or later on a 64-bit OS), `armv7l` (Raspberry Pi 2 or later on a 32-bit OS) or `armv6l` (Raspberry Pi 1, Zero or Zero W). Or [build it from source](../../BUILD.md#sync-server).
 
 ```sh
+sudo apt install -y curl gpg jq
 v=v0.1.0
 release=https://git.hloth.dev/hloth/native-note/releases/download/$v
 cd "$(mktemp -d)"
