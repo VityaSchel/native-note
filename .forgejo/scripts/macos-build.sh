@@ -9,6 +9,7 @@ repo=$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)
 readonly repo
 readonly developer_dir=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 readonly kit=clients/macos/native-note-kit
+readonly lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 readonly amalgamation=(Sources/SQLCipher/sqlite3.c Sources/SQLCipher/include/sqlite3.h)
 commit=$(git -C "$repo" rev-parse --verify "${1:-HEAD}^{commit}")
 epoch=$(git -C "$repo" log -1 --no-show-signature --format=%ct "$commit")
@@ -79,6 +80,7 @@ build() {
 		done < <(find "$(app "$arch")/Contents" -type f -perm -u+x -print0)
 		package "$arch"
 	done
+	find "$root" -type d -name "Native Note.app" -prune -exec "$lsregister" -u {} \; 2>/dev/null || true
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

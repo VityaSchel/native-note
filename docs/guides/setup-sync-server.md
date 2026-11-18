@@ -4,23 +4,24 @@ Native Note server is a static binary that stores sealed notes in SQLite. It wor
 
 ## Install
 
-Download the server for this machine, check it against the release's `SHA256SUMS`, signed by the maintainer's GPG key, and install it. `uname -m` picks the build: `x86_64`, `aarch64` (Raspberry Pi 3 or later on a 64-bit OS), `armv7l` (Raspberry Pi 2 or later on a 32-bit OS) or `armv6l` (Raspberry Pi 1, Zero or Zero W). Or [build it from source](../../BUILD.md#sync-server).
+Download the server for this machine, check it against the SHA-256 sums the maintainer's GPG key signs in the release notes, and install it, with `curl`, `gpg` and `jq`. `uname -m` picks the build: `x86_64`, `aarch64` (Raspberry Pi 3 or later on a 64-bit OS), `armv7l` (Raspberry Pi 2 or later on a 32-bit OS) or `armv6l` (Raspberry Pi 1, Zero or Zero W). Or [build it from source](../../BUILD.md#sync-server).
 
 ```sh
 v=v0.1.0
 release=https://git.hloth.dev/hloth/native-note/releases/download/$v
 cd "$(mktemp -d)"
-curl -fL -O "$release/native-note-server-linux-$(uname -m)" -O "$release/SHA256SUMS" -O "$release/SHA256SUMS.asc"
-curl -fsSL https://git.hloth.dev/hloth.gpg | gpg --import
-gpg --verify SHA256SUMS.asc SHA256SUMS
-sha256sum -c --ignore-missing SHA256SUMS
+curl -fLO "$release/native-note-server-linux-$(uname -m)"
 curl -fLO "https://git.hloth.dev/hloth/native-note/raw/tag/$v/contrib/native-note-server.service"
-sudo install -m 0755 -o root -g root "native-note-server-linux-$(uname -m)" /usr/local/bin/native-note-server
+curl -fsSL https://git.hloth.dev/hloth.gpg | gpg --import
+curl -fsSL "https://git.hloth.dev/api/v1/repos/hloth/native-note/releases/tags/$v" | jq -r .body | tr -d '\r' | sed -n '/^-----BEGIN PGP SIGNED MESSAGE-----$/,/^-----END PGP SIGNATURE-----$/p' > SHA256SUMS.asc
+gpg --verify SHA256SUMS.asc &&
+	gpg --output - --decrypt SHA256SUMS.asc 2>/dev/null | grep -E '^[0-9a-f]{64}  ' | sha256sum -c --ignore-missing - &&
+	sudo install -m 0755 -o root -g root "native-note-server-linux-$(uname -m)" /usr/local/bin/native-note-server
 sudo install -m 0644 native-note-server.service /etc/systemd/system/
 sudo systemctl enable --now native-note-server
 ```
 
-`gpg --verify` must report a good signature from key `036F 7D22 4297 D873 A4FC  E9DA 299E 9A45 0132 A28C`. To update, run the same commands for the new tag without the unit's three lines, then `sudo systemctl restart native-note-server`. Downloading into a fresh directory and replacing the binary with `install`, never writing onto `/usr/local/bin/native-note-server` directly, works while the server runs and never leaves a half-written binary.
+`gpg` must report a good signature from key `036F 7D22 4297 D873 A4FC  E9DA 299E 9A45 0132 A28C`. The binary is installed only when the signature and its hash both check out. To update, run the same commands for the new tag without the unit's lines, then `sudo systemctl restart native-note-server`. Downloading into a fresh directory and replacing the binary with `install`, never writing onto `/usr/local/bin/native-note-server` directly, works while the server runs and never leaves a half-written binary.
 
 The unit listens on `[::]:8080` and keeps its data in `/var/lib/native-note-server/`. Without systemd, pass the listen address and the data directory:
 

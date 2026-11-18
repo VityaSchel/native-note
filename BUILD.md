@@ -11,14 +11,14 @@ cd native-note
 
 Platforms that reproduced each release:
 
-| Release  | Sync server  | macOS app   |
-| -------- | ------------ | ----------- |
-| `v0.1.0` | Linux x86_64 | macOS arm64 |
+| Release  | Sync server               | macOS app   |
+| -------- | ------------------------- | ----------- |
+| `v0.1.0` | Linux x86_64, macOS arm64 | macOS arm64 |
 
 ## Sync server
 
 - **Canonical builder:** Linux x86_64
-- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and offered for download only when both builds match, then rebuilt on macOS arm64 by [release-sign.sh](.forgejo/scripts/release-sign.sh), which signs `SHA256SUMS` with the maintainer's GPG key only when every binary matches; the maintainer publishes the release by hand
+- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and offered for download only when both builds match, then rebuilt on macOS arm64 by [release-sign.sh](.forgejo/scripts/release-sign.sh), which signs every file's SHA-256 in the release notes with the maintainer's GPG key only when every binary and zip matches; the maintainer publishes the release by hand
 
 |         | x86_64            | arm64        |
 | ------- | ----------------- | ------------ |
@@ -39,13 +39,14 @@ Platforms that reproduced each release:
 # 1. Build into releases/, with rustup, cc, curl and xz installed
 .forgejo/scripts/server-release.sh
 
-# 2. Fetch the published binaries and their signed SHA-256 sums
-curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/{native-note-server-linux-x86_64,native-note-server-linux-aarch64,native-note-server-linux-armv7l,native-note-server-linux-armv6l,SHA256SUMS,SHA256SUMS.asc}"
+# 2. Fetch the published binaries and the SHA-256 sums signed in the release notes
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-linux-{x86_64,aarch64,armv7l,armv6l}"
+curl -fsSL https://git.hloth.dev/api/v1/repos/hloth/native-note/releases/tags/v0.1.0 | jq -r .body | tr -d '\r' | sed -n '/^-----BEGIN PGP SIGNED MESSAGE-----$/,/^-----END PGP SIGNATURE-----$/p' > SHA256SUMS.asc
 
 # 3. Compare
-gpg --verify SHA256SUMS.asc SHA256SUMS
-sha256sum -c SHA256SUMS
-(cd releases && sha256sum -c ../SHA256SUMS)
+gpg --verify SHA256SUMS.asc && gpg --output - --decrypt SHA256SUMS.asc 2>/dev/null | grep -E '^[0-9a-f]{64}  ' > SHA256SUMS
+sha256sum -c --ignore-missing SHA256SUMS
+(cd releases && sha256sum -c --ignore-missing ../SHA256SUMS)
 ```
 
 ## macOS app

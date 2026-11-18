@@ -41,7 +41,7 @@ cargo test
 
 - Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
 - Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
-- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). A release starts by pushing a signed tag and dispatching [release.yml](.forgejo/workflows/release.yml) with it, which offers the binaries both cloud builds agree on as the `native-note-server-<tag>` artifact. `.forgejo/scripts/release-sign.sh <tag> <artifact>` then rebuilds them on this Mac, refuses any that differ, and stages them in `releases/<tag>/` with the macOS zips, `SHA256SUMS` and its signature, ready to upload to a release created by hand on the tag.
+- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). A release starts by pushing a signed tag and dispatching [release.yml](.forgejo/workflows/release.yml) with it, which offers the binaries both cloud builds agree on as the `native-note-server-<tag>` artifact. `.forgejo/scripts/release-sign.sh <tag> <artifact>` then rebuilds them and the macOS app on this Mac, refuses any that differ, stages the six files in `releases/<tag>/`, and writes `releases/<tag>-notes.md`, the clearsigned SHA-256 list to end the release notes with, for a release created by hand on the tag.
 
 ### Supply chain
 
