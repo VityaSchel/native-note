@@ -16,8 +16,6 @@ trap 'rm -rf "$work"' EXIT
 install_zig "$work"
 
 cd "$root/server"
-version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"$/\1/p' Cargo.toml)"
-[[ -n "$version" ]] || { echo "no workspace version in server/Cargo.toml" >&2; exit 1; }
 sysroot="$(rustc --print sysroot)"
 commit="$(rustc -vV | sed -n 's/^commit-hash: //p')"
 cargo_home="${CARGO_HOME:-$HOME/.cargo}"
@@ -50,10 +48,13 @@ for target in "${server_targets[@]}"; do
 	check_arm_cpu "$target" "$binary"
 	"$(llvm_tool llvm-objcopy)" --remove-section=.comment "$binary"
 	case "$target" in
-		arm-*) arch=armv6 ;;
-		*) arch="${target%%-*}" ;;
+		x86_64-*) machine=x86_64 ;;
+		aarch64-*) machine=aarch64 ;;
+		armv7-*) machine=armv7l ;;
+		arm-*) machine=armv6l ;;
+		*) echo "no uname -m name for $target" >&2; exit 1 ;;
 	esac
-	name="native-note-server-v$version-linux-$arch"
+	name="native-note-server-linux-$machine"
 	install -m 0755 "$binary" "$out/$name"
 	names+=("$name")
 done

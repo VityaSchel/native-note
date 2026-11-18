@@ -18,7 +18,7 @@ Platforms that reproduced each release:
 ## Sync server
 
 - **Canonical builder:** Linux x86_64
-- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and published only when both builds match, then compared with a build on macOS arm64
+- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and published only when both builds match, then rebuilt on macOS arm64 by [server-sign.sh](.forgejo/scripts/server-sign.sh), which signs `SHA256SUMS` with the maintainer's GPG key only when every binary matches
 
 |         | x86_64            | arm64        |
 | ------- | ----------------- | ------------ |
@@ -39,13 +39,13 @@ Platforms that reproduced each release:
 # 1. Build into releases/, with rustup, cc, curl and xz installed
 .forgejo/scripts/server-release.sh
 
-# 2. Fetch the published binaries and their SHA-256 sums
-curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-v0.1.0-linux-{x86_64,aarch64,armv7,armv6}"
-curl -fsSLO https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-v0.1.0.sha256
+# 2. Fetch the published binaries and their signed SHA-256 sums
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/{native-note-server-linux-x86_64,native-note-server-linux-aarch64,native-note-server-linux-armv7l,native-note-server-linux-armv6l,SHA256SUMS,SHA256SUMS.asc}"
 
 # 3. Compare
-sha256sum -c native-note-server-v0.1.0.sha256
-(cd releases && sha256sum -c ../native-note-server-v0.1.0.sha256)
+gpg --verify SHA256SUMS.asc SHA256SUMS
+sha256sum -c SHA256SUMS
+(cd releases && sha256sum -c ../SHA256SUMS)
 ```
 
 ## macOS app
