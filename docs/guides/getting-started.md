@@ -26,3 +26,7 @@ Only the recovery phrase with the server's key backup, a device holding the libr
 
 - Closing the window keeps Native Note running and the library unlocked; press ⌘L to lock it
 - Changing fingerprint set disables Touch ID unlock
+
+## Privacy
+
+Read the [privacy policy](../PRIVACY.md).
