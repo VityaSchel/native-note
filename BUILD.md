@@ -18,7 +18,7 @@ Platforms that reproduced each release:
 ## Sync server
 
 - **Canonical builder:** Linux x86_64
-- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and published only when both builds match, then rebuilt on macOS arm64 by [server-sign.sh](.forgejo/scripts/server-sign.sh), which signs `SHA256SUMS` with the maintainer's GPG key only when every binary matches
+- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and offered for download only when both builds match, then rebuilt on macOS arm64 by [release-sign.sh](.forgejo/scripts/release-sign.sh), which signs `SHA256SUMS` with the maintainer's GPG key only when every binary matches; the maintainer publishes the release by hand
 
 |         | x86_64            | arm64        |
 | ------- | ----------------- | ------------ |

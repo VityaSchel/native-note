@@ -1,21 +1,19 @@
 name: release
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: tag to build; its release must already exist
+        description: pushed tag to build
         type: string
         required: true
 
 concurrency:
-  group: native-note-release-${{ forgejo.event.inputs.tag || forgejo.event.release.tag_name }}
+  group: native-note-release-${{ forgejo.event.inputs.tag }}
   cancel-in-progress: false
 
 env:
-  RELEASE_TAG: ${{ forgejo.event.inputs.tag || forgejo.event.release.tag_name }}
+  RELEASE_TAG: ${{ forgejo.event.inputs.tag }}
   WORKSPACE: /opt/native-note-release
   CARGO_HOME: /opt/rust/cargo
   RUSTUP_HOME: /opt/rust/rustup
@@ -83,7 +81,7 @@ jobs:
           sums="$(cd releases && sha256sum native-note-server-linux-* | LC_ALL=C sort -k 2 | paste -sd ';' -)"
           echo "sums=$sums" >> "$GITHUB_OUTPUT"
 
-  publish:
+  build:
     needs: reproduce
     runs-on: ["debian", "4c8g", "hetzner"]
     timeout-minutes: 45
@@ -116,14 +114,11 @@ jobs:
 
       - name: Install system packages
         run: |
-          missing=()
-          command -v xz >/dev/null 2>&1 || missing+=(xz-utils)
-          command -v jq >/dev/null 2>&1 || missing+=(jq)
-          if [ ${#missing[@]} -gt 0 ]; then
+          command -v xz >/dev/null 2>&1 || {
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -y
-            apt-get install -y --no-install-recommends "${missing[@]}"
-          fi
+            apt-get install -y --no-install-recommends xz-utils
+          }
 
       - name: Install the pinned toolchain
         run: cd "$WORKSPACE" && ./.forgejo/scripts/install-rust-toolchain.sh
@@ -141,28 +136,10 @@ jobs:
           echo "vultr:   $REPRODUCED"
           [ -n "$REPRODUCED" ] && [ "$sums" = "$REPRODUCED" ] \
             || { echo "FATAL: the two providers built different binaries"; exit 1; }
-          sha256sum native-note-server-linux-* | LC_ALL=C sort -k 2 > SHA256SUMS
 
-      - name: Attach to the release
-        env:
-          RELEASE_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd "$WORKSPACE/releases"
-          api="$FORGEJO_API_URL/repos/$FORGEJO_REPOSITORY"
-          auth="Authorization: token $RELEASE_API_TOKEN"
-
-          id=$(curl -fsS -H "$auth" "$api/releases/tags/$RELEASE_TAG" | jq -er '.id') || {
-            echo "FATAL: no release exists for tag $RELEASE_TAG; create it in Forgejo first" >&2
-            exit 1
-          }
-
-          for name in native-note-server-linux-* SHA256SUMS; do
-            curl -fsS -H "$auth" "$api/releases/$id/assets" \
-              | jq -r --arg n "$name" '.[] | select(.name == $n) | .id' \
-              | while read -r old; do
-                  echo "replacing $name (attachment $old)"
-                  curl -fsS -X DELETE -H "$auth" "$api/releases/$id/assets/$old"
-                done
-            curl -fsS -H "$auth" -F "attachment=@$name" "$api/releases/$id/assets?name=$name" >/dev/null
-            echo "attached $name"
-          done
+      - name: Offer the binaries for download
+        uses: https://code.forgejo.org/forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e
+        with:
+          name: native-note-server-${{ env.RELEASE_TAG }}
+          path: ${{ env.WORKSPACE }}/releases/native-note-server-linux-*
+          if-no-files-found: error

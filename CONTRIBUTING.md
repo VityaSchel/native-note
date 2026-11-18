@@ -14,7 +14,7 @@ devtools/          development-only tools, never shipped
 
 ## Checks
 
-CI runs repository hygiene, the link check and the Rust checks below with `--locked`, and the server tests on arm64, armv7 and ARMv6 under qemu, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server binaries for each published release ([release.yml](.forgejo/workflows/release.yml)).
+CI runs repository hygiene, the link check and the Rust checks below with `--locked`, and the server tests on arm64, armv7 and ARMv6 under qemu, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server binaries for a release tag it is dispatched with ([release.yml](.forgejo/workflows/release.yml)).
 
 ### Conformance vectors
 
@@ -41,7 +41,7 @@ cargo test
 
 - Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
 - Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
-- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). Once CI attaches a release's binaries, `.forgejo/scripts/server-sign.sh <tag>` rebuilds them, checks them against its `SHA256SUMS` and signs it into `releases/SHA256SUMS.asc` for the release page. The tests for the other release targets: `.forgejo/scripts/server-cross-test.sh [<target>...]`, on Linux with `qemu-user` registered through binfmt.
+- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). A release starts by pushing a signed tag and dispatching [release.yml](.forgejo/workflows/release.yml) with it, which offers the binaries both cloud builds agree on as the `native-note-server-<tag>` artifact. `.forgejo/scripts/release-sign.sh <tag> <artifact>` then rebuilds them on this Mac, refuses any that differ, and stages them in `releases/<tag>/` with the macOS zips, `SHA256SUMS` and its signature, ready to upload to a release created by hand on the tag.
 
 ### Supply chain
 
