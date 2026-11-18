@@ -1,14 +1,22 @@
-# Sync server
+# Getting started with Native Note server
 
-One static Linux binary that stores sealed notes in SQLite. It works over bare IPv4, bare IPv6 or a domain name, with or without HTTPS.
+Native Note server is a static binary that stores sealed notes in SQLite. It works over bare IPv4, bare IPv6 or a domain name, with or without HTTPS.
 
 ## Install
 
-Download the tarball for the host: `x86_64`, `aarch64` (a Raspberry Pi 3 or later on a 64-bit OS), `armv7` (a Raspberry Pi 2 or later on a 32-bit OS) or `arm` (a Raspberry Pi 1, Zero or Zero W), from [Releases](https://git.hloth.dev/hloth/native-note/releases); each holds the static binary and [the systemd unit](../../server/native-note-server.service). To rebuild them from the source and compare, see [REPRODUCIBILITY.md](../../REPRODUCIBILITY.md#sync-server). On the host:
+1. Download the binary for the host:
+
+- Linux x86_64: [native-note-server-v0.1.0-linux-x86_64](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-v0.1.0-linux-x86_64)
+- Linux aarch64 (Raspberry Pi 3 or later on a 64-bit OS): [native-note-server-v0.1.0-linux-aarch64](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-v0.1.0-linux-aarch64)
+- Linux armv7 (Raspberry Pi 2 or later on a 32-bit OS): [native-note-server-v0.1.0-linux-armv7](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-v0.1.0-linux-armv7)
+- Linux armv6 (Raspberry Pi 1, Zero or Zero W): [native-note-server-v0.1.0-linux-armv6](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-v0.1.0-linux-armv6)
+
+Or [build from source](../../BUILD.md#sync-server).
+
+2. Download [the systemd unit](https://git.hloth.dev/hloth/native-note/raw/tag/v0.1.0/contrib/native-note-server.service)
 
 ```sh
-tar -xzf native-note-server-0.1.0-aarch64-unknown-linux-musl.tar.gz
-sudo install -m 0755 -o root -g root native-note-server /usr/local/bin/native-note-server
+sudo install -m 0755 -o root -g root native-note-server-v0.1.0-linux-<arch> /usr/local/bin/native-note-server
 sudo install -m 0644 native-note-server.service /etc/systemd/system/
 sudo systemctl enable --now native-note-server
 ```
@@ -35,7 +43,7 @@ The first start writes the API key to the `api-key` file in the data directory:
 sudo cat /var/lib/native-note-server/api-key
 ```
 
-Enter the server's address and this key in Native Note, per [Getting started](getting-started.md).
+In Native Note, choose Set Up after the unlock password, or Set Up Sync… in Settings later, and enter the server's address and this key.
 
 To replace the API key, remove the `api-key` file and restart the server, then on each Mac choose Change Server… in Settings, keep the address and enter the new key.
 
@@ -70,4 +78,4 @@ sudo chown --reference=/var/lib/native-note-server /var/lib/native-note-server/n
 sudo systemctl start native-note-server
 ```
 
-The `seq` file is not restored with the database: kept in the data directory, or missing on a new host, it makes the server number new writes above every `seq` it handed out. A Mac that synced after the backup was taken keeps its notes and gets every write made after the restore; it reports the server as behind it on meeting a note older there than its own, and does not converge with the restored server yet ([roadmap](../ROADMAP.md)). A Mac set up after the restore gets the backup's notes.
+The `seq` file is not restored with the database: kept in the data directory, or missing on a new host, it makes the server number new writes above every `seq` it handed out. A Mac that synced after the backup was taken keeps its notes and gets every write made after the restore; it reports the server as behind it on meeting a note older there than its own, and does not converge with the restored server yet ([#9](https://git.hloth.dev/hloth/native-note/issues/9)). A Mac set up after the restore gets the backup's notes.

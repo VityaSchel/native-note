@@ -15,10 +15,12 @@ trap 'rm -rf "$work"' EXIT
 export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 
 [ $# -gt 0 ] || { echo "usage: macos-verify.sh <release zip>..." >&2; exit 2; }
+[ -f "$root/commit" ] || { echo "no build in $root: run macos-build.sh first" >&2; exit 1; }
+built=$(cut -c 1-12 "$root/commit")
+readonly built
 for zip in "$@"; do
 	cp "$zip" "$work/$(basename "$zip")"
 done
-"$scripts/macos-release.sh" --rebuild HEAD
 
 entitlements() { codesign -d --entitlements - --xml "$1" 2>/dev/null; }
 car_content() {
@@ -37,15 +39,11 @@ listing() {
 }
 
 verify() {
-	local name=$1 dir="$work/${1%.zip}" published rebuilt arch bundle offset size key
+	local name=$1 dir="$work/${1%.zip}" published rebuilt arch bundle offset size key assessment
 	local rebuilt_zip="$root/out/$name"
 	if [ ! -f "$rebuilt_zip" ]; then
-		echo "✗ this commit builds no $name; it builds $(cd "$root/out" && find . -name '*.zip' | sed 's#^\./##' | sort | paste -s -d ' ' -)" >&2
+		echo "✗ the build of $built has no $name, only $(cd "$root/out" && find . -name '*.zip' | sed 's#^\./##' | sort | paste -s -d ' ' -)" >&2
 		return 1
-	fi
-	if cmp -s "$work/$name" "$rebuilt_zip"; then
-		echo "✓ $name is byte-identical to this build"
-		return 0
 	fi
 	ditto -x -k "$work/$name" "$dir/published"
 	ditto -x -k "$rebuilt_zip" "$dir/rebuilt"
@@ -90,12 +88,16 @@ verify() {
 		cat "$published/$car" > "$rebuilt/$car"
 	fi
 
-	if diff <(listing "$dir/published") <(listing "$dir/rebuilt") && codesign --verify --deep --strict "$published"; then
-		echo "✓ $name is this build plus its own signature"
-	else
-		echo "✗ $name does not match this build" >&2
+	if ! diff <(listing "$dir/published") <(listing "$dir/rebuilt") || ! codesign --verify --deep --strict "$published"; then
+		echo "✗ $name does not match the build of $built" >&2
 		return 1
 	fi
+	assessment=$(spctl --assess -vv "$published" 2>&1) || true
+	if [[ $assessment != *"source=Notarized Developer ID"* ]] || ! [[ $assessment =~ origin=(Developer\ ID\ Application:\ .*\($team_id\)) ]]; then
+		echo "✗ $name is not notarized under team $team_id: $assessment" >&2
+		return 1
+	fi
+	echo "✓ $name is the build of $built plus its own signature, notarized for ${BASH_REMATCH[1]}"
 }
 
 status=0

@@ -1,11 +1,12 @@
-# Contributing
+# Contributing to Native Note
 
 ## Layout
 
 ```
-docs/              cross-cutting design, protocol, roadmap, user guides
+docs/              cross-cutting design, protocol, user guides
 spec/              conformance vectors, their generator, BIP39 wordlists
 server/            Rust server workspace, docs in its root
+contrib/           the server's systemd unit
 clients/           shared client design, one directory per platform
 clients/macos/     Xcode project, docs in its root
 devtools/          development-only tools, never shipped
@@ -13,7 +14,7 @@ devtools/          development-only tools, never shipped
 
 ## Checks
 
-CI runs repository hygiene, the link check and the Rust checks below with `--locked`, and the server tests on arm64, armv7 and ARMv6 under qemu, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server tarballs for each published release ([release.yml](.forgejo/workflows/release.yml)).
+CI runs repository hygiene, the link check and the Rust checks below with `--locked`, and the server tests on arm64, armv7 and ARMv6 under qemu, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server binaries for each published release ([release.yml](.forgejo/workflows/release.yml)).
 
 ### Conformance vectors
 
@@ -40,7 +41,7 @@ cargo test
 
 - Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
 - Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
-- Release tarballs: `.forgejo/scripts/server-release.sh`, per [REPRODUCIBILITY.md](REPRODUCIBILITY.md#sync-server). The tests for the other release targets: `.forgejo/scripts/server-cross-test.sh [<target>...]`, on Linux with `qemu-user` registered through binfmt.
+- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). The tests for the other release targets: `.forgejo/scripts/server-cross-test.sh [<target>...]`, on Linux with `qemu-user` registered through binfmt.
 
 ### Supply chain
 
@@ -69,7 +70,7 @@ xcodebuild test -project native-note.xcodeproj -scheme native-note -destination 
 (cd native-note-kit && swift test)
 ```
 
-The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`, built from a clean tree with the version set in the project, needs Xcode 27A266a, the team's Developer ID certificate and provisioning profile and the `native-note` notarytool profile: `.forgejo/scripts/macos-release.sh [<tag>]`. To check published zips against the checked-out commit, with the same Xcode: `.forgejo/scripts/macos-verify.sh <zip>...`, per [REPRODUCIBILITY.md](REPRODUCIBILITY.md#macos-app).
+The package's sync tests build and run the server. Hosted coverage needs `ENABLE_APP_SANDBOX=NO`. A release, one notarized zip per architecture in `releases/`, built from a clean tree with the version set in the project, needs Xcode 27A266a, the team's Developer ID certificate and provisioning profile and the `native-note` notarytool profile: `.forgejo/scripts/macos-release.sh [<tag>]`. Building without signing and checking published zips: [BUILD.md](BUILD.md#macos-app).
 
 - Every feature gets unit tests and headless end-to-end tests, which run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`.
 - Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.

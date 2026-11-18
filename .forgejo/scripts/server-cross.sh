@@ -43,6 +43,10 @@ cross_env() {
 	cross=("CC_${target//-/_}=$work/cc-$target" "AR_${target//-/_}=$work/ar" "CARGO_TARGET_${variable}_LINKER=rust-lld")
 }
 
+llvm_tool() {
+	echo "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/$1"
+}
+
 check_arm_cpu() {
 	local target="$1" binary="$2" readobj attributes
 	case "$target" in
@@ -50,7 +54,7 @@ check_arm_cpu() {
 		arm-*) ;;
 		*) return 0 ;;
 	esac
-	readobj="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-readobj"
+	readobj="$(llvm_tool llvm-readobj)"
 	attributes="$("$readobj" --arch-specific "$binary")"
 	case "$target" in
 		armv7-*) grep -A1 'TagName: CPU_arch$' <<<"$attributes" | grep -q 'Description: ARM v7$' && ! grep -q 'TagName: Advanced_SIMD_arch$' <<<"$attributes" ;;

@@ -1,4 +1,4 @@
-# Native Note Server Architecture
+# Native Note server architecture
 
 The sync server is the source of truth.
 
@@ -95,8 +95,8 @@ native-note-server <listen address> <data directory>
 
 Both arguments are required and positional, read with `std::env::args_os`. No flags, config file or environment variables. Wrong arguments, a listen address that is not an IP address and port among them, exit `2`; any other startup failure exits `1`.
 
-The [systemd unit](native-note-server.service) runs `/usr/local/bin/native-note-server` (mode `0755`, owner `root:root`) as a `DynamicUser`, passes `/var/lib/native-note-server/` (its `StateDirectory`, mode `0700`) as the data directory, sets `LimitCORE=0`, and sandboxes the service to an exposure of 1.1 in `systemd-analyze security`.
+The [systemd unit](../contrib/native-note-server.service) runs `/usr/local/bin/native-note-server` (mode `0755`, owner `root:root`) as a `DynamicUser`, passes `/var/lib/native-note-server/` (its `StateDirectory`, mode `0700`) as the data directory, sets `LimitCORE=0`, and sandboxes the service to an exposure of 1.1 in `systemd-analyze security`.
 
 ## Server release
 
-[server-release.sh](../.forgejo/scripts/server-release.sh) builds one tarball per `x86_64`, `aarch64`, `armv7` and ARMv6 Linux, each holding the static musl binary and the systemd unit. Once a release is published, [release.yml](../.forgejo/workflows/release.yml) builds them at two cloud providers and attaches them only when both builds match. What a tarball depends on and which hosts reproduce it: [REPRODUCIBILITY.md](../REPRODUCIBILITY.md#sync-server).
+[server-release.sh](../.forgejo/scripts/server-release.sh) builds one static musl binary per `x86_64`, `aarch64`, `armv7` and ARMv6 Linux; the systemd unit ships separately in `contrib/`. Once a release is published, [release.yml](../.forgejo/workflows/release.yml) builds them at two cloud providers and attaches them only when both builds match. Cargo's crate hash takes in the build host through build scripts and proc macros, so [rustc-metadata.sh](../.forgejo/scripts/rustc-metadata.sh) replaces it for target crates with a hash of the crate's name, version, type, cfgs, edition and target, and the `.comment` section is removed, since each host's `rust-lld` names its own build there; any host then builds the same binaries. Rebuilding one: [BUILD.md](../BUILD.md#sync-server).

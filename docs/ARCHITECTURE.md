@@ -1,4 +1,4 @@
-# Native Note Architecture
+# Native Note architecture
 
 ## Cryptography
 
@@ -29,7 +29,7 @@ All keys are 256-bit. Nonces are random 96-bit.
 | Component                                  | Stack                        |
 | ------------------------------------------ | ---------------------------- |
 | [Server](../server/DESIGN.md)              | Rust 1.95+                   |
-| [macOS client](../clients/macos/README.md) | Swift 6.2+, SwiftUI + AppKit |
+| [macOS client](../clients/macos/DESIGN.md) | Swift 6.2+, SwiftUI + AppKit |
 
 No shared core. Each client implements [clients/DESIGN.md](../clients/DESIGN.md) and must pass the [conformance vectors](../spec/README.md).
 
@@ -60,7 +60,7 @@ Known limitations, out of scope:
 - Code execution as the user on an unlocked machine — the content key is in memory
 - Compromise of a device holding the content key
 - Traffic analysis over plain HTTP — timing, counts, request size
-- Malicious server withholding notes — until the [authenticated manifest](./ROADMAP.md)
+- Malicious server withholding notes — until the [authenticated manifest](https://git.hloth.dev/hloth/native-note/issues/8)
 - Secure erasure of deleted content — not achievable on SSD or copy-on-write storage
 - Loss of the mnemonic and every device
 - Denial of service

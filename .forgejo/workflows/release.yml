@@ -80,7 +80,7 @@ jobs:
         run: |
           cd "$WORKSPACE"
           ./.forgejo/scripts/server-release.sh
-          sums="$(cd releases && sha256sum native-note-server-*.tar.gz | LC_ALL=C sort -k 2 | paste -sd ';' -)"
+          sums="$(cd releases && sha256sum "native-note-server-$RELEASE_TAG-linux-"* | LC_ALL=C sort -k 2 | paste -sd ';' -)"
           echo "sums=$sums" >> "$GITHUB_OUTPUT"
 
   publish:
@@ -136,12 +136,12 @@ jobs:
           REPRODUCED: ${{ needs.reproduce.outputs.sums }}
         run: |
           cd "$WORKSPACE/releases"
-          sums="$(sha256sum native-note-server-*.tar.gz | LC_ALL=C sort -k 2 | paste -sd ';' -)"
+          sums="$(sha256sum "native-note-server-$RELEASE_TAG-linux-"* | LC_ALL=C sort -k 2 | paste -sd ';' -)"
           echo "hetzner: $sums"
           echo "vultr:   $REPRODUCED"
           [ -n "$REPRODUCED" ] && [ "$sums" = "$REPRODUCED" ] \
-            || { echo "FATAL: the two providers built different tarballs"; exit 1; }
-          sha256sum native-note-server-*.tar.gz | LC_ALL=C sort -k 2 > "native-note-server-${RELEASE_TAG#v}.sha256"
+            || { echo "FATAL: the two providers built different binaries"; exit 1; }
+          sha256sum "native-note-server-$RELEASE_TAG-linux-"* | LC_ALL=C sort -k 2 > "native-note-server-$RELEASE_TAG.sha256"
 
       - name: Attach to the release
         env:
@@ -156,7 +156,7 @@ jobs:
             exit 1
           }
 
-          for name in native-note-server-*.tar.gz "native-note-server-${RELEASE_TAG#v}.sha256"; do
+          for name in "native-note-server-$RELEASE_TAG-linux-"* "native-note-server-$RELEASE_TAG.sha256"; do
             curl -fsS -H "$auth" "$api/releases/$id/assets" \
               | jq -r --arg n "$name" '.[] | select(.name == $n) | .id' \
               | while read -r old; do

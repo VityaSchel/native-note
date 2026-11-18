@@ -4,14 +4,15 @@ A FLOSS personal native note-taking app for Windows, Linux, macOS, Android and i
 
 ## Features
 
-- 🍃 **Native:** a SwiftUI app for macOS
-- 📏 **Straightforward:** no overengineering
+- 🍃 **Native:** a notarized SwiftUI app for macOS
+- 📏 **Straightforward:** no overengineering or learning curve
 - 🪨 **Solid:** prioritizes security and reliability
 - 🔐 **Secure:** notes encrypted with a <abbr title="macOS: only when Secure Enclave is available">hardware-bound</abbr> key, biometrics unlock
+- 🛡️ **Safe:** reproducible releases, supply-chain checks, human code audit
 - ☁️ **Multi-device:** set up sync via self-hosted server with E2EE
 - 🪶 **Lightweight:** the sync server is a single 🚀Rust🚀 binary
 
-100% free. No ads. No data collection. No telemetry or analytics. All releases are [reproducible](./REPRODUCIBILITY.md).
+100% free. No ads. No data collection. No telemetry or analytics. All releases are [reproducible](./BUILD.md).
 
 ## Download
 
