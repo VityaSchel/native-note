@@ -25,7 +25,7 @@ A FLOSS personal native note-taking app for Windows, Linux, macOS, Android and i
 
 - Windows: *WIP* <!-- [exe](https://git.hloth.dev/hloth/native-note/releases) -->
 - Linux: *WIP* <!-- [deb](https://git.hloth.dev/hloth/native-note/releases) / [rpm](https://git.hloth.dev/hloth/native-note/releases) / [AppImage](https://git.hloth.dev/hloth/native-note/releases) -->
-- macOS: *WIP* <!-- [App Store](https://apps.apple.com/) / [zip](https://git.hloth.dev/hloth/native-note/releases) -->
+- macOS: <!-- [App Store](https://apps.apple.com/) / -->[zip for Apple silicon](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-v0.1.0-macos-arm64.zip) / [zip for Intel](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-v0.1.0-macos-x86_64.zip)
 - Android: *WIP* <!-- [Play Store](https://play.google.com/store/apps/details?id=dev.hloth.nativenote) / [apk](https://git.hloth.dev/hloth/native-note/releases) -->
 - iOS: *WIP* <!-- [App Store](https://apps.apple.com/) / [AltStore]() -->
 
