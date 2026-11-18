@@ -73,10 +73,10 @@ sha256sum -c --ignore-missing SHA256SUMS
 .forgejo/scripts/macos-build.sh
 
 # 2. Fetch the published zips
-curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-v0.1.0-{arm64,x86_64}.zip"
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-v0.1.0-macos-{arm64,x86_64}.zip"
 
 # 3. Compare
-.forgejo/scripts/macos-verify.sh native-note-v0.1.0-arm64.zip native-note-v0.1.0-x86_64.zip
+.forgejo/scripts/macos-verify.sh native-note-v0.1.0-macos-arm64.zip native-note-v0.1.0-macos-x86_64.zip
 ```
 
 [^1]: `server-cross.sh` pins `zig` for Linux x86_64 and arm64 and for macOS arm64 only.

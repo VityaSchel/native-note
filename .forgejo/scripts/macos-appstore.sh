@@ -41,7 +41,7 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
 		echo "no Mac App Store provisioning profile of team $team_id for $bundle: download it from the developer account into ~/Library/Developer/Xcode/UserData/Provisioning Profiles" >&2
 		exit 1
 	}
-	package_name="native-note-v$version-appstore.pkg"
+	package_name="native-note-v$version-macos-appstore.pkg"
 	[ ! -e "$repo/releases/$package_name" ] || { echo "$repo/releases/$package_name already exists: set a new version or build number in the project" >&2; exit 1; }
 
 	lock_root

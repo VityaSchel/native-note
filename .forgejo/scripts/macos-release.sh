@@ -24,8 +24,8 @@ profile=$(provisioning_profile "$bundle" developer-id) || {
 
 version=$(project_setting MARKETING_VERSION)
 for arch in "${architectures[@]}"; do
-	if [ -e "$repo/releases/native-note-v$version-$arch.zip" ]; then
-		echo "$repo/releases/native-note-v$version-$arch.zip already exists: set a new version in the project" >&2
+	if [ -e "$repo/releases/native-note-v$version-macos-$arch.zip" ]; then
+		echo "$repo/releases/native-note-v$version-macos-$arch.zip already exists: set a new version in the project" >&2
 		exit 1
 	fi
 done

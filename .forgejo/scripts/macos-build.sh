@@ -34,7 +34,7 @@ lock_root() {
 
 app() { echo "$root/Native Note-$1.xcarchive/Products/Applications/Native Note.app"; }
 plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$(app "$1")/Contents/Info.plist"; }
-zip_of() { echo "$root/out/native-note-v$(plist "$1" CFBundleShortVersionString)-$1.zip"; }
+zip_of() { echo "$root/out/native-note-v$(plist "$1" CFBundleShortVersionString)-macos-$1.zip"; }
 package() {
 	local app zip
 	app=$(app "$1")

@@ -24,7 +24,7 @@ if [[ -f "$artifact" ]]; then
 else
 	ci="$(cd "$artifact" && pwd -P)"
 fi
-zips=("native-note-$tag-arm64.zip" "native-note-$tag-x86_64.zip")
+zips=("native-note-$tag-macos-arm64.zip" "native-note-$tag-macos-x86_64.zip")
 for zip in "${zips[@]}"; do
 	[[ -f "$root/releases/$zip" ]] || { echo "releases/$zip is missing: build it with macos-release.sh $tag" >&2; exit 1; }
 done
