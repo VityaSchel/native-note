@@ -93,9 +93,8 @@ CREATE TABLE content_key (
 native-note-server <listen address> <data directory>
 ```
 
-Both arguments are required and positional, read with `std::env::args_os`. No flags, config file or environment variables. Wrong arguments, a listen address that is not an IP address and port among them, exit `2`; any other startup failure exits `1`.
-
-The [systemd unit](../contrib/native-note-server.service) runs `/usr/local/bin/native-note-server` (mode `0755`, owner `root:root`) as a `DynamicUser`, passes `/var/lib/native-note-server/` (its `StateDirectory`, mode `0700`) as the data directory, sets `LimitCORE=0`, and sandboxes the service to an exposure of 1.1 in `systemd-analyze security`.
+- `<listen address>` - IP address:port, or an absolute path for a Unix socket (mode `0666`); required
+- `<data directory>` - path to a writable directory; required
 
 ## Server release
 

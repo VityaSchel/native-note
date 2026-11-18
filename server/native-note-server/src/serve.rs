@@ -1,4 +1,5 @@
 use crate::key;
+use crate::listen::{Listen, Listener, Stream};
 use crate::log::{Cause, Event, Failure, Log, Stage, Stderr};
 use crate::seq_file::SeqFile;
 use crate::store::Store;
@@ -7,8 +8,7 @@ use native_note_core::{Envelope, EnvelopeKey, Reason, Rejection, Reply, Request}
 use ring::error::Unspecified;
 use ring::rand::{SecureRandom, SystemRandom};
 use std::fs::DirBuilder;
-use std::io::{self, Read, Write};
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+use std::io;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -48,8 +48,8 @@ impl Runtime {
 }
 
 pub struct Server {
-	listener: TcpListener,
-	address: SocketAddr,
+	listener: Listener,
+	address: Listen,
 	shared: Arc<Shared>,
 }
 
@@ -60,11 +60,7 @@ struct Shared {
 }
 
 impl Server {
-	pub fn open(
-		address: SocketAddr,
-		data: &Path,
-		runtime: Runtime,
-	) -> Result<Server, (Stage, Cause)> {
+	pub fn open(address: Listen, data: &Path, runtime: Runtime) -> Result<Server, (Stage, Cause)> {
 		DirBuilder::new()
 			.recursive(true)
 			.mode(0o700)
@@ -75,8 +71,7 @@ impl Server {
 		let key = EnvelopeKey::derive(&api_key).ok_or((Stage::ApiKey, Cause::Malformed))?;
 		let seq_file = SeqFile::load(data).map_err(at(Stage::Seq))?;
 		let store = Store::open(&data.join(DATABASE), seq_file).map_err(at(Stage::Database))?;
-		let listener = TcpListener::bind(address).map_err(at(Stage::Listen))?;
-		let address = listener.local_addr().map_err(at(Stage::Listen))?;
+		let (listener, address) = address.bind().map_err(at(Stage::Listen))?;
 		Ok(Server {
 			listener,
 			address,
@@ -88,8 +83,8 @@ impl Server {
 		})
 	}
 
-	pub fn address(&self) -> SocketAddr {
-		self.address
+	pub fn address(&self) -> &Listen {
+		&self.address
 	}
 
 	pub fn serve(self) -> Cause {
@@ -133,16 +128,16 @@ impl From<Rejection> for Refusal {
 }
 
 impl Shared {
-	fn work(&self, listener: &TcpListener) -> ! {
+	fn work(&self, listener: &Listener) -> ! {
 		loop {
 			match listener.accept() {
-				Ok((stream, _)) => self.handle(stream),
+				Ok(stream) => self.handle(stream),
 				Err(_) => thread::sleep(ACCEPT_RETRY),
 			}
 		}
 	}
 
-	fn handle(&self, stream: TcpStream) {
+	fn handle(&self, stream: Stream) {
 		let mut wire = Wire::new(stream, self.runtime.timing);
 		match self.answer(&mut wire) {
 			Ok(sealed) => {
@@ -196,13 +191,13 @@ impl Shared {
 }
 
 struct Wire {
-	stream: TcpStream,
+	stream: Stream,
 	socket_io_timeout: Duration,
 	deadline: Instant,
 }
 
 impl Wire {
-	fn new(stream: TcpStream, timing: Timing) -> Wire {
+	fn new(stream: Stream, timing: Timing) -> Wire {
 		let now = Instant::now();
 		Wire {
 			stream,
@@ -220,7 +215,7 @@ impl Wire {
 	}
 
 	fn read(&mut self, buffer: &mut [u8]) -> Result<usize, Refusal> {
-		self.stream.set_read_timeout(Some(self.budget()?))?;
+		self.stream.set_read_timeout(self.budget()?)?;
 		match self.stream.read(buffer)? {
 			0 => Err(Refusal::Closed),
 			count => Ok(count),
@@ -255,16 +250,16 @@ impl Wire {
 	}
 
 	fn close_without_reset(mut self) {
-		self.stream.shutdown(Shutdown::Write).unwrap_or(());
+		self.stream.shutdown_write().unwrap_or(());
 		let mut discard = [0; HEAD_MAX];
 		while self.read(&mut discard).is_ok() {}
 	}
 
 	fn send(&mut self, head: &[u8], body: &[u8]) -> io::Result<()> {
-		self.stream.set_nodelay(true)?;
+		self.stream.send_without_delay()?;
 		for mut bytes in [head, body] {
 			while !bytes.is_empty() {
-				self.stream.set_write_timeout(Some(self.budget()?))?;
+				self.stream.set_write_timeout(self.budget()?)?;
 				let written = self.stream.write(bytes)?;
 				bytes = bytes
 					.get(written..)

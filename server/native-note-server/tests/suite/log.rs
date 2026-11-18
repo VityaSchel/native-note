@@ -1,5 +1,5 @@
 use native_note_core::DecodeError;
-use native_note_server::{Cause, Event, Failure, Stage};
+use native_note_server::{Cause, Event, Failure, Listen, Stage};
 use rusqlite::ErrorCode;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -15,9 +15,15 @@ fn each_event_is_one_line_of_fixed_keys_and_categories() {
 		),
 		(
 			Event::Listening {
-				address: "[::]:8080".parse().expect("an address"),
+				address: &"[::]:8080".parse::<Listen>().expect("an address"),
 			},
 			"level=info event=listening address=[::]:8080",
+		),
+		(
+			Event::Listening {
+				address: &Listen::Unix("/run/native-note-server/native-note.sock".into()),
+			},
+			"level=info event=listening address=\"/run/native-note-server/native-note.sock\"",
 		),
 		(
 			Event::StartupFailed {

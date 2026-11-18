@@ -1,15 +1,15 @@
+use crate::listen::Listen;
 use native_note_core::DecodeError;
 use rusqlite::ErrorCode;
 use std::fmt;
 use std::io::{self, Write};
-use std::net::SocketAddr;
 use std::path::Path;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Event<'a> {
 	Usage,
 	KeyCreated { path: &'a Path },
-	Listening { address: SocketAddr },
+	Listening { address: &'a Listen },
 	StartupFailed { stage: Stage, cause: Cause },
 	RequestFailed { failure: Failure },
 }

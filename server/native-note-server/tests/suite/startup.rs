@@ -1,12 +1,12 @@
 use crate::support::{Client, Recorder, api_key, call, mode, runtime, serve_at};
 use native_note_core::{Request, Version};
-use native_note_server::{Cause, Runtime, Server, Stage, run};
+use native_note_server::{Cause, Listen, Runtime, Server, Stage, run};
 use native_note_testkit::client::Response;
 use native_note_testkit::scratch::Scratch;
 use std::ffi::OsString;
 use std::fs;
 use std::io::ErrorKind;
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::ExitCode;
@@ -36,6 +36,9 @@ fn anything_but_a_listen_address_and_a_data_directory_prints_usage_and_exits_2()
 		&["localhost:8080", "/tmp/data"],
 		&["8080", "/tmp/data"],
 		&["127.0.0.1", "/tmp/data"],
+		&["native-note.sock", "/tmp/data"],
+		&["./native-note.sock", "/tmp/data"],
+		&["unix:/run/native-note.sock", "/tmp/data"],
 	] {
 		let log = Arc::new(Recorder::default());
 		let code = run(args.iter().map(OsString::from), runtime(&log));
@@ -66,7 +69,7 @@ fn a_started_server_logs_its_key_file_and_address_then_answers_there() {
 	let address = lines[1]
 		.strip_prefix("level=info event=listening address=127.0.0.1:")
 		.and_then(|port| port.parse::<u16>().ok())
-		.map(|port| ([127, 0, 0, 1], port).into())
+		.map(|port| SocketAddr::from(([127, 0, 0, 1], port)))
 		.unwrap_or_else(|| panic!("{lines:?}"));
 	let mut client = Client::new(address, api_key(scratch.path()), 13);
 	assert_eq!(
@@ -240,7 +243,7 @@ fn a_damaged_database_or_a_taken_address_stops_startup() {
 	let log = Arc::new(Recorder::default());
 	assert_eq!(
 		Server::open(
-			taken.local_addr().expect("an address"),
+			Listen::Tcp(taken.local_addr().expect("an address")),
 			fresh.path(),
 			runtime(&log)
 		)

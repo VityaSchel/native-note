@@ -35,6 +35,16 @@ ExecStart=
 ExecStart=/usr/local/bin/native-note-server [::1]:8080 /var/lib/native-note-server
 ```
 
+Or serve it on a Unix socket, with `proxy_pass http://unix:/run/native-note-server/native-note.sock;` in nginx:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/native-note-server /run/native-note-server/native-note.sock /var/lib/native-note-server
+RuntimeDirectory=native-note-server
+RestrictAddressFamilies=AF_UNIX
+```
+
 ## Connect a client
 
 The first start writes the API key to the `api-key` file in the data directory:
@@ -53,6 +63,7 @@ To replace the API key, remove the `api-key` file and restart the server, then o
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://notes.example:8080/
+curl -s -o /dev/null -w '%{http_code}\n' -X POST --unix-socket /run/native-note-server/native-note.sock http://localhost/
 ```
 
 `journalctl -u native-note-server` shows `event=listening` on start and `event=request_failed` for each request that fails after it is unsealed; one sealed with the wrong API key logs nothing. Startup checks the database's integrity; a failure logs `event=startup_failed`, exits `1` and leaves the database untouched.

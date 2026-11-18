@@ -25,17 +25,18 @@
 
 mod durable;
 mod key;
+mod listen;
 mod log;
 mod seq_file;
 mod serve;
 mod store;
 
+pub use listen::Listen;
 pub use log::{Cause, Event, Failure, Log, Stage, Stderr};
 pub use serve::{Runtime, Server, Timing};
 pub use store::Store;
 
 use std::ffi::OsString;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -66,7 +67,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>, runtime: Runtime) -> ExitCo
 	ExitCode::FAILURE
 }
 
-fn arguments(args: impl IntoIterator<Item = OsString>) -> Option<(SocketAddr, PathBuf)> {
+fn arguments(args: impl IntoIterator<Item = OsString>) -> Option<(Listen, PathBuf)> {
 	let mut args = args.into_iter();
 	let (Some(address), Some(data), None) = (args.next(), args.next(), args.next()) else {
 		return None;

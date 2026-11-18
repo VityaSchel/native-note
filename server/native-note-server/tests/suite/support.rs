@@ -1,5 +1,5 @@
 use native_note_core::Request;
-use native_note_server::{Event, Log, Runtime, Server, Timing};
+use native_note_server::{Event, Listen, Log, Runtime, Server, Timing};
 use native_note_testkit::client::{self, Response};
 use native_note_testkit::corpus::SplitMix64;
 use native_note_testkit::scratch::Scratch;
@@ -9,6 +9,7 @@ use native_note_testkit::session::Exchange;
 use native_note_testkit::{SEALED_MAX, nonce_of};
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -82,7 +83,10 @@ impl Running {
 pub fn serve_at(data: &Path, runtime: Runtime) -> SocketAddr {
 	let server = Server::open("127.0.0.1:0".parse().expect("an address"), data, runtime)
 		.unwrap_or_else(|(stage, cause)| panic!("starts: {stage} {cause}"));
-	let address = server.address();
+	let address = match server.address() {
+		Listen::Tcp(address) => *address,
+		other => panic!("listens at {other}"),
+	};
 	thread::spawn(move || server.serve());
 	address
 }
@@ -117,7 +121,7 @@ pub fn connect(address: SocketAddr) -> TcpStream {
 	stream
 }
 
-pub fn read_reply(mut stream: TcpStream) -> Option<Reply> {
+pub fn read_reply(mut stream: impl Read) -> Option<Reply> {
 	let mut bytes = Vec::new();
 	stream.read_to_end(&mut bytes).ok()?;
 	if bytes.is_empty() {
@@ -147,6 +151,21 @@ pub fn send(address: SocketAddr, bytes: &[u8]) -> Option<Reply> {
 	read_reply(stream)
 }
 
+pub fn send_to(address: &Listen, bytes: &[u8]) -> Option<Reply> {
+	match address {
+		Listen::Tcp(address) => send(*address, bytes),
+		Listen::Unix(path) => {
+			let mut stream = UnixStream::connect(path).expect("connects");
+			stream
+				.set_read_timeout(Some(Duration::from_secs(30)))
+				.expect("sets a timeout");
+			stream.write_all(bytes).expect("sends");
+			stream.shutdown(Shutdown::Write).ok();
+			read_reply(stream)
+		}
+	}
+}
+
 pub fn request(body: &[u8]) -> Vec<u8> {
 	[
 		format!(
@@ -164,15 +183,15 @@ pub fn post(address: SocketAddr, body: &[u8]) -> Reply {
 }
 
 pub struct Client {
-	address: SocketAddr,
+	address: Listen,
 	key: [u8; 32],
 	nonces: SplitMix64,
 }
 
 impl Client {
-	pub fn new(address: SocketAddr, api_key: [u8; 32], seed: u64) -> Client {
+	pub fn new(address: impl Into<Listen>, api_key: [u8; 32], seed: u64) -> Client {
 		Client {
-			address,
+			address: address.into(),
 			key: client::envelope_key(&api_key),
 			nonces: SplitMix64::new(seed),
 		}
@@ -192,7 +211,7 @@ impl Exchange for Client {
 	}
 
 	fn post_and_open(&mut self, body: &[u8]) -> Vec<u8> {
-		let reply = post(self.address, body);
+		let reply = send_to(&self.address, &request(body)).expect("a reply");
 		self.open(body, &reply)
 			.expect("the reply opens under the request nonce")
 	}
