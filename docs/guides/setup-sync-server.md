@@ -42,7 +42,9 @@ Or serve it on a Unix socket, with `proxy_pass http://unix:/run/native-note-serv
 ExecStart=
 ExecStart=/usr/local/bin/native-note-server /run/native-note-server/native-note.sock /var/lib/native-note-server
 RuntimeDirectory=native-note-server
+RestrictAddressFamilies=
 RestrictAddressFamilies=AF_UNIX
+PrivateNetwork=yes
 ```
 
 ## Connect a client
