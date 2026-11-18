@@ -114,11 +114,14 @@ jobs:
 
       - name: Install system packages
         run: |
-          command -v xz >/dev/null 2>&1 || {
+          missing=()
+          command -v xz >/dev/null 2>&1 || missing+=(xz-utils)
+          command -v node >/dev/null 2>&1 || missing+=(nodejs)
+          if [ ${#missing[@]} -gt 0 ]; then
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -y
-            apt-get install -y --no-install-recommends xz-utils
-          }
+            apt-get install -y --no-install-recommends "${missing[@]}"
+          fi
 
       - name: Install the pinned toolchain
         run: cd "$WORKSPACE" && ./.forgejo/scripts/install-rust-toolchain.sh
