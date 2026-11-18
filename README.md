@@ -2,6 +2,11 @@
 
 A FLOSS personal native note-taking app for Windows, Linux, macOS, Android and iOS. Self-hosted and end-to-end encrypted.
 
+<picture>
+	<source media="(prefers-color-scheme: dark)" srcset="https://git.hloth.dev/hloth/native-note/raw/branch/main/docs/screenshots/devices-dark.avif">
+	<img alt="Native Note on a laptop" src="https://git.hloth.dev/hloth/native-note/raw/branch/main/docs/screenshots/devices-light.avif" width="1012">
+</picture>
+
 ## Features
 
 - 🍃 **Native:** a notarized SwiftUI app for macOS
