@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.autofill.ContentDataType
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -69,9 +70,15 @@ class SyncSetupUiTest {
 		compose.waitForIdle()
 	}
 
+	private fun autofillType(hint: String) = compose.onNode(hasHint(hint)).fetchSemanticsNode().config[SemanticsProperties.ContentDataType]
+
+	private fun assertWordIsClosedToAutofill(number: Int) =
+		assertEquals(ContentDataType.None, autofillType(context.getString(R.string.word_number, number)))
+
 	private fun enterServer() {
 		compose.onNode(hasHint(text(R.string.server))).performTextInput(server!![0])
 		compose.onNode(hasHint(text(R.string.api_key))).performTextInput(server[1])
+		assertEquals(ContentDataType.Text, autofillType(text(R.string.api_key)))
 		save("setup-server")
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
 	}
@@ -102,7 +109,9 @@ class SyncSetupUiTest {
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
 		for (number in 1..24) {
 			val field = compose.onAllNodes(hasHint(context.getString(R.string.word_number, number))).fetchSemanticsNodes()
-			if (field.isNotEmpty()) compose.onNode(hasHint(context.getString(R.string.word_number, number))).performTextInput(words.getValue(number))
+			if (field.isEmpty()) continue
+			assertWordIsClosedToAutofill(number)
+			compose.onNode(hasHint(context.getString(R.string.word_number, number))).performTextInput(words.getValue(number))
 		}
 		save("setup-confirm")
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
@@ -113,6 +122,7 @@ class SyncSetupUiTest {
 		show(second)
 		enterServer()
 		compose.waitUntil(10_000) { compose.onAllNodes(hasText(text(R.string.enter_phrase))).fetchSemanticsNodes().isNotEmpty() }
+		for (number in 1..24) assertWordIsClosedToAutofill(number)
 		compose.onNode(hasHint(context.getString(R.string.word_number, 1))).performTextInput((1..24).joinToString(" ") { words.getValue(it) })
 		save("setup-join")
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()

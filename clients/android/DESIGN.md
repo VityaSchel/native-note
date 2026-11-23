@@ -25,6 +25,7 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - Requests go through `HttpURLConnection` with the same fixed headers as macOS, no redirects and 30 s timeouts. Cleartext is allowed; https trusts system and user CAs
 - Sync's requests run off the library's worker thread, so a slow server never delays a save; a lock disconnects a request in flight and waits only for that
 - `IME_FLAG_NO_PERSONALIZED_LEARNING` on the password, API key and recovery-word fields only
+- Recovery-word fields set `ContentDataType.None`, which keeps autofill services out; `importantForAutofill` on the Compose view does not. Passwords and the API key keep Compose's defaults
 - English only, every string in `strings.xml`; the libraries' translations are left out
 - Share to Native Note (`ACTION_SEND`, `text/plain`) and a New Note launcher shortcut unlock first; shared text stays in memory only
 - Password fields, the editor, the search field, the API key and the recovery words keep their text in `remember`, never in saveable state: a stopped activity's saved state goes to the system process
