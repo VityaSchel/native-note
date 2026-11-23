@@ -43,6 +43,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.hintText
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -201,12 +203,13 @@ fun SyncSetupScreen(model: AppModel, mode: SyncSetupMode, onDone: () -> Unit) {
 					}
 					when (val current = step) {
 						Step.Server -> {
+							val serverLabel = stringResource(R.string.server)
 							OutlinedTextField(
 								server,
-								Modifier.fillMaxWidth(),
+								Modifier.fillMaxWidth().semantics { hintText = serverLabel },
 								enabled = !working,
-								label = { Text(stringResource(R.string.server)) },
-								placeholder = { Text("http://notes.example:8080") },
+								placeholder = { Text(stringResource(R.string.server)) },
+								supportingText = { Text(stringResource(R.string.server_example)) },
 								lineLimits = TextFieldLineLimits.SingleLine,
 								keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = ImeAction.Next),
 							)
@@ -293,14 +296,15 @@ private fun WordField(
 	onChange: (String) -> Unit,
 ) {
 	NoPersonalizedLearning {
+		val label = stringResource(R.string.word_number, index + 1)
 		OutlinedTextField(
 			value = text,
 			onValueChange = onChange,
-			modifier = modifier,
+			modifier = modifier.semantics { hintText = label },
 			enabled = enabled,
 			isError = isError,
 			singleLine = true,
-			label = { Text(stringResource(R.string.word_number, index + 1)) },
+			leadingIcon = { Text("${index + 1}", color = MaterialTheme.colorScheme.onSurfaceVariant) },
 			keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Next),
 		)
 	}

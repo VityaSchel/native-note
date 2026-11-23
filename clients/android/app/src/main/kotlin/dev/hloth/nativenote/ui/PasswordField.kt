@@ -9,10 +9,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
-import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.hintText
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -22,7 +21,6 @@ fun PasswordField(
 	state: TextFieldState,
 	label: String,
 	modifier: Modifier = Modifier,
-	isNew: Boolean = false,
 	enabled: Boolean = true,
 	error: String? = null,
 	imeAction: ImeAction = ImeAction.Done,
@@ -31,9 +29,9 @@ fun PasswordField(
 	NoPersonalizedLearning {
 		OutlinedSecureTextField(
 			state = state,
-			modifier = modifier.fillMaxWidth().semantics { contentType = if (isNew) ContentType.NewPassword else ContentType.Password },
+			modifier = modifier.fillMaxWidth().semantics { hintText = label },
 			enabled = enabled,
-			label = { Text(label) },
+			placeholder = { Text(label) },
 			isError = error != null,
 			supportingText = error?.let { { Text(it) } },
 			keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),

@@ -20,6 +20,8 @@ import androidx.compose.ui.test.DarkMode
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -29,9 +31,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onNodeWithContentDescription
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.AppModel
 import dev.hloth.nativenote.storage.Note
@@ -39,11 +38,12 @@ import dev.hloth.nativenote.storage.NoteStore
 import dev.hloth.nativenote.storage.SQLiteConnection
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
+import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.onMain
 import dev.hloth.nativenote.unlock.LibraryFiles
 import dev.hloth.nativenote.unlock.UnlockKeys
-import java.util.UUID
 import java.io.File
+import java.util.UUID
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -91,7 +91,7 @@ class ScreenRenderTest {
 			show { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
 			save("onboarding-welcome")
 			compose.onNodeWithText(context.getString(R.string.next)).performClick()
-			compose.onNodeWithText(context.getString(R.string.password)).performTextInput("correct horse")
+			compose.onNode(hasHint(context.getString(R.string.password))).performTextInput("correct horse")
 			save("onboarding-password")
 
 			show { OnboardingScreen(hasSecureHardware = false, isWorking = true, onSetUp = {}) }

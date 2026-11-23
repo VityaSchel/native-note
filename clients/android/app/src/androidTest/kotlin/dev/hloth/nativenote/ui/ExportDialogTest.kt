@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
+import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.onMain
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -39,6 +40,8 @@ class ExportDialogTest {
 
 	private fun dialogNode(id: Int) = compose.onNode(hasText(text(id)) and hasAnyAncestor(isDialog()))
 
+	private fun dialogField(id: Int) = compose.onNode(hasHint(text(id)) and hasAnyAncestor(isDialog()))
+
 	@Test
 	fun anEncryptedExportNeedsTheSamePassphraseTwiceAndCancelExportsNothing() {
 		val model = appModel(folder.root)
@@ -51,8 +54,8 @@ class ExportDialogTest {
 		compose.onNode(isToggleable() and hasAnyAncestor(isDialog())).performClick()
 		compose.onNode(hasText(text(R.string.export_action)) and hasClickAction()).assertIsNotEnabled()
 
-		dialogNode(R.string.passphrase).performTextInput("export passphrase")
-		dialogNode(R.string.verify_passphrase).performTextInput("export passphrase!")
+		dialogField(R.string.passphrase).performTextInput("export passphrase")
+		dialogField(R.string.verify_passphrase).performTextInput("export passphrase!")
 		compose.onNode(hasText(text(R.string.export_action)) and hasClickAction()).performClick()
 		dialogNode(R.string.passphrases_mismatch).assertIsDisplayed()
 

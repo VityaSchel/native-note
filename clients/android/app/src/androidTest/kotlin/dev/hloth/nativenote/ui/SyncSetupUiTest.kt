@@ -5,11 +5,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -23,6 +22,7 @@ import dev.hloth.nativenote.model.AppModel
 import dev.hloth.nativenote.model.SyncStatus
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
+import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.onMain
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -70,8 +70,8 @@ class SyncSetupUiTest {
 	}
 
 	private fun enterServer() {
-		compose.onNode(hasSetTextAction() and hasText(text(R.string.server))).performTextInput(server!![0])
-		compose.onNode(hasSetTextAction() and hasText(text(R.string.api_key))).performTextInput(server[1])
+		compose.onNode(hasHint(text(R.string.server))).performTextInput(server!![0])
+		compose.onNode(hasHint(text(R.string.api_key))).performTextInput(server[1])
 		save("setup-server")
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
 	}
@@ -101,8 +101,8 @@ class SyncSetupUiTest {
 		}
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
 		for (number in 1..24) {
-			val field = compose.onAllNodes(hasSetTextAction() and hasText(context.getString(R.string.word_number, number))).fetchSemanticsNodes()
-			if (field.isNotEmpty()) compose.onNode(hasSetTextAction() and hasText(context.getString(R.string.word_number, number))).performTextInput(words.getValue(number))
+			val field = compose.onAllNodes(hasHint(context.getString(R.string.word_number, number))).fetchSemanticsNodes()
+			if (field.isNotEmpty()) compose.onNode(hasHint(context.getString(R.string.word_number, number))).performTextInput(words.getValue(number))
 		}
 		save("setup-confirm")
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
@@ -113,7 +113,7 @@ class SyncSetupUiTest {
 		show(second)
 		enterServer()
 		compose.waitUntil(10_000) { compose.onAllNodes(hasText(text(R.string.enter_phrase))).fetchSemanticsNodes().isNotEmpty() }
-		compose.onNode(hasSetTextAction() and hasText(context.getString(R.string.word_number, 1))).performTextInput((1..24).joinToString(" ") { words.getValue(it) })
+		compose.onNode(hasHint(context.getString(R.string.word_number, 1))).performTextInput((1..24).joinToString(" ") { words.getValue(it) })
 		save("setup-join")
 		compose.onNodeWithText(text(R.string.continue_action)).performClick()
 		compose.waitUntil(10_000) { done }

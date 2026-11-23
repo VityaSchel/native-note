@@ -82,6 +82,7 @@
 	<string name="current_phrase_explanation">The recovery phrase was changed on another device. Enter its current 24 words to continue.</string>
 	<string name="server">Server</string>
 	<string name="api_key">API Key</string>
+	<string name="server_example">For example, http://notes.example:8080</string>
 	<string name="reveal">Reveal</string>
 	<string name="screen_watched">Make sure your screen isn\'t watched</string>
 	<string name="word_number">Word %d</string>

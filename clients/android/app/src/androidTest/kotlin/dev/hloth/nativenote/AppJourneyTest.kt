@@ -15,6 +15,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.model.AppModel
+import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.unlock.LibraryFiles
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -31,6 +32,7 @@ class AppJourneyTest {
 	private fun text(id: Int) = application.getString(id)
 
 	private fun node(id: Int) = compose.onNodeWithText(text(id))
+	private fun field(id: Int) = compose.onNode(hasHint(text(id)))
 
 	private fun waitFor(phase: AppModel.Phase) = compose.waitUntil(20_000) { application.model.phase == phase }
 
@@ -44,8 +46,8 @@ class AppJourneyTest {
 
 		ActivityScenario.launch(MainActivity::class.java).use { scenario ->
 			node(R.string.next).performClick()
-			node(R.string.password).performTextInput("correct horse")
-			node(R.string.confirm_password).performTextInput("correct horse")
+			field(R.string.password).performTextInput("correct horse")
+			field(R.string.confirm_password).performTextInput("correct horse")
 			node(R.string.next).performClick()
 			waitFor(AppModel.Phase.Unlocked)
 			if (model.canUseBiometrics) node(R.string.not_now).performClick()
@@ -57,12 +59,12 @@ class AppJourneyTest {
 			scenario.moveToState(Lifecycle.State.RESUMED)
 			node(R.string.unlock).assertIsDisplayed()
 
-			node(R.string.password).performTextInput("correct hose")
+			field(R.string.password).performTextInput("correct hose")
 			node(R.string.unlock).performClick()
 			compose.waitUntil(20_000) { model.failure != null }
 			node(R.string.wrong_password).assertIsDisplayed()
 
-			node(R.string.password).performTextInput("correct horse")
+			field(R.string.password).performTextInput("correct horse")
 			node(R.string.unlock).performClick()
 			waitFor(AppModel.Phase.Unlocked)
 

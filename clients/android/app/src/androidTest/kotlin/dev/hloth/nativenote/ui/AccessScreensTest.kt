@@ -3,6 +3,7 @@ package dev.hloth.nativenote.ui
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -21,7 +22,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
+import dev.hloth.nativenote.support.hasHint
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -35,6 +38,7 @@ class AccessScreensTest {
 	private fun text(id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.getString(id)
 
 	private fun node(id: Int) = compose.onNodeWithText(text(id))
+	private fun field(id: Int) = compose.onNode(hasHint(text(id)))
 
 	private fun dialogButton(id: Int) = compose.onNode(hasText(text(id)) and hasClickAction() and hasAnyAncestor(isDialog()))
 
@@ -48,8 +52,8 @@ class AccessScreensTest {
 		node(R.string.password_title).assertIsDisplayed()
 		node(R.string.next).assertIsNotEnabled()
 
-		node(R.string.password).performTextInput("correct horse")
-		node(R.string.confirm_password).performTextInput("correct hose")
+		field(R.string.password).performTextInput("correct horse")
+		field(R.string.confirm_password).performTextInput("correct hose")
 		node(R.string.next).performClick()
 
 		node(R.string.passwords_mismatch).assertIsDisplayed()
@@ -62,8 +66,8 @@ class AccessScreensTest {
 		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { submitted += it }) }
 		node(R.string.next).performClick()
 
-		node(R.string.password).performTextInput("correct horse")
-		node(R.string.confirm_password).performTextInput("correct horse")
+		field(R.string.password).performTextInput("correct horse")
+		field(R.string.confirm_password).performTextInput("correct horse")
 		node(R.string.next).assertIsEnabled().performClick()
 
 		assertEquals(listOf("correct horse"), submitted)
@@ -84,7 +88,7 @@ class AccessScreensTest {
 		compose.setContent { UnlockScreen(wrongPassword = wrong, isWorking = false, onUnlock = { submitted += it }, onErase = {}) }
 
 		node(R.string.unlock).assertIsNotEnabled()
-		node(R.string.password).performTextInput("guess")
+		field(R.string.password).performTextInput("guess")
 		node(R.string.unlock).performClick()
 		assertEquals(listOf("guess"), submitted)
 
@@ -119,14 +123,14 @@ class AccessScreensTest {
 		}
 		node(R.string.change_password).performClick()
 
-		node(R.string.current_password).performTextInput("old")
-		node(R.string.new_password).performTextInput("new one")
-		node(R.string.verify_password).performTextInput("new on")
+		field(R.string.current_password).performTextInput("old")
+		field(R.string.new_password).performTextInput("new one")
+		field(R.string.verify_password).performTextInput("new on")
 		dialogButton(R.string.change_password).performClick()
 		node(R.string.new_passwords_mismatch).assertIsDisplayed()
 		assertEquals(emptyList<Pair<String, String>>(), attempts)
 
-		node(R.string.verify_password).performTextInput("e")
+		field(R.string.verify_password).performTextInput("e")
 		dialogButton(R.string.change_password).performClick()
 		node(R.string.wrong_password).assertIsDisplayed()
 		assertEquals(listOf("old" to "new one"), attempts)
@@ -134,6 +138,16 @@ class AccessScreensTest {
 		answer = null
 		dialogButton(R.string.change_password).performClick()
 		node(R.string.change_password_explanation).assertDoesNotExist()
+	}
+
+	@Test
+	fun aFilledPasswordFieldKeepsItsNameAsAHintThatDoesNotReplaceItsValue() {
+		compose.setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {}) }
+
+		field(R.string.password).performTextInput("typed")
+
+		val semantics = field(R.string.password).fetchSemanticsNode().config
+		assertFalse(SemanticsProperties.ContentDescription in semantics)
 	}
 
 	@Test

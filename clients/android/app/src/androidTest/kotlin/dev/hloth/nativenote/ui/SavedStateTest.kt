@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
+import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.onMain
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -39,7 +40,9 @@ class SavedStateTest {
 		CompositionLocalProvider(LocalSaveableStateRegistry provides registry) { NativeNoteTheme { content() } }
 	}
 
-	private fun field(id: Int) = compose.onNodeWithText(context.getString(id))
+	private fun field(id: Int) = compose.onNode(hasHint(context.getString(id)))
+
+	private fun node(id: Int) = compose.onNodeWithText(context.getString(id))
 
 	private fun assertNotSaved(secret: String) {
 		compose.waitForIdle()
@@ -69,7 +72,7 @@ class SavedStateTest {
 	@Test
 	fun theNewPasswordsAreNeverSaved() {
 		show { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
-		field(R.string.next).performClick()
+		node(R.string.next).performClick()
 
 		field(R.string.password).performTextInput("setup-secret")
 		field(R.string.confirm_password).performTextInput("setup-secret")
@@ -80,7 +83,7 @@ class SavedStateTest {
 	@Test
 	fun theChangePasswordFieldsAreNeverSaved() {
 		show { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }) }
-		field(R.string.change_password).performClick()
+		node(R.string.change_password).performClick()
 
 		field(R.string.current_password).performTextInput("current-secret")
 		field(R.string.new_password).performTextInput("new-secret")
