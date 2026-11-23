@@ -149,6 +149,7 @@ extension AppModel: SyncedLibrary {
 		for (original, copy) in applied.copies where selection == original {
 			selection = copy
 		}
+		if !applied.pulled.isEmpty || !applied.copies.isEmpty { await refreshSearch() }
 	}
 
 	func saveBecameCopy(_ note: Note, copy: UUID, in store: NoteStore) async {

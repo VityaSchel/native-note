@@ -136,6 +136,68 @@ struct LibrarySearchTests {
 		#expect(Set(model.groups.flatMap(\.notes).map(\.body)) == ["kayak", "canoe or kayak"])
 	}
 
+	@Test func anImportedNoteShowsUpInTheSearchItMatchesAndOneThatDoesNotStaysOut() async throws {
+		let (source, sourceDirectory) = try await library.unlocked(holding: ["Kayak club\nmeets on Sunday", "Canoe rental\nopen daily"])
+		let file = sourceDirectory.appending(path: "export.nnexport")
+		try #require(await source.exportLibrary(to: file, passphrase: nil))
+		let (model, _) = try await library.unlocked(holding: ["kayak trip"])
+		model.search = "kayak"
+		await model.runSearch()
+		try #require(model.groups.flatMap(\.notes).map(\.title) == ["kayak trip"])
+
+		try #require(await model.importLibrary(from: file, passphrase: nil) == ImportSummary(added: 2))
+
+		#expect(Set(model.groups.flatMap(\.notes).map(\.title)) == ["kayak trip", "Kayak club"])
+		#expect(model.notes.contains { $0.title == "Canoe rental" })
+	}
+
+	@Test func aPulledNoteShowsUpInTheSearchItMatchesAndOneThatDoesNotStaysOut() async throws {
+		let server = ScriptedServer()
+		let cipher = NoteCipher(contentKey: sharedContentKey)
+		let pulled = try ["Kayak club\nmeets on Sunday", "Canoe rental\nopen daily"].map { body in
+			try cipher.seal(.note(id: UUID(), createdAt: 1, updatedAt: 2, body: body), v: 1)
+		}
+		server.answerEvery { request in
+			guard case let .sync(since, writes) = request else { return .error(.malformed) }
+			let changes = since == 0 ? pulled : []
+			return .sync(results: writes.map { WriteResult(status: .accepted, v: $0.v) }, changes: changes, nextSeq: since + UInt64(writes.count + changes.count), more: false)
+		}
+		let (model, _) = try await Workspace(holding: ["kayak trip"]) { [alarm] directory, keys in
+			AppModel.testing(in: directory, scheduler: alarm.scheduler, keyStore: keys, transport: server)
+		}.unlocked()
+		model.search = "kayak"
+		await model.runSearch()
+		try #require(model.groups.flatMap(\.notes).map(\.title) == ["kayak trip"])
+
+		let store = try #require(model.store)
+		try await store.enableSync(SyncSettings(server: try #require(URL(string: "http://scripted.test/")), apiKey: server.apiKey, contentKey: sharedContentKey), pin: 1)
+		await model.sync.start(store)
+		await model.syncNow()
+
+		#expect(Set(model.groups.flatMap(\.notes).map(\.title)) == ["kayak trip", "Kayak club"])
+		#expect(model.notes.contains { $0.title == "Canoe rental" })
+	}
+
+	@Test func anEditAPullMovesToACopyShowsUpInTheSearchItMatches() async throws {
+		let (model, _) = try await library.unlocked(holding: [])
+		let store = try #require(model.store)
+		let id = UUID()
+		func pull(_ body: String, v: UInt32) -> Commit {
+			let content = Content.note(id: id, createdAt: 1, updatedAt: 2, body: body)
+			return .exchange(Exchange(changes: [PulledChange(content: content, v: v, writeId: NoteCipher.randomWriteId())], nextSeq: UInt64(v)))
+		}
+		_ = try await model.commit(pull("kayak trip", v: 1), to: store)
+		model.search = "kayak"
+		await model.runSearch()
+		try #require(model.groups.flatMap(\.notes).map(\.body) == ["kayak trip"])
+
+		let applied = try await store.commit(pull("canoe rental", v: 2))
+		model.edit(id, "kayak trip and a picnic")
+		await model.reconcile(applied, in: store)
+
+		#expect(model.groups.flatMap(\.notes).map(\.body) == ["kayak trip and a picnic"])
+	}
+
 	@Test func aFailedSearchReportsTheErrorAndShowsNothing() async throws {
 		let (model, directory) = try await library.unlocked(holding: ["kayak"])
 		try await connection(to: directory).execute("DROP TABLE note_fts")

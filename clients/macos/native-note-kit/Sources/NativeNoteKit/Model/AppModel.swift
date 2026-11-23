@@ -373,6 +373,12 @@ import Observation
 		}
 	}
 
+	func refreshSearch() async {
+		guard matches != nil else { return }
+		await scheduler.flushAll()
+		await runSearch()
+	}
+
 	public func dismissFailure() {
 		failure = nil
 	}
@@ -548,6 +554,7 @@ import Observation
 			let shown = Set(notes.map(\.id))
 			notes += added.filter { !shown.contains($0.id) }
 			sync.soon()
+			await refreshSearch()
 		}
 		return ImportSummary(added: added.count, skipped: incoming.count - added.count)
 	}
