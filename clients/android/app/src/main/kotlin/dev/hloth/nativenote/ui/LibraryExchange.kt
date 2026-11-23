@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,17 +68,13 @@ fun LibraryExchange(model: AppModel) {
 		}
 	}
 
-	ListItem(onClick = { exporting = true }, supportingContent = { Text(stringResource(R.string.export_notes_explanation)) }) {
-		Text(stringResource(R.string.export_notes))
-	}
-	ListItem(
-		onClick = {
+	SettingsSection(stringResource(R.string.settings_notes), listOf(
+		SettingsRow(stringResource(R.string.export_notes), stringResource(R.string.export_notes_explanation), onClick = { exporting = true }),
+		SettingsRow(stringResource(R.string.import_notes), stringResource(R.string.import_notes_explanation), enabled = !model.isImporting, onClick = {
 			model.prepareImport()
 			open.launch(arrayOf("*/*"))
-		},
-		enabled = !model.isImporting,
-		supportingContent = { Text(stringResource(R.string.import_notes_explanation)) },
-	) { Text(stringResource(R.string.import_notes)) }
+		}),
+	))
 
 	if (exporting) {
 		ExportDialog(onDismiss = { exporting = false }) { passphrase ->
@@ -134,11 +129,10 @@ private fun ExportDialog(onDismiss: () -> Unit, onExport: (String?) -> Unit) {
 					Switch(checked = encrypt, onCheckedChange = { encrypt = it })
 				}
 				if (encrypt) {
-					PasswordField(passphrase, stringResource(R.string.passphrase), isNew = true, imeAction = ImeAction.Next)
+					PasswordField(passphrase, stringResource(R.string.passphrase), imeAction = ImeAction.Next)
 					PasswordField(
 						verify,
 						stringResource(R.string.verify_passphrase),
-						isNew = true,
 						error = if (mismatched) stringResource(R.string.passphrases_mismatch) else null,
 						onAction = submit,
 					)

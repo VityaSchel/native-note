@@ -3,21 +3,13 @@ package dev.hloth.nativenote.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,7 +18,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -34,7 +25,6 @@ import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
 	onBack: () -> Unit,
@@ -50,49 +40,25 @@ fun SettingsScreen(
 	var enablingBiometrics by rememberSaveable { mutableStateOf(false) }
 	var failure by remember { mutableStateOf<Failure?>(null) }
 	val scope = rememberCoroutineScope()
-	Scaffold(
-		topBar = {
-			TopAppBar(
-				title = { Text(stringResource(R.string.settings)) },
-				navigationIcon = {
-					IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
-				},
-			)
-		},
-	) { padding ->
-		Column(Modifier.padding(padding).verticalScroll(rememberScrollState())) {
-			Text(
+	SubpageScaffold(stringResource(R.string.settings), onBack) { padding ->
+		Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
+			SettingsSection(
 				stringResource(R.string.settings_unlock),
-				Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp),
-				style = MaterialTheme.typography.titleSmall,
-				color = MaterialTheme.colorScheme.primary,
+				listOfNotNull(
+					SettingsRow(stringResource(R.string.change_password), stringResource(R.string.password_subtitle), onClick = { changingPassword = true }),
+					biometricUnlock?.let { on ->
+						SettingsRow(
+							stringResource(R.string.biometric_unlock),
+							stringResource(R.string.biometric_unlock_explanation),
+							trailing = { Switch(checked = on, onCheckedChange = null) },
+							onClick = { if (on) scope.launch { failure = onDisableBiometrics() } else enablingBiometrics = true },
+						)
+					},
+				),
 			)
-			ListItem(
-				onClick = { changingPassword = true },
-				supportingContent = { Text(stringResource(R.string.password_subtitle)) },
-			) { Text(stringResource(R.string.change_password)) }
-			if (biometricUnlock != null) {
-				ListItem(
-					onClick = { if (biometricUnlock) scope.launch { failure = onDisableBiometrics() } else enablingBiometrics = true },
-					supportingContent = { Text(stringResource(R.string.biometric_unlock_explanation)) },
-					trailingContent = { Switch(checked = biometricUnlock, onCheckedChange = null) },
-				) { Text(stringResource(R.string.biometric_unlock)) }
-			}
 			sync()
-			Text(
-				stringResource(R.string.settings_notes),
-				Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 8.dp),
-				style = MaterialTheme.typography.titleSmall,
-				color = MaterialTheme.colorScheme.primary,
-			)
 			exchange()
-			Text(
-				stringResource(R.string.settings_about),
-				Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 8.dp),
-				style = MaterialTheme.typography.titleSmall,
-				color = MaterialTheme.colorScheme.primary,
-			)
-			ListItem(onClick = onLicenses) { Text(stringResource(R.string.third_party_licenses)) }
+			SettingsSection(stringResource(R.string.settings_about), listOf(SettingsRow(stringResource(R.string.third_party_licenses), onClick = onLicenses)))
 		}
 	}
 	if (changingPassword) ChangePasswordDialog(onDismiss = { changingPassword = false }, onChangePassword)
@@ -162,11 +128,10 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit, onChangePassword: suspen
 			Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
 				Text(stringResource(R.string.change_password_explanation))
 				PasswordField(current, stringResource(R.string.current_password), enabled = !working, error = failure?.let { failureMessage(it) }, imeAction = ImeAction.Next)
-				PasswordField(new, stringResource(R.string.new_password), isNew = true, enabled = !working, imeAction = ImeAction.Next)
+				PasswordField(new, stringResource(R.string.new_password), enabled = !working, imeAction = ImeAction.Next)
 				PasswordField(
 					verify,
 					stringResource(R.string.verify_password),
-					isNew = true,
 					enabled = !working,
 					error = if (mismatched) stringResource(R.string.new_passwords_mismatch) else null,
 					onAction = submit,
