@@ -1,6 +1,6 @@
 # Building Native Note
 
-Check out the release tag with its SQLCipher submodule:
+Check out the release tag with its submodules:
 
 ```sh
 git clone --recurse-submodules --branch v0.1.0 https://git.hloth.dev/hloth/native-note.git
@@ -11,14 +11,14 @@ cd native-note
 
 Platforms that reproduced each release:
 
-| Release  | Sync server               | macOS app   |
-| -------- | ------------------------- | ----------- |
-| `v0.1.0` | Linux x86_64, macOS arm64 | macOS arm64 |
+| Release  | Sync server               | macOS app   | Android app |
+| -------- | ------------------------- | ----------- | ----------- |
+| `v0.1.0` | Linux x86_64, macOS arm64 | macOS arm64 | —           |
 
 ## Sync server
 
 - **Canonical builder:** Linux x86_64
-- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and offered for download only when both builds match, then rebuilt on macOS arm64 by [release-sign.sh](.forgejo/scripts/release-sign.sh), which signs every file's SHA-256 in the release notes with the maintainer's GPG key only when every binary and zip matches; the maintainer publishes the release by hand
+- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and offered for download only when both builds match, then rebuilt on macOS arm64 by [release-sign.sh](.forgejo/scripts/release-sign.sh), which signs every file's SHA-256 in the release notes with the maintainer's GPG key only when every binary, zip and APK matches; the maintainer publishes the release by hand
 
 |         | x86_64            | arm64        |
 | ------- | ----------------- | ------------ |
@@ -77,6 +77,42 @@ curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/na
 
 # 3. Compare
 .forgejo/scripts/macos-verify.sh native-note-v0.1.0-macos-arm64.zip native-note-v0.1.0-macos-x86_64.zip
+```
+
+## Android app
+
+- **Canonical builder:** Linux x86_64, Debian trixie with OpenJDK 21
+- **Official releases:** built by [release.yml](.forgejo/workflows/release.yml) at two cloud providers and offered for download only when both builds match, then rebuilt on macOS arm64 by [release-sign.sh](.forgejo/scripts/release-sign.sh), which signs the APK with the release key through [android-sign.sh](.forgejo/scripts/android-sign.sh); F-Droid rebuilds each release and publishes that signed APK only when its own build matches
+- **Not reproducible:** the signature. Google Play installs APKs that Google cuts from the AAB and signs with its own key, so only the APK on the release page and on F-Droid can be checked
+
+|         | x86_64      | arm64        |
+| ------- | ----------- | ------------ |
+| Linux   | _Canonical_ | Untested     |
+| macOS   | Untested    | Reproducible |
+| Windows | Untested    | Untested     |
+
+| Component                                                    | Where it's pinned                                                                              |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| JDK major version                                            | `java_major` in `android-build.sh`                                                             |
+| Gradle                                                       | `clients/android/gradle/wrapper/gradle-wrapper.properties`, with its SHA-256                   |
+| AGP, Kotlin, Compose and every other artifact Gradle fetches | the build files, each artifact's SHA-256 in `clients/android/gradle/verification-metadata.xml` |
+| SDK platform, build-tools, NDK and CMake                     | `install-android-sdk.sh`; the platform's `android.jar` by SHA-256 in `android-build.sh`        |
+| Argon2 and LibTomCrypt                                       | `clients/android/argon2`, `clients/android/libtomcrypt`                                        |
+| SQLCipher                                                    | `clients/macos/native-note-kit/sqlcipher`, `Scripts/sqlcipher-amalgamation.sh`                 |
+| Version and version code                                     | `clients/android/app/build.gradle.kts`                                                         |
+| Release certificate                                          | `clients/android/release-certificate.sha256`                                                   |
+
+[android-build.sh](.forgejo/scripts/android-build.sh) exports the commit with `git archive` to a fixed path and builds under `env -i`, with its own Gradle home, strict dependency verification and the commit's time. [android-verify.sh](.forgejo/scripts/android-verify.sh) grafts the published APK's signature onto that build and requires the result to match the published APK byte for byte, with a valid signature by the pinned release certificate.
+
+```sh
+# 1. Build into /tmp/native-note-android/out, with JDK 21 in JAVA_HOME and the pinned SDK in ANDROID_HOME (install-android-sdk.sh installs it on Debian or Ubuntu)
+.forgejo/scripts/android-build.sh
+
+# 2. Fetch the published APK
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/<tag>/native-note-<tag>-android.apk"
+
+# 3. Compare
+.forgejo/scripts/android-verify.sh native-note-<tag>-android.apk
 ```
 
 [^1]: `server-cross.sh` pins `zig` for Linux x86_64 and arm64 and for macOS arm64 only.

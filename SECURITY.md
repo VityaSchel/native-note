@@ -34,3 +34,7 @@ Claims in the README and the documents below are verified against the code befor
 ## Cryptography
 
 No custom primitives; platform crypto where available. Primitives: [docs/ARCHITECTURE.md § Cryptography](docs/ARCHITECTURE.md#cryptography). Dependencies: [server/DESIGN.md](server/DESIGN.md), [clients/macos/DESIGN.md](clients/macos/DESIGN.md) and [clients/android/DESIGN.md](clients/android/DESIGN.md).
+
+## Releases
+
+Every release is reproducible; [BUILD.md](BUILD.md) checks published files against a rebuild. The Android release certificate's SHA-256 is pinned in `clients/android/release-certificate.sha256`; an APK outside Google Play signed by another certificate is not ours.

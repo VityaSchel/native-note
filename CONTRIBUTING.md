@@ -42,7 +42,7 @@ cargo test
 
 - Property tests live in modules named `props`, which the [coverage gate](server/DESIGN.md#server-core) skips.
 - Fuzzing is manual: run `frame`, `envelope` and `http` overnight with `cargo-fuzz` 0.13.2 on the nightly `server-coverage.sh` pins, and keep each minimized finding as a regression test in `tests/suite`.
-- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). A release starts by pushing a signed tag and dispatching [release.yml](.forgejo/workflows/release.yml) with it, which offers the binaries both cloud builds agree on as the `native-note-server-<tag>` artifact. `.forgejo/scripts/release-sign.sh <tag> <artifact>` then rebuilds them and the macOS app on this Mac, refuses any that differ, stages the six files in `releases/<tag>/`, and writes `releases/<tag>-notes.md`, the clearsigned SHA-256 list to end the release notes with, for a release created by hand on the tag.
+- Release binaries: `.forgejo/scripts/server-release.sh`, per [BUILD.md](BUILD.md#sync-server). A release starts by pushing a signed tag and dispatching [release.yml](.forgejo/workflows/release.yml) with it, which offers the binaries both cloud builds agree on as the `native-note-server-<tag>` artifact, and the unsigned APK and AAB as `native-note-android-<tag>`. `.forgejo/scripts/release-sign.sh <tag> <server artifact> <android artifact>`, with `ANDROID_KEYSTORE` and `ANDROID_UPLOAD_KEYSTORE` naming the release and Play upload keystores, then rebuilds them, the macOS app and the Android app on this Mac, refuses any that differ, signs the APK and the AAB, stages the seven files in `releases/<tag>/` and the AAB for Google Play in `releases/`, and writes `releases/<tag>-notes.md`, the clearsigned SHA-256 list to end the release notes with, for a release created by hand on the tag.
 
 ### Supply chain
 
@@ -96,7 +96,7 @@ Tests that need no device live in `app/src/sharedTest` and run both with `testDe
 - The force-kill budget: [devtools/android-force-kill](devtools/android-force-kill/README.md).
 - Sync against real servers through `adb reverse`: [devtools/android-sync-e2e](devtools/android-sync-e2e/README.md); without it `ServerSyncTest` skips.
 
-After a dependency change, empty `<components>` in `gradle/verification-metadata.xml`, keeping `<configuration>`, run `./gradlew --write-verification-metadata sha256 help assembleRelease bundleRelease lint testDebugUnitTest assembleDebugAndroidTest` with an empty `GRADLE_USER_HOME`, then add the AAPT2 classifiers this host did not fetch. The unsigned release APK and AAB, with their SHA-256: `.forgejo/scripts/android-build.sh [<commit>]`.
+After a dependency change, empty `<components>` in `gradle/verification-metadata.xml`, keeping `<configuration>`, run `./gradlew --write-verification-metadata sha256 help assembleRelease bundleRelease lint testDebugUnitTest assembleDebugAndroidTest` with an empty `GRADLE_USER_HOME`, then add the AAPT2 classifiers this host did not fetch. The unsigned release APK and AAB, with their SHA-256: `.forgejo/scripts/android-build.sh [<commit>]`. Pull requests run lint without the Google Play SDK Index checks, whose index changes without a commit; [audit.yml](.forgejo/workflows/audit.yml) runs them nightly with `./gradlew lint -PplaySdkIndex`. Store listings live in `clients/android/fastlane/metadata/android`, with each release's notes in `changelogs/<versionCode>.txt`. Checking a published APK: [BUILD.md](BUILD.md#android-app).
 
 ## Rules
 
