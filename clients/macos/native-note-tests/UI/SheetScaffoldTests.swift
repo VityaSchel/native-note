@@ -4,13 +4,8 @@ import Testing
 
 @testable import NativeNote
 
-@MainActor
-private final class Announcements {
-	var heard: [String] = []
-}
-
 private struct FailingSheet: View {
-	let announcements: Announcements
+	let announcements: Spoken
 	@State private var error: String?
 
 	var body: some View {
@@ -18,14 +13,14 @@ private struct FailingSheet: View {
 			Button("Try") { error = "The server did not accept this API key." }
 		} buttons: {
 			EmptyView()
-		} announce: { announcements.heard.append($0) }
+		} announce: { announcements.hear($0) }
 	}
 }
 
 @MainActor
 struct SheetScaffoldTests {
 	@Test func aNewErrorIsReadOutOnce() async throws {
-		let announcements = Announcements()
+		let announcements = Spoken()
 		let offscreen = OffscreenWindow(FailingSheet(announcements: announcements), width: 400, height: 200)
 		defer { offscreen.close() }
 
@@ -33,6 +28,24 @@ struct SheetScaffoldTests {
 		await offscreen.pump { !announcements.heard.isEmpty }
 
 		#expect(announcements.heard == ["The server did not accept this API key."])
+		#expect(announcements.lines.map(\.accessibilitySpeechAnnouncementPriority) == [.high])
+	}
+
+	@Test func errorsAreSpokenAboveTheFocusChangeThatFollowsThemAndStepLinesAfterIt() {
+		#expect(VoiceOver.aboveFocusChanges("The server refused.").accessibilitySpeechAnnouncementPriority == .high)
+		#expect(VoiceOver.afterFocusSpeech("Set Up Sync").accessibilitySpeechAnnouncementPriority == .low)
+	}
+
+	@Test func theWorkingSpinnerIsHiddenFromVoiceOver() {
+		let offscreen = OffscreenWindow(SheetScaffold(title: "Change Server", working: true) {
+			SecureField("API Key:", text: .constant(""))
+		} buttons: {
+			Button("Change") {}
+		}, width: 400, height: 200)
+		defer { offscreen.close() }
+
+		#expect(offscreen.views(of: NSProgressIndicator.self).count == 1)
+		#expect(!offscreen.exposesASpinner)
 	}
 
 	@Test func anErrorOfUpToTwoLinesMovesNothing() {

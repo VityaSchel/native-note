@@ -8,6 +8,9 @@ struct NoteRow: View {
 	let note: Note
 	let now: Date
 
+	@Environment(\.colorSchemeContrast) private var contrast
+	@Environment(\.backgroundProminence) private var prominence
+
 	private var preview: String {
 		note.body
 			.split(maxSplits: 1, omittingEmptySubsequences: false, whereSeparator: \.isNewline)
@@ -46,13 +49,14 @@ struct NoteRow: View {
 					.accessibilityLabel(spokenDate)
 				Text(displayPreview)
 					.font(Self.detailFont)
-					.foregroundStyle(.secondary)
+					.foregroundStyle(contrast == .increased && prominence == .increased ? HierarchicalShapeStyle.primary : .secondary)
 					.lineLimit(1)
 			}
 		}
 		.padding(.top, 12)
 		.padding(.bottom, 13)
 		.accessibilityElement(children: .combine)
+		.accessibilityInputLabels(note.title.isEmpty ? [] : [note.title])
 	}
 }
 

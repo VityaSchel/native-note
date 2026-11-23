@@ -14,5 +14,7 @@ struct ReservedLine: View {
 					.fixedSize(horizontal: false, vertical: true)
 			}
 		}
+		.accessibilityElement(children: .combine)
+		.accessibilityHidden(text == nil)
 	}
 }

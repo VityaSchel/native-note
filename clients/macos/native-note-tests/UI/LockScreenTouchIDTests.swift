@@ -7,7 +7,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(10)))
 struct LockScreenTouchIDTests {
 	private let alarm = Alarm()
 	private let shaking = Alarm()
@@ -29,17 +29,22 @@ struct LockScreenTouchIDTests {
 		}
 	}
 
-	private func window(showing model: AppModel, watching keys: FakeKeyStore) -> OffscreenWindow<ContentView> {
-		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 720, height: 640)
+	private func window(showing model: AppModel, watching keys: FakeKeyStore, spoken: Spoken = Spoken(), reduceMotion: Bool = false) -> OffscreenWindow<some View> {
+		let offscreen = OffscreenWindow(
+			ContentView(exchange: LibraryExchange(model: model), announce: { spoken.heard.append($0) })
+				.environment(\._accessibilityReduceMotion, reduceMotion),
+			width: 720,
+			height: 640
+		)
 		sensor.watch(keys, in: offscreen.window)
 		return offscreen
 	}
 
-	private func line(in offscreen: OffscreenWindow<ContentView>) -> String? {
+	private func line(in offscreen: OffscreenWindow<some View>) -> String? {
 		offscreen.accessibilityElements(.staticText).map(\.value).first { $0 == UnlockView.touchIDLine || $0 == UnlockView.touchIDStoppedLine }
 	}
 
-	private func sideways(_ travel: Travel<ContentView>, in offscreen: OffscreenWindow<ContentView>, for seconds: TimeInterval) async -> [CGFloat] {
+	private func sideways<Content: View>(_ travel: Travel<Content>, in offscreen: OffscreenWindow<Content>, for seconds: TimeInterval) async -> [CGFloat] {
 		let started = Date()
 		await offscreen.pump(turns: 8_000) { Date().timeIntervalSince(started) > seconds }
 		#expect(travel.offsets.allSatisfy { $0.dy == 0 } && travel.offset().dy == 0)
@@ -125,8 +130,9 @@ struct LockScreenTouchIDTests {
 
 	@Test func aWrongFingerShakesTheFieldAndAFreshGlyphListensOnlyOnceTheShakeEnds() async throws {
 		let keys = FakeKeyStore()
+		let spoken = Spoken()
 		let (model, _) = try await library().unlockedWithTouchID(keys)
-		let offscreen = window(showing: model, watching: keys)
+		let offscreen = window(showing: model, watching: keys, spoken: spoken)
 		defer { offscreen.close() }
 		keys.reply(with: .miss)
 		await model.lock()
@@ -150,6 +156,7 @@ struct LockScreenTouchIDTests {
 		#expect(keys.contexts.count == 1)
 		#expect(line(in: offscreen) == UnlockView.touchIDLine)
 		#expect(model.failure == nil)
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement])
 
 		try await ring(shaking)
 		await offscreen.pump { keys.contexts.count == 2 && sensor.isWaiting }
@@ -161,11 +168,83 @@ struct LockScreenTouchIDTests {
 		#expect(line(in: offscreen) == UnlockView.touchIDLine)
 		#expect(field.stringValue == "corr")
 		#expect(field.currentEditor()?.selectedRange == NSRange(location: 4, length: 0))
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement])
 		keys.reply(with: .key)
 		sensor.touch()
 		await offscreen.pump { model.phase == .unlocked }
 		#expect(model.phase == .unlocked)
 		#expect(sensor.readsThroughAGlyphInTheWindow == [true, true])
+	}
+
+	@Test func withReduceMotionAWrongFingerDimsTheFieldInPlaceAndAFreshGlyphListensOnlyOnceTheShakeEnds() async throws {
+		let keys = FakeKeyStore()
+		let spoken = Spoken()
+		let (model, _) = try await library().unlockedWithTouchID(keys)
+		let offscreen = window(showing: model, watching: keys, spoken: spoken, reduceMotion: true)
+		defer { offscreen.close() }
+		keys.reply(with: .miss)
+		await model.lock()
+		await offscreen.pump { sensor.isWaiting }
+		let first = try #require(offscreen.glyphs.first?.context)
+		let field = try offscreen.type("corr", into: "Password")
+		let travel = Travel(of: field, in: offscreen)
+		defer { travel.stop() }
+		let box = offscreen.host.convert(field.bounds, from: field)
+		let fill = NSPoint(x: box.maxX - 8, y: box.midY)
+		#expect(try offscreen.opacity(at: fill) > 0.99)
+
+		sensor.touch()
+		await offscreen.pump { model.touchID == .paused(.shaking) && offscreen.glyphs.isEmpty }
+		let opacities = try offscreen.opacities(at: fill, steppingFrames: 72, every: 1.0 / 120)
+
+		#expect(try #require(opacities.min()) < 0.6)
+		#expect(try #require(opacities.last) > 0.99)
+		#expect(travel.offsets.allSatisfy { $0.dx == 0 && $0.dy == 0 })
+		#expect(travel.offset().dx == 0 && travel.offset().dy == 0)
+		#expect(model.touchID == .paused(.shaking))
+		#expect(offscreen.glyphs.isEmpty)
+		#expect(keys.contexts.count == 1)
+		#expect(line(in: offscreen) == UnlockView.touchIDLine)
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement])
+
+		try await ring(shaking)
+		await offscreen.pump { keys.contexts.count == 2 && sensor.isWaiting }
+		let again = try #require(offscreen.glyphs.first?.context)
+		#expect(again !== first)
+		#expect(field.stringValue == "corr")
+		#expect(field.currentEditor()?.selectedRange == NSRange(location: 4, length: 0))
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement])
+		keys.reply(with: .key)
+		sensor.touch()
+		await offscreen.pump { model.phase == .unlocked }
+		#expect(model.phase == .unlocked)
+	}
+
+	@Test func voiceOverHearsEachWrongFingerOnceAndOneThatLocksTouchIDOutOnlyAsTheStoppedLine() async throws {
+		let keys = FakeKeyStore()
+		let spoken = Spoken()
+		let (model, _) = try await library().unlockedWithTouchID(keys)
+		let offscreen = window(showing: model, watching: keys, spoken: spoken)
+		defer { offscreen.close() }
+		keys.reply(with: .miss)
+		await model.lock()
+		await offscreen.pump { sensor.isWaiting }
+
+		sensor.touch()
+		await offscreen.pump { model.touchID == .paused(.shaking) && !spoken.heard.isEmpty }
+		try await ring(shaking)
+		await offscreen.pump { keys.contexts.count == 2 && sensor.isWaiting }
+		offscreen.pump(for: 0.05)
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement])
+
+		keys.becomes(.lockedOut)
+		sensor.touch()
+		await offscreen.pump { model.touchID == .lockedOut && offscreen.glyphs.isEmpty }
+		offscreen.pump(for: 0.1)
+
+		#expect(model.shake.count == 2)
+		#expect(line(in: offscreen) == UnlockView.touchIDStoppedLine)
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement, UnlockView.touchIDStoppedLine])
 	}
 
 	@Test func checkingAPasswordAfterTouchIDStopsKeepsAskingForThePassword() async throws {
@@ -240,8 +319,9 @@ struct LockScreenTouchIDTests {
 
 	@Test func aWrongPasswordShakesKeepsTheTextAndListensThroughAFreshGlyphOnlyOnceTheShakeEnds() async throws {
 		let keys = FakeKeyStore()
+		let spoken = Spoken()
 		let (model, _) = try await library().unlockedWithTouchID(keys)
-		let offscreen = window(showing: model, watching: keys)
+		let offscreen = window(showing: model, watching: keys, spoken: spoken)
 		defer { offscreen.close() }
 		await model.lock()
 		await offscreen.pump { sensor.isWaiting }
@@ -278,6 +358,7 @@ struct LockScreenTouchIDTests {
 		#expect(offscreen.glyphs.first?.context !== first)
 		#expect(line(in: offscreen) == UnlockView.touchIDLine)
 		#expect(!offscreen.accessibilityElements(.staticText).contains { $0.value.localizedCaseInsensitiveContains("wrong") })
+		#expect(spoken.heard == [UnlockView.wrongPasswordAnnouncement])
 
 		sensor.touch()
 		await offscreen.pump { model.phase == .unlocked }

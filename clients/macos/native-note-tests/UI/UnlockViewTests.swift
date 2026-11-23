@@ -500,6 +500,21 @@ struct UnlockViewTests {
 		#expect(alreadyStopped.heard.isEmpty)
 	}
 
+	@Test func voiceOverHearsAMissedTouchOnlyWhenTouchIDGoesStraightFromListeningToTheShake() {
+		let spoken = Spoken()
+		let offscreen = lockScreen(.listening(LAContext()), enabled: true, spoken: spoken)
+		defer { offscreen.close() }
+		offscreen.pump(for: 0.05)
+
+		for state in [AppModel.TouchID.paused(.shaking), .listening(LAContext()), .paused(.checkingPassword), .paused(.shaking), .paused(.inBackground), .paused(.shaking), .listening(LAContext()), .lockedOut] {
+			offscreen.host.rootView = unlockView(state, enabled: true, spoken: spoken)
+			offscreen.pump(for: 0.05)
+		}
+
+		#expect(spoken.heard == ["Touch ID didn't match", "Enter password to enable Touch ID"])
+		#expect(spoken.heard == [UnlockView.touchIDMissAnnouncement, UnlockView.touchIDStoppedLine])
+	}
+
 	@Test func typingKeepsListeningThroughTheSameGlyph() async throws {
 		let context = LAContext()
 		let glyphs = Glyphs()
@@ -769,8 +784,9 @@ struct UnlockViewTests {
 
 	@Test func withReduceMotionAWrongPasswordLeavesTheFieldStillAndStillSelectsItWhenTheShakeEnds() async throws {
 		let shaker = Shaker()
+		let spoken = Spoken()
 		let view = {
-			unlockView(shake: shaker.shake, submit: { _ in shaker.start(); return .wrongPassword })
+			unlockView(shake: shaker.shake, spoken: spoken, submit: { _ in shaker.start(); return .wrongPassword })
 				.environment(\._accessibilityReduceMotion, true)
 		}
 		let offscreen = OffscreenWindow(view())
@@ -780,18 +796,72 @@ struct UnlockViewTests {
 		try offscreen.type("a guess", into: password)
 		let travel = Travel(of: password, in: offscreen)
 		defer { travel.stop() }
+		let field = inHost(password, of: offscreen)
+		let fill = NSPoint(x: field.maxX - 8, y: field.midY)
+		#expect(try offscreen.opacity(at: fill) > 0.99)
 
 		#expect(try #require(arrows(in: offscreen).first).press())
 		await offscreen.pump { shaker.shake.isRunning }
-		let started = Date()
-		await offscreen.pump(turns: 8_000) { Date().timeIntervalSince(started) > 0.6 }
+		let opacities = try offscreen.opacities(at: fill, steppingFrames: 72, every: 1.0 / 120)
 		#expect(shaker.shake.count == 1)
 		#expect(travel.offsets.allSatisfy { $0.dx == 0 && $0.dy == 0 })
+		#expect(travel.offset().dx == 0 && travel.offset().dy == 0)
+		#expect(try #require(opacities.min()) < 0.6)
+		#expect(try #require(opacities.last) > 0.99)
 		#expect(selection(of: password) == NSRange(location: 7, length: 0))
+		#expect(spoken.heard == [UnlockView.wrongPasswordAnnouncement])
 
 		shaker.end()
 		await offscreen.pump { selection(of: password) == NSRange(location: 0, length: 7) }
 		#expect(selection(of: password) == NSRange(location: 0, length: 7))
+	}
+
+	@Test func withReduceMotionEachRenderedFrameDimsTheWholeFieldRowInPlaceAlongTheCurve() throws {
+		let shaker = Shaker()
+		let view = {
+			unlockView(shake: shaker.shake)
+				.environment(\._accessibilityReduceMotion, true)
+		}
+		let offscreen = OffscreenWindow(view())
+		defer { offscreen.close() }
+		shaker.show = { [weak offscreen] in offscreen?.host.rootView = view() }
+		let password = try offscreen.field("Password")
+		try offscreen.type("a guess", into: password)
+		offscreen.pump(for: 0.1)
+		let still = offscreen.accessibilityElements().filter { $0.role == .staticText || $0.role == .link }.map(\.frame)
+		let rest = offscreen.onScreen(password)
+		let arrowRest = try #require(arrows(in: offscreen).first).frame
+		let field = inHost(password, of: offscreen)
+		let fill = NSPoint(x: field.maxX - 8, y: field.midY)
+		let arrowFill = NSPoint(x: inHost(arrowRest, of: offscreen).midX, y: field.midY)
+		let step = 1.0 / 120
+		#expect(try offscreen.opacity(at: fill) > 0.99)
+
+		shaker.start()
+		var startup = 0
+		while try offscreen.opacity(at: fill) > 0.99, startup < 10 {
+			offscreen.host._renderForTest(interval: step)
+			startup += 1
+		}
+		var opacities = [try offscreen.opacity(at: fill)]
+		var arrowOpacities = [try offscreen.opacity(at: arrowFill)]
+		for _ in 0 ..< 60 {
+			offscreen.host._renderForTest(interval: step)
+			opacities.append(try offscreen.opacity(at: fill))
+			arrowOpacities.append(try offscreen.opacity(at: arrowFill))
+			#expect(offscreen.onScreen(password) == rest)
+			#expect(arrows(in: offscreen).first?.frame == arrowRest)
+		}
+
+		#expect(startup < 10)
+		for (index, opacity) in opacities.enumerated() {
+			#expect(abs(opacity - DimEffect.opacity(at: Double(index + 1) * step)) < 0.02, "frame \(index + 1)")
+		}
+		#expect(abs(opacities[23] - DimEffect.dimmest) < 0.02)
+		#expect(opacities[47...].allSatisfy { $0 > 0.99 })
+		#expect(arrowOpacities[23] < 0.7)
+		#expect(arrowOpacities[47...].allSatisfy { $0 > 0.99 })
+		#expect(offscreen.accessibilityElements().filter { $0.role == .staticText || $0.role == .link }.map(\.frame) == still)
 	}
 
 	@Test func aShakeCountThatDoesNotChangeDoesNotMoveTheField() async throws {
@@ -878,7 +948,29 @@ struct UnlockViewTests {
 		}
 	}
 
-	@Test func whileTouchIDOpensTheNotesTheFieldIsDisabledWithASpinnerInTheArrowsPlace() throws {
+	@Test func withReduceMotionTheRowDimsToThirtyFivePercentAndBackOverTheShakeInsteadOfMoving() {
+		func opacity(_ milliseconds: Double) -> Double {
+			DimEffect.opacity(at: milliseconds / 1000)
+		}
+		let samples = stride(from: 0.0, through: 400, by: 0.25).map(opacity)
+
+		#expect(DimEffect.dimmest == 0.35)
+		#expect(opacity(0) == 1)
+		#expect(abs(opacity(200) - 0.35) < 1e-9)
+		#expect(opacity(400) == 1)
+		#expect(opacity(401) == 1)
+		#expect(opacity(-1) == 1)
+		#expect(opacity(1) < 1)
+		#expect(samples.allSatisfy { $0 >= 0.35 - 1e-9 && $0 <= 1 })
+		#expect(zip(samples[..<800], samples[1 ... 800]).allSatisfy { $0 >= $1 })
+		#expect(zip(samples[800...], samples[801...]).allSatisfy { $0 <= $1 })
+		let size = CGSize(width: 300, height: 36)
+		for milliseconds in stride(from: 0.0, through: 400, by: 5) {
+			#expect(ShakeEffect(animatableData: 6 + milliseconds / 400, moves: false).effectValue(size: size).isIdentity, "\(milliseconds) ms")
+		}
+	}
+
+	@Test func whileTouchIDOpensTheNotesTheFieldIsDisabledWithASpinnerInTheArrowsPlaceAndUnlockReadsInProgress() throws {
 		let offscreen = lockScreen(.working)
 		defer { offscreen.close() }
 		offscreen.pump(for: 0.1)
@@ -894,13 +986,19 @@ struct UnlockViewTests {
 		#expect(abs(slot.midY - text.midY) < 1)
 		#expect(slot.maxX < offscreen.onScreen(offscreen.host).midX + 150)
 		#expect(!password.isEnabled)
-		#expect(arrows(in: offscreen).isEmpty)
+		let unlock = try #require(arrows(in: offscreen).first)
+		#expect(arrows(in: offscreen).count == 1)
+		#expect(!unlock.isEnabled)
+		#expect(unlock.value == OnboardingLabel.busyValue)
+		#expect(unlock.frame.size == CGSize(width: UnlockView.arrowSide, height: UnlockView.arrowSide))
+		#expect(abs(unlock.frame.midX - slot.midX) < 1 && abs(unlock.frame.midY - slot.midY) < 1)
+		#expect(!offscreen.exposesASpinner)
 		#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
 		#expect(offscreen.views(of: TouchIDGlyphView.self).isEmpty)
 		#expect(!(try #require(offscreen.accessibilityElements(.link).first).isEnabled))
 	}
 
-	@Test func whileThePasswordIsCheckedTheSpinnerTakesTheArrowsPlaceAndTheFieldKeepsFocus() async throws {
+	@Test func whileThePasswordIsCheckedTheSpinnerTakesTheArrowsPlaceUnlockReadsInProgressAndTheFieldKeepsFocus() async throws {
 		let checking = Latch()
 		let offscreen = lockScreen(.paused(.checkingPassword), submit: { _ in
 			await checking.wait()
@@ -910,13 +1008,21 @@ struct UnlockViewTests {
 		defer { checking.release() }
 		let password = try offscreen.field("Password")
 		try offscreen.type("correct horse", into: password)
+		let arrow = try #require(arrows(in: offscreen).first)
+		#expect(arrow.isEnabled)
+		#expect(arrow.value.isEmpty)
 
 		password.currentEditor()?.insertNewline(nil)
 		await offscreen.pump { checking.isHolding }
 		offscreen.pump(for: 0.05)
 
 		#expect(offscreen.views(of: NSProgressIndicator.self).count == 1)
-		#expect(arrows(in: offscreen).isEmpty)
+		let unlock = try #require(arrows(in: offscreen).first)
+		#expect(arrows(in: offscreen).count == 1)
+		#expect(!unlock.isEnabled)
+		#expect(unlock.value == OnboardingLabel.busyValue)
+		#expect(unlock.frame == arrow.frame)
+		#expect(!offscreen.exposesASpinner)
 		#expect(password.isEnabled)
 		#expect(password.currentEditor() != nil)
 		#expect(offscreen.views(of: LAAuthenticationView.self).isEmpty)
@@ -924,6 +1030,7 @@ struct UnlockViewTests {
 		checking.release()
 		await offscreen.pump { password.stringValue.isEmpty && offscreen.views(of: NSProgressIndicator.self).isEmpty }
 		#expect(offscreen.views(of: NSProgressIndicator.self).isEmpty)
+		#expect(arrows(in: offscreen).isEmpty)
 	}
 
 	@Test func afterTouchIDStopsOnlyThePasswordIsOffered() {
@@ -987,11 +1094,6 @@ func isBelow(_ lower: NSView, _ upper: NSView) -> Bool {
 @MainActor
 private final class Glyphs {
 	var heard: [LAAuthenticationView] = []
-}
-
-@MainActor
-private final class Spoken {
-	var heard: [String] = []
 }
 
 @MainActor

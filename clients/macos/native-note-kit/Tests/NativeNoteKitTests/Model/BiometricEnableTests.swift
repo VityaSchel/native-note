@@ -312,8 +312,8 @@ struct BiometricEnableTests {
 		#expect(model.failure == nil)
 		#expect(keys.reasons.isEmpty)
 
-		model.disableBiometricUnlock()
-		#expect(model.failure == .unexpected("Touch ID unlock could not be turned off. \(refusal)"))
+		#expect(model.disableBiometricUnlock() == .unexpected("Touch ID unlock could not be turned off. \(refusal)"))
+		#expect(model.failure == nil)
 	}
 
 	@Test func lockingWhileThePasswordIsCheckedKeepsNoKey() async throws {

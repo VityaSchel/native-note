@@ -42,7 +42,7 @@ private struct FailureAlert: ViewModifier {
 			alert?.title ?? "",
 			isPresented: Binding(get: { alert != nil }, set: { if !$0 { dismiss() } })
 		) {
-			Button("OK", role: .cancel) {}
+			Button("OK") {}
 		} message: {
 			Text(alert?.message ?? "")
 		}

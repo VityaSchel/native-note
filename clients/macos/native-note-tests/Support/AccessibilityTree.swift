@@ -62,51 +62,133 @@ extension OffscreenWindow {
 @MainActor
 struct AttributeElement {
 	let role: String
+	let subrole: String
 	let description: String
 	let title: String
 	let value: String
+	let help: String
+	let placeholder: String
+	let titleElementText: String
+	let inputLabels: [String]
+	let actions: [String]
+	let isEnabled: Bool
+	let frame: NSRect
 
 	var spoken: String { [description, title, value].filter { !$0.isEmpty }.joined(separator: " ") }
 
-	static func tree(of window: NSWindow) -> [AttributeElement] {
-		var found: [AttributeElement] = []
-		var pending: [AnyObject] = [window]
-		while let element = pending.popLast(), found.count < 5000 {
-			found.append(AttributeElement(
-				role: element.accessibilityRole?()?.rawValue ?? read(.role, of: element) as? String ?? "",
-				description: nonEmpty(element.accessibilityLabel?()) ?? read(.description, of: element) as? String ?? "",
-				title: nonEmpty(element.accessibilityTitle?()) ?? read(.title, of: element) as? String ?? "",
-				value: nonEmpty(callValue(of: element)) ?? read(.value, of: element) as? String ?? ""
-			))
-			let children = element.accessibilityChildren?() ?? read(.children, of: element) as? [Any] ?? []
-			pending.append(contentsOf: children.reversed().map { $0 as AnyObject })
+	var name: String { [description, title, titleElementText].first { !$0.isEmpty } ?? "" }
+
+	static func walk(from root: AnyObject) -> AccessibilityWalk {
+		var walk = AccessibilityWalk()
+		var visited: [ObjectIdentifier: AnyObject] = [:]
+		var pending: [AnyObject] = [root]
+		while let element = pending.popLast(), walk.elements.count < 5000 {
+			let reader = Reader(element)
+			let read = AttributeElement(reader)
+			guard visited.updateValue(element, forKey: ObjectIdentifier(element)) == nil else {
+				walk.loops.append(read)
+				continue
+			}
+			walk.elements.append(read)
+			pending.append(contentsOf: reader.children.reversed())
 		}
-		return found
+		return walk
+	}
+
+	static func children(of element: AnyObject) -> [AnyObject] {
+		Reader(element).children
+	}
+
+	private init(_ reader: Reader) {
+		let element = reader.element
+		role = element.accessibilityRole?()?.rawValue ?? reader.legacy(.role) as? String ?? ""
+		subrole = element.accessibilitySubrole?()?.rawValue ?? reader.legacy(.subrole) as? String ?? ""
+		description = Self.nonEmpty(element.accessibilityLabel?()) ?? reader.legacy(.description) as? String ?? ""
+		title = Self.nonEmpty(element.accessibilityTitle?()) ?? reader.legacy(.title) as? String ?? ""
+		value = Self.nonEmpty(Self.text(reader.call("accessibilityValue"))) ?? Self.text(reader.legacy(.value)) ?? ""
+		help = Self.nonEmpty(element.accessibilityHelp?()) ?? reader.legacy(.help) as? String ?? ""
+		placeholder = Self.nonEmpty(element.accessibilityPlaceholderValue?()) ?? reader.legacy(.placeholderValue) as? String ?? ""
+		let titleElement = (element.accessibilityTitleUIElement?() ?? reader.legacy(.titleUIElement)).map { $0 as AnyObject }
+		titleElementText = titleElement.flatMap { Self.nonEmpty(Self.text(Reader($0).call("accessibilityValue"))) ?? Self.nonEmpty($0.accessibilityTitle?()) } ?? ""
+		inputLabels = reader.call("accessibilityUserInputLabels") as? [String] ?? reader.legacy(NSAccessibility.Attribute(rawValue: "AXUserInputLabels")) as? [String] ?? []
+		actions = reader.actions
+		isEnabled = element.isAccessibilityEnabled?() ?? (reader.legacy(.enabled) as? Bool ?? false)
+		frame = element.accessibilityFrame?() ?? .zero
 	}
 
 	private static func nonEmpty(_ text: String?) -> String? {
 		text.flatMap { $0.isEmpty ? nil : $0 }
 	}
 
-	private static func callValue(of element: AnyObject) -> String? {
-		let selector = NSSelectorFromString("accessibilityValue")
-		guard let object = element as? NSObject, object.responds(to: selector) else { return nil }
-		return object.perform(selector)?.takeUnretainedValue() as? String
+	private static func text(_ value: Any?) -> String? {
+		switch value {
+		case let text as String: text
+		case let text as NSAttributedString: text.string
+		case let number as NSNumber: number.stringValue
+		default: nil
+		}
 	}
 
-	private static func read(_ attribute: NSAccessibility.Attribute, of element: AnyObject) -> Any? {
-		let selector = NSSelectorFromString("accessibilityAttributeValue:")
-		guard let object = element as? NSObject, object.responds(to: selector) else { return nil }
-		return object.perform(selector, with: attribute.rawValue)?.takeUnretainedValue()
+	@MainActor private struct Reader {
+		let element: AnyObject
+		private let names: Set<String>
+
+		init(_ element: AnyObject) {
+			self.element = element
+			names = Set(Self.perform("accessibilityAttributeNames", on: element) as? [String] ?? [])
+		}
+
+		var children: [AnyObject] {
+			(element.accessibilityChildren?() ?? legacy(.children) as? [Any] ?? []).map { $0 as AnyObject }
+		}
+
+		var actions: [String] {
+			let named = call("accessibilityActionNames") as? [String] ?? []
+			let performed = [("accessibilityPerformPress", "AXPress"), ("accessibilityPerformShowMenu", "AXShowMenu")].filter { allows($0.0) }.map(\.1)
+			return named + performed.filter { !named.contains($0) }
+		}
+
+		private func allows(_ name: String) -> Bool {
+			let selector = NSSelectorFromString(name)
+			guard let object = element as? NSObject, object.responds(to: selector) else { return false }
+			return element.isAccessibilitySelectorAllowed?(selector) ?? true
+		}
+
+		func call(_ selector: String) -> Any? {
+			Self.perform(selector, on: element)
+		}
+
+		func legacy(_ attribute: NSAccessibility.Attribute) -> Any? {
+			guard names.contains(attribute.rawValue) else { return nil }
+			let read = NSSelectorFromString("accessibilityAttributeValue:")
+			guard let object = element as? NSObject, object.responds(to: read) else { return nil }
+			return object.perform(read, with: attribute.rawValue)?.takeUnretainedValue()
+		}
+
+		private static func perform(_ name: String, on element: AnyObject) -> Any? {
+			let selector = NSSelectorFromString(name)
+			guard let object = element as? NSObject, object.responds(to: selector) else { return nil }
+			return object.perform(selector)?.takeUnretainedValue()
+		}
 	}
+}
+
+@MainActor
+struct AccessibilityWalk {
+	var elements: [AttributeElement] = []
+	var loops: [AttributeElement] = []
 }
 
 extension OffscreenWindow {
 	func attributeTree() -> [AttributeElement] {
+		attributeWalk(of: window).elements
+	}
+
+	func attributeWalk(of target: NSWindow) -> AccessibilityWalk {
 		EnhancedAccessibility.reading {
-			_ = AttributeElement.tree(of: window)
+			_ = AttributeElement.walk(from: target)
 			pump(for: 0.5)
-			return AttributeElement.tree(of: window)
+			return AttributeElement.walk(from: target)
 		}
 	}
 }
@@ -128,6 +210,16 @@ enum EnhancedAccessibility {
 			if readers == 0 { set(false) }
 		}
 		return read()
+	}
+
+	static func reading<Read>(_ read: () async throws -> Read) async rethrows -> Read {
+		if readers == 0 { set(true) }
+		readers += 1
+		defer {
+			readers -= 1
+			if readers == 0 { set(false) }
+		}
+		return try await read()
 	}
 
 	private static func set(_ isOn: Bool) {

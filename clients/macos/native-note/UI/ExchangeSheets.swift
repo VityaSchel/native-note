@@ -4,6 +4,7 @@ import SwiftUI
 struct ExportSheet: View {
 	let export: (String?) -> Void
 	let cancel: () -> Void
+	var announce: (AttributedString) -> Void = VoiceOver.post
 
 	@State private var form = ExportForm()
 	@FocusState private var focus: Field?
@@ -26,7 +27,7 @@ struct ExportSheet: View {
 						.onSubmit { focus = .confirmation }
 					SecureField("Verify:", text: $form.confirmation)
 						.focused($focus, equals: .confirmation)
-						.onSubmit { if form.canExport { export(form.passphraseToUse) } }
+						.onSubmit { if form.submit() { export(form.passphraseToUse) } }
 				}
 				.formStyle(.columns)
 			}
@@ -36,7 +37,8 @@ struct ExportSheet: View {
 			Button("Export…") { export(form.passphraseToUse) }
 				.keyboardShortcut(.defaultAction)
 				.disabled(!form.canExport)
-		}
+		} announce: { announce($0) }
+		.onAppear { Task { if form.encrypts { focus = .passphrase } } }
 		.onChange(of: form.encrypts) { _, encrypts in focus = encrypts ? .passphrase : nil }
 	}
 }
@@ -70,6 +72,7 @@ struct ImportPassphraseSheet: View {
 			Button("Import") { submit(passphrase) }
 				.keyboardShortcut(.defaultAction)
 				.disabled(passphrase.isEmpty || working)
+				.busyAccessibilityValue(working)
 		}
 		.defaultFocus($typing, true)
 	}

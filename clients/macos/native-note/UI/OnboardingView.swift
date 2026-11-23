@@ -17,6 +17,8 @@ struct OnboardingView: View {
 	var touchID = TouchIDControls()
 	var sync = SyncControls()
 	var clipboard = RecoveryClipboard.shared
+	var announce: (String) -> Void = VoiceOver.announce
+	var voiceOverMoved: (String) -> Void = { _ in }
 	let finish: () -> Void
 
 	@State private var chosen: Step?
@@ -25,6 +27,7 @@ struct OnboardingView: View {
 	@State private var touchIDForm = TurnOnTouchIDForm()
 	@State private var touchIDAttempt = 0
 	@State private var settingUpSync = false
+	@State private var syncTurnedOn = false
 	@FocusState private var focus: Field?
 
 	private enum Field {
@@ -40,8 +43,11 @@ struct OnboardingView: View {
 			.frame(width: 320)
 			.padding(32)
 			.failureAlert(failure, dismiss: dismissFailure)
-			.sheet(isPresented: $settingUpSync) {
-				SyncSetupView(mode: .setUp, controls: sync, clipboard: clipboard, syncTurnedOn: finish) { settingUpSync = false }
+			.sheet(isPresented: $settingUpSync, onDismiss: { if syncTurnedOn { finish() } }) {
+				SyncSetupView(mode: .setUp, controls: sync, clipboard: clipboard, syncTurnedOn: {
+					syncTurnedOn = true
+					settingUpSync = false
+				}) { settingUpSync = false }
 			}
 	}
 
@@ -74,7 +80,13 @@ struct OnboardingView: View {
 					.disabled(!form.canSubmit)
 			}
 		case .touchID:
-			OnboardingPage(title: "Unlock with Touch ID?", subtitle: Text("Unlock the app with your fingerprint"), symbol: "touchid") {
+			OnboardingPage(
+				title: "Unlock with Touch ID?",
+				subtitle: Text("Unlock the app with your fingerprint"),
+				symbol: "touchid",
+				movesVoiceOverToTitle: chosen != nil,
+				voiceOverMoved: voiceOverMoved
+			) {
 				touchIDStatus
 			} buttons: {
 				Button(action: setUpTouchID) { OnboardingLabel(title: "Set Up Touch ID", busy: touchIDForm.working) }
@@ -85,7 +97,13 @@ struct OnboardingView: View {
 					.keyboardShortcut(.cancelAction)
 			}
 		case .sync:
-			OnboardingPage(title: "Sync Your Notes", subtitle: Text(Self.syncSubtitle), symbol: "arrow.triangle.2.circlepath") {
+			OnboardingPage(
+				title: "Sync Your Notes",
+				subtitle: Text(Self.syncSubtitle),
+				symbol: "arrow.triangle.2.circlepath",
+				movesVoiceOverToTitle: chosen != nil,
+				voiceOverMoved: voiceOverMoved
+			) {
 				EmptyView()
 			} buttons: {
 				Button { settingUpSync = true } label: { OnboardingLabel(title: "Set Up") }
@@ -110,10 +128,14 @@ struct OnboardingView: View {
 	@ViewBuilder
 	private var passwordFields: some View {
 		if !hasSecureEnclave {
-			Label(Self.noSecureEnclaveWarning, systemImage: "exclamationmark.triangle")
-				.font(.callout)
-				.foregroundStyle(.orange)
-				.fixedSize(horizontal: false, vertical: true)
+			Label {
+				Text(Self.noSecureEnclaveWarning)
+			} icon: {
+				Image(systemName: "exclamationmark.triangle.fill")
+					.foregroundStyle(.orange)
+			}
+			.font(.callout)
+			.fixedSize(horizontal: false, vertical: true)
 		}
 		VStack(spacing: 10) {
 			TallSecureField(title: "Password", text: $form.password)
@@ -139,7 +161,7 @@ struct OnboardingView: View {
 	@ViewBuilder
 	private var touchIDStatus: some View {
 		if touchIDForm.working && touchID.state != .hidden {
-			TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel)
+			TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel, announce: announce)
 				.frame(maxWidth: .infinity)
 		} else {
 			message(touchIDForm.inlineMessage)
@@ -147,7 +169,10 @@ struct OnboardingView: View {
 	}
 
 	private func createWithPassword() {
-		guard let typed = form.submit(confirming: true) else { return }
+		guard let typed = form.submit(confirming: true) else {
+			if let message = form.inlineMessage { announce(message) }
+			return
+		}
 		Task {
 			let failure = await createLibrary(typed)
 			form.finish(failure)
@@ -171,6 +196,7 @@ struct OnboardingView: View {
 			let failure = await turnOnTouchID(sent)
 			guard attempt == touchIDAttempt else { return }
 			touchIDForm.finish(failure)
+			if let message = touchIDForm.inlineMessage { announce(message) }
 			if failure == nil { leaveTouchID() }
 		}
 	}
@@ -191,9 +217,13 @@ struct OnboardingView: View {
 private struct OnboardingPage<Picture: View, Content: View, Buttons: View>: View {
 	let title: String
 	let subtitle: Text
+	var movesVoiceOverToTitle = false
+	var voiceOverMoved: (String) -> Void = { _ in }
 	@ViewBuilder var picture: Picture
 	@ViewBuilder var content: Content
 	@ViewBuilder var buttons: Buttons
+
+	@AccessibilityFocusState private var titleFocused: Bool
 
 	var body: some View {
 		VStack(spacing: 18) {
@@ -204,6 +234,7 @@ private struct OnboardingPage<Picture: View, Content: View, Buttons: View>: View
 					.font(.largeTitle.bold())
 					.multilineTextAlignment(.center)
 					.accessibilityAddTraits(.isHeader)
+					.accessibilityFocused($titleFocused)
 				subtitle
 					.font(.callout)
 					.foregroundStyle(.secondary)
@@ -216,12 +247,30 @@ private struct OnboardingPage<Picture: View, Content: View, Buttons: View>: View
 			}
 			.controlSize(.extraLarge)
 		}
+		.onAppear {
+			guard movesVoiceOverToTitle else { return }
+			Task {
+				titleFocused = true
+				voiceOverMoved(title)
+			}
+		}
 	}
 }
 
 extension OnboardingPage where Picture == SymbolPicture {
-	init(title: String, subtitle: Text, symbol: String, @ViewBuilder content: () -> Content, @ViewBuilder buttons: () -> Buttons) {
-		self.init(title: title, subtitle: subtitle, picture: { SymbolPicture(name: symbol) }, content: content, buttons: buttons)
+	init(
+		title: String,
+		subtitle: Text,
+		symbol: String,
+		movesVoiceOverToTitle: Bool = false,
+		voiceOverMoved: @escaping (String) -> Void = { _ in },
+		@ViewBuilder content: () -> Content,
+		@ViewBuilder buttons: () -> Buttons
+	) {
+		self.init(
+			title: title, subtitle: subtitle, movesVoiceOverToTitle: movesVoiceOverToTitle, voiceOverMoved: voiceOverMoved,
+			picture: { SymbolPicture(name: symbol) }, content: content, buttons: buttons
+		)
 	}
 }
 
@@ -251,7 +300,7 @@ struct OnboardingLabel: View {
 			Text(title)
 		}
 		.frame(maxWidth: .infinity)
-		.accessibilityValue(busy ? Text(Self.busyValue) : Text(verbatim: ""))
+		.busyAccessibilityValue(busy)
 	}
 }
 
@@ -261,6 +310,7 @@ private struct TallSecureField: View {
 
 	var body: some View {
 		SecureField(title, text: $text)
+			.accessibilityLabel(title)
 			.capsuleField()
 	}
 }

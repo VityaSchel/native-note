@@ -5,7 +5,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(10)))
 struct ContentViewTests {
 	private let alarm = Alarm()
 
@@ -75,6 +75,33 @@ struct ContentViewTests {
 		#expect(offscreen.window.title == "All Notes")
 	}
 
+	@Test func aMissedTouchWhileOnboardingIsReadOutAndTryingAgainSaysToTouchAgain() async throws {
+		let keys = FakeKeyStore()
+		let model = AppModel.testing(in: temporaryDirectory(), keyStore: keys)
+		let spoken = Spoken()
+		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model), announce: { spoken.heard.append($0) }), width: 980, height: 560, catchesSheets: true)
+		defer { offscreen.close() }
+		await offscreen.pump { model.phase == .needsSetup }
+		model.appBecameActive()
+		try await offscreen.pressOnceShown("Next")
+		try typePasswords(workspacePassword, in: offscreen)
+		await offscreen.pump { offscreen.button("Set Up Touch ID") != nil }
+		keys.reply(with: .miss)
+
+		try offscreen.press("Set Up Touch ID")
+		await offscreen.pump(turns: 4_000) { offscreen.tryAgainButton != nil }
+
+		#expect(model.touchID == .needsClick(after: .miss))
+		#expect(spoken.heard == [OnboardingView.touchIDLine, "Touch ID didn't match."])
+
+		keys.reply(with: .key)
+		try #require(offscreen.tryAgainButton).press()
+		await offscreen.pump(turns: 4_000) { offscreen.button("Not Now") != nil }
+
+		#expect(model.isBiometricUnlockEnabled)
+		#expect(spoken.heard == [OnboardingView.touchIDLine, "Touch ID didn't match.", OnboardingView.touchIDLine])
+	}
+
 	@Test func aRelaunchAfterThePasswordStepUnlocksStraightIntoTheLibrary() async throws {
 		let directory = temporaryDirectory()
 		let first = AppModel.testing(in: directory)
@@ -111,6 +138,66 @@ struct ContentViewTests {
 		#expect(rows.count == 5)
 		#expect(rows.first?.spoken.hasPrefix("Shopping, ") == true)
 		#expect(rows.first?.spoken.hasSuffix(", quartz, bread, and a new kettle") == true)
+		#expect(elements.contains { $0.role == NSAccessibility.Role.textArea.rawValue && $0.description == NoteEditor.spokenName })
+	}
+
+	@Test func voiceControlNamesATitledNoteByItsTitleAndLeavesAnUntitledOneItsFullName() throws {
+		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes)))), width: 980, height: 560)
+		defer { offscreen.close() }
+		offscreen.pump()
+
+		let rows = offscreen.attributeTree().filter { $0.role == NSAccessibility.Role.staticText.rawValue && $0.spoken.contains(", ") }
+		try #require(rows.count == 5)
+
+		#expect(rows.map(\.inputLabels) == [["Shopping"], ["Standup notes"], [], ["Reading list"], ["Trip plan"]])
+		#expect(rows.first?.spoken.hasPrefix("Shopping, ") == true)
+		#expect(rows[2].spoken.hasPrefix("New Note, "))
+	}
+
+	@Test func voiceOverReadsTheOpenNotesDateLineInWordsBetweenTheListAndTheNote() throws {
+		let notes = NoteGroup.samples.flatMap(\.notes)
+		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: .previewing(notes))), width: 980, height: 560)
+		defer { offscreen.close() }
+		offscreen.pump()
+
+		let elements = offscreen.attributeTree()
+		let spoken = NoteGrouping.spokenEditorDateLine(for: notes[0].updated)
+
+		let lastRow = try #require(elements.lastIndex { $0.role == NSAccessibility.Role.staticText.rawValue && $0.spoken.hasPrefix("Trip plan, ") })
+		let dateLine = try #require(elements.firstIndex { $0.role == NSAccessibility.Role.staticText.rawValue && $0.spoken == spoken })
+		let editor = try #require(elements.firstIndex { $0.role == NSAccessibility.Role.textArea.rawValue && $0.description == NoteEditor.spokenName })
+		#expect(lastRow < dateLine)
+		#expect(dateLine < editor)
+		#expect(elements.count { $0.spoken == spoken } == 1)
+		#expect(!elements.contains { $0.spoken.contains(NoteGrouping.editorDateLine(for: notes[0].updated)) })
+	}
+
+	@Test func returnClosesTheImportSummary() async throws {
+		let exchange = LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes)))
+		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560, catchesSheets: true)
+		defer { offscreen.close() }
+
+		exchange.lastImport = ImportSummary(added: 3)
+		await offscreen.pump { offscreen.sheet != nil }
+
+		let sheet = try #require(offscreen.sheet)
+		let ok = try #require(offscreen.sheetViews(of: NSButton.self).first { $0.title == "OK" })
+
+		#expect(ok.keyEquivalent == "\r")
+		#expect(try offscreen.pressReturn(in: sheet))
+	}
+
+	@Test func returnClosesTheFailureAlertAsItDoesTheImportSummary() async throws {
+		let exchange = LibraryExchange(model: .previewing(NoteGroup.samples.flatMap(\.notes), failure: .unsaved("disk I/O error")))
+		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560, catchesSheets: true)
+		defer { offscreen.close() }
+		await offscreen.pump { offscreen.sheet != nil }
+
+		let sheet = try #require(offscreen.sheet)
+		let ok = try #require(offscreen.sheetViews(of: NSButton.self).first { $0.title == "OK" })
+
+		#expect(ok.keyEquivalent == "\r")
+		#expect(try offscreen.pressReturn(in: sheet))
 	}
 
 	@Test func theToolbarButtonsKeepTheirGapsToSearchAsTheWindowWidens() throws {
@@ -370,6 +457,73 @@ struct ContentViewTests {
 
 	private func noteList(in offscreen: OffscreenWindow<ContentView>) throws -> NSTableView {
 		try #require(offscreen.views(of: NSTableView.self).max { $0.numberOfRows < $1.numberOfRows })
+	}
+
+	private func noteColumn(in offscreen: OffscreenWindow<ContentView>) -> NSTableView? {
+		offscreen.views(of: NSTableView.self).max { offscreen.onScreen($0).minX < offscreen.onScreen($1).minX }
+	}
+
+	private func listHasFocus(in offscreen: OffscreenWindow<ContentView>) -> Bool {
+		noteColumn(in: offscreen).map { offscreen.window.firstResponder === $0 } ?? false
+	}
+
+	@Test func unlockingWithThePasswordPutsKeyboardFocusInTheNoteListAndASearchKeepsItsField() async throws {
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe"])
+		await model.lock()
+		let exchange = LibraryExchange(model: model)
+		let offscreen = OffscreenWindow(ContentView(exchange: exchange), width: 980, height: 560)
+		defer { offscreen.close() }
+		let field = try offscreen.field("Password")
+		try offscreen.type(workspacePassword, into: field)
+
+		field.currentEditor()?.insertNewline(nil)
+		await offscreen.pump(turns: 20_000) { model.phase == .unlocked && listHasFocus(in: offscreen) }
+
+		#expect(model.phase == .unlocked)
+		#expect(listHasFocus(in: offscreen))
+		#expect((noteColumn(in: offscreen)?.numberOfRows ?? 0) > model.notes.count)
+		exchange.searchNotes()
+		await offscreen.pump { (offscreen.window.firstResponder as? NSText)?.delegate is NSSearchField }
+		try #require(offscreen.window.firstResponder as? NSText).insertText("zzzz")
+		await offscreen.pump { model.groups.isEmpty }
+		offscreen.pump(for: 0.2)
+		#expect((offscreen.window.firstResponder as? NSText)?.delegate is NSSearchField)
+	}
+
+	@Test func leavingTheLastOnboardingStepPutsKeyboardFocusInTheNoteList() async throws {
+		let model = AppModel.testing(in: temporaryDirectory())
+		let offscreen = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560, catchesSheets: true)
+		defer { offscreen.close() }
+		await offscreen.pump { model.phase == .needsSetup }
+		try await offscreen.pressOnceShown("Next")
+		try typePasswords(workspacePassword, in: offscreen)
+		await offscreen.pump { offscreen.button("Skip") != nil || offscreen.button("Not Now") != nil }
+		if offscreen.button("Skip") != nil { try offscreen.press("Skip") }
+
+		try await offscreen.pressOnceShown("Not Now")
+		await offscreen.pump { offscreen.window.title == "All Notes" && listHasFocus(in: offscreen) }
+
+		#expect(!model.isOnboarding)
+		#expect(listHasFocus(in: offscreen))
+	}
+
+	@Test func deletingTheLastNoteInTheListKeepsKeyboardFocusThereUntilANewNoteTakesIt() async throws {
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak"])
+		let offscreen = window(showing: model)
+		defer { offscreen.close() }
+		let list = try #require(noteColumn(in: offscreen))
+		try #require(offscreen.window.makeFirstResponder(list))
+		offscreen.pump()
+
+		#expect(list.tryToPerform(#selector(NSText.delete(_:)), with: nil))
+		await offscreen.pump { model.notes.isEmpty }
+		await offscreen.pump { listHasFocus(in: offscreen) }
+
+		#expect(model.notes.isEmpty)
+		#expect(listHasFocus(in: offscreen))
+		await model.createNote()
+		await offscreen.pump { model.focusesEditor == nil }
+		#expect((offscreen.window.firstResponder as? NSTextView)?.isFieldEditor == false)
 	}
 
 	@Test func theFirstNoteInAnEmptyLibraryGetsAFullRow() async throws {

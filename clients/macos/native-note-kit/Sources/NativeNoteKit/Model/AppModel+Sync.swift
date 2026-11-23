@@ -111,14 +111,16 @@ extension AppModel: SyncedLibrary {
 		sync.cancelRecovery()
 	}
 
-	public func turnOffSync() async -> Bool {
-		guard let store else { return false }
+	public func turnOffSync() async -> Failure? {
+		guard let store else { return .unexpected("Unlock Native Note to turn off sync.") }
 		await sync.stop()?.value
-		guard await write("Sync could not be turned off.", { try await $0.disconnectSync() }) else {
+		do {
+			try await store.disconnectSync()
+			return nil
+		} catch {
 			await sync.start(store)
-			return false
+			return Failure(error, as: "Sync could not be turned off.")
 		}
-		return true
 	}
 
 	func commit(_ commit: Commit, to store: NoteStore) async throws -> Applied {

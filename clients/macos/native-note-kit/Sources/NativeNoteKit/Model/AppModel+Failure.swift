@@ -19,6 +19,15 @@ extension AppModel {
 			}
 		}
 
+		init(_ error: Error, as title: String) {
+			let failure = Failure(error)
+			if case let .unexpected(reason) = failure {
+				self = .failed(reason, title: title)
+			} else {
+				self = failure
+			}
+		}
+
 		static func reason(for error: Error) -> String {
 			switch error {
 			case Unlock.Failure.neverSetUp:

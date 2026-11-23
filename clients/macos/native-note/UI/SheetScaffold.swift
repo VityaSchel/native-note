@@ -10,7 +10,7 @@ struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 	@ViewBuilder var fields: Fields
 	@ViewBuilder var leadingButtons: Leading
 	@ViewBuilder var buttons: Buttons
-	var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+	var announce: (AttributedString) -> Void = VoiceOver.post
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 12) {
@@ -33,6 +33,7 @@ struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 				leadingButtons
 				if working {
 					ProgressView().controlSize(.small)
+						.accessibilityHidden(true)
 				}
 				Spacer()
 				buttons
@@ -42,7 +43,7 @@ struct SheetScaffold<Fields: View, Leading: View, Buttons: View>: View {
 		.padding(20)
 		.frame(width: width)
 		.onChange(of: error) { _, error in
-			if let error { announce(error) }
+			if let error { announce(VoiceOver.aboveFocusChanges(error)) }
 		}
 	}
 }
@@ -57,7 +58,7 @@ extension SheetScaffold where Leading == EmptyView {
 		reservesError: Bool = true,
 		@ViewBuilder fields: () -> Fields,
 		@ViewBuilder buttons: () -> Buttons,
-		announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+		announce: @escaping (AttributedString) -> Void = VoiceOver.post
 	) {
 		self.init(
 			title: title, explanation: explanation, error: error, working: working, width: width, reservesError: reservesError,

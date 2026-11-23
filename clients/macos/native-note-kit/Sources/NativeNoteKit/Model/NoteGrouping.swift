@@ -92,6 +92,12 @@ nonisolated public enum NoteGrouping {
 		"\(day(of: date, calendar: calendar)) at \(time(of: date, calendar: calendar))"
 	}
 
+	public static func spokenEditorDateLine(for date: Date, calendar: Calendar = .current) -> String {
+		date.formatted(
+			Date.FormatStyle(date: .long, time: .shortened, locale: calendar.locale ?? .autoupdatingCurrent, calendar: calendar, timeZone: calendar.timeZone)
+		)
+	}
+
 	private static func day(of date: Date, calendar: Calendar) -> String {
 		date.formatted(
 			Date.VerbatimFormatStyle(

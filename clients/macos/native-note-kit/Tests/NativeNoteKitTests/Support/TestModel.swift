@@ -15,6 +15,7 @@ extension AppModel {
 		records: (any UnlockRecordStore)? = nil,
 		shakeTimer: @escaping SaveScheduler.Sleep = { try await Task.sleep(for: $0) },
 		transport: (any SyncTransport)? = nil,
+		makeTransport: (@Sendable (URL) -> any SyncTransport)? = nil,
 		syncDelay: Duration = .seconds(3600)
 	) -> AppModel {
 		AppModel(
@@ -27,7 +28,7 @@ extension AppModel {
 			keyStore: keyStore,
 			records: records ?? FileUnlockRecordStore(directory: directory),
 			shakeTimer: shakeTimer,
-			makeTransport: { transport ?? HTTPTransport(url: $0) },
+			makeTransport: makeTransport ?? { transport ?? HTTPTransport(url: $0) },
 			syncDelay: syncDelay
 		)
 	}

@@ -39,6 +39,7 @@ struct ChangePasswordView: View {
 			Button("Change Password", action: send)
 				.keyboardShortcut(.defaultAction)
 				.disabled(!form.canSubmit)
+				.busyAccessibilityValue(form.working)
 		}
 		.disabled(form.working)
 		.defaultFocus($focus, .current)

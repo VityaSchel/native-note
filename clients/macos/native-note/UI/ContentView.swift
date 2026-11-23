@@ -5,14 +5,23 @@ struct ContentView: View {
 	@Bindable var exchange: LibraryExchange
 	@Bindable var model: AppModel
 	let clipboard: RecoveryClipboard
+	let announce: (String) -> Void
+	let syncAnnouncements: SyncAnnouncements
 	@Environment(\.undoManager) private var undoManager
 	@Environment(\.openWindow) private var openWindow
 	@AppStorage(EditorZoom.key) private var zoom = 1.0
 
-	init(exchange: LibraryExchange, clipboard: RecoveryClipboard = .shared) {
+	init(
+		exchange: LibraryExchange,
+		clipboard: RecoveryClipboard = .shared,
+		announce: @escaping (String) -> Void = VoiceOver.announce,
+		syncAnnouncements: SyncAnnouncements = .shared
+	) {
 		self.exchange = exchange
 		model = exchange.model
 		self.clipboard = clipboard
+		self.announce = announce
+		self.syncAnnouncements = syncAnnouncements
 	}
 
 	private func delete(_ id: UUID) {
@@ -72,7 +81,8 @@ struct ContentView: View {
 				dismissFailure: model.dismissFailure,
 				touchID: TouchIDControls(model),
 				shake: model.shake,
-				eraseLibrary: { Task { await model.eraseLibrary() } }
+				eraseLibrary: { Task { await model.eraseLibrary() } },
+				announce: announce
 			)
 		case .library:
 			library
@@ -91,6 +101,7 @@ struct ContentView: View {
 			touchID: TouchIDControls(model),
 			sync: SyncControls(model),
 			clipboard: clipboard,
+			announce: announce,
 			finish: model.finishOnboarding
 		)
 	}
@@ -109,7 +120,8 @@ struct ContentView: View {
 				takesFocus: model.focusesEditor == note.id,
 				tookFocus: model.editorTookFocus,
 				zoom: zoom,
-				dateLine: NoteGrouping.editorDateLine(for: note.updated)
+				dateLine: NoteGrouping.editorDateLine(for: note.updated),
+				spokenDateLine: NoteGrouping.spokenEditorDateLine(for: note.updated)
 			)
 			.id(note.id)
 		} else if model.noteCount > 0 {
@@ -133,7 +145,7 @@ struct ContentView: View {
 		ToolbarSpacer(.fixed)
 		ToolbarItemGroup {
 			if model.syncStatus.server != nil {
-				SyncButton(status: model.syncStatus) { Task { await model.syncNow() } }
+				SyncButton(status: model.syncStatus, sync: model.statusAfterSyncing, announce: announce, announcements: syncAnnouncements)
 			}
 			Button { Task { await model.lock() } } label: {
 				Label("Lock", systemImage: "lock")
@@ -151,7 +163,7 @@ struct ContentView: View {
 			.navigationSplitViewColumnWidth(min: 160, ideal: 190, max: 260)
 		} content: {
 			TimelineView(.everyMinute) { timeline in
-				NoteListView(groups: model.groups, now: timeline.date, selection: $model.selection, search: $model.search, focusesSearch: $exchange.focusesSearch) { id in
+				NoteListView(groups: model.groups, now: timeline.date, selection: $model.selection, search: $model.search, focusesSearch: $exchange.focusesSearch, yieldsFocus: model.focusesEditor != nil) { id in
 					delete(id)
 				}
 			}
@@ -167,6 +179,9 @@ struct ContentView: View {
 		}
 		.toolbar { libraryToolbar }
 		.failureAlert(model.failure, dismiss: model.dismissFailure)
+		.onChange(of: model.syncStatus.phase, initial: true) { _, phase in
+			if let line = syncAnnouncements.phaseChanged(to: phase) { announce(line) }
+		}
 		.sheet(item: $exchange.presentedSheet, onDismiss: exchange.presentSavePanelOnceSheetCloses) { sheet in
 			switch sheet {
 			case .export:

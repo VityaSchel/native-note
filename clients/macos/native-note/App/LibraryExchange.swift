@@ -23,6 +23,9 @@ import UniformTypeIdentifiers
 	@ObservationIgnored var presentPanel: @MainActor (NSSavePanel, @escaping (URL) -> Void) -> Void = LibraryExchange.presentAttachedToWindow
 	@ObservationIgnored var closePanel: @MainActor (NSSavePanel) -> Void = LibraryExchange.cancelIfShown
 	@ObservationIgnored private weak var shownPanel: NSSavePanel?
+	@ObservationIgnored var sync: () async -> AppModel.SyncStatus
+	@ObservationIgnored var syncAnnouncements = SyncAnnouncements.shared
+	@ObservationIgnored var announce: (String) -> Void = VoiceOver.announce
 	var focusesSearch = false
 	private(set) var pendingImport: URL?
 	private(set) var isImporting = false
@@ -30,6 +33,7 @@ import UniformTypeIdentifiers
 
 	init(model: AppModel) {
 		self.model = model
+		sync = model.statusAfterSyncing
 	}
 
 	var sheet: Sheet? {
@@ -86,6 +90,10 @@ import UniformTypeIdentifiers
 	func newNote() {
 		showWindow?()
 		Task { await model.createNote() }
+	}
+
+	func syncNow() async {
+		if let outcome = await syncAnnouncements.syncNow(sync) { announce(outcome) }
 	}
 
 	func searchNotes() {

@@ -14,6 +14,7 @@ final class OffscreenWindow<Content: View> {
 			backing: .buffered,
 			defer: false
 		)
+		window.isReleasedWhenClosed = false
 		window.claimsVisible = catchesSheets
 		host = NSHostingView(rootView: view)
 		host.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -26,6 +27,7 @@ final class OffscreenWindow<Content: View> {
 	}
 
 	func pump(for interval: TimeInterval = 0.005) {
+		precondition(!SystemContrast.isEmulating, "Pumping the run loop while emulating Increase Contrast lets other tests see it")
 		window.layoutIfNeeded()
 		host.layoutSubtreeIfNeeded()
 		host.displayIfNeeded()
@@ -49,6 +51,20 @@ final class OffscreenWindow<Content: View> {
 
 	func views<View: NSView>(of type: View.Type) -> [View] {
 		views(of: type, in: host)
+	}
+
+	func opacity(at point: NSPoint) throws -> CGFloat {
+		let spot = NSRect(x: point.x - 1, y: point.y - 1, width: 2, height: 2)
+		let rep = try #require(host.bitmapImageRepForCachingDisplay(in: spot))
+		host.cacheDisplay(in: spot, to: rep)
+		return try #require(rep.colorAt(x: rep.pixelsWide / 2, y: rep.pixelsHigh / 2)).alphaComponent
+	}
+
+	func opacities(at point: NSPoint, steppingFrames frames: Int, every interval: TimeInterval) throws -> [CGFloat] {
+		try (0 ..< frames).map { _ in
+			host._renderForTest(interval: interval)
+			return try opacity(at: point)
+		}
 	}
 
 	func secureField(_ name: String, inSheet: Bool = false) -> NSSecureTextField? {
@@ -78,7 +94,11 @@ final class OffscreenWindow<Content: View> {
 	}
 
 	func close() {
+		window.releaseCaughtSheets()
+		window.claimsVisible = false
 		window.contentView = nil
+		window.orderOut(nil)
+		window.close()
 		pump()
 	}
 }
@@ -110,6 +130,16 @@ final class SheetCatchingWindow: NSWindow {
 	private func catchSheet(_ sheet: NSWindow, _ handler: ((NSApplication.ModalResponse) -> Void)?) {
 		guard !caught.contains(where: { $0.sheet === sheet }) else { return }
 		caught.append((sheet, handler))
+	}
+
+	func releaseCaughtSheets() {
+		let sheets = caught
+		caught.removeAll()
+		for (sheet, ended) in sheets.reversed() {
+			sheet.orderOut(nil)
+			ended?(.abort)
+			sheet.contentView = nil
+		}
 	}
 
 	override func endSheet(_ sheet: NSWindow) {

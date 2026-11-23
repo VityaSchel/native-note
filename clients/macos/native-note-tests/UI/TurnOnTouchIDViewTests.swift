@@ -13,9 +13,11 @@ private final class Calls {
 	var passwords: [String] = []
 	var replies: [AppModel.Failure?] = []
 	var done = 0
+	var spoken: [AttributedString] = []
+	var announced: [String] { spoken.map { String($0.characters) } }
 }
 
-@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(10)))
 struct TurnOnTouchIDViewTests {
 	private let alarm = Alarm()
 
@@ -26,7 +28,7 @@ struct TurnOnTouchIDViewTests {
 				let reply = await turnOn(password)
 				calls.replies.append(reply)
 				return reply
-			}, done: { calls.done += 1 }),
+			}, done: { calls.done += 1 }, announce: { calls.spoken.append($0) }),
 			width: 360,
 			height: 160
 		)
@@ -34,33 +36,6 @@ struct TurnOnTouchIDViewTests {
 
 	private func sheet(_ calls: Calls, for model: AppModel) -> OffscreenWindow<TurnOnTouchIDSheet> {
 		OffscreenWindow(TurnOnTouchIDSheet(model: model, calls: calls), width: 360, height: 200)
-	}
-
-	@discardableResult
-	private func submit(_ text: String, in offscreen: OffscreenWindow<some View>) throws -> NSSecureTextField {
-		let field = try offscreen.type(text, into: "Password:")
-		try #require(field.currentEditor()).insertNewline(nil)
-		return field
-	}
-
-	private func pressEscape(in offscreen: OffscreenWindow<some View>) throws -> Bool {
-		let escape = try #require(
-			NSEvent.keyEvent(
-				with: .keyDown,
-				location: .zero,
-				modifierFlags: [],
-				timestamp: 0,
-				windowNumber: offscreen.window.windowNumber,
-				context: nil,
-				characters: "\u{1b}",
-				charactersIgnoringModifiers: "\u{1b}",
-				isARepeat: false,
-				keyCode: 53
-			)
-		)
-		let handled = offscreen.host.performKeyEquivalent(with: escape)
-		offscreen.pump()
-		return handled
 	}
 
 	private func isWorking(_ offscreen: OffscreenWindow<some View>) -> Bool {
@@ -72,11 +47,35 @@ struct TurnOnTouchIDViewTests {
 		let offscreen = offscreen(calls) { _ in nil }
 		defer { offscreen.close() }
 
-		try submit("correct horse", in: offscreen)
+		try offscreen.submit("correct horse", in: "Password:")
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(calls.passwords == ["correct horse"])
 		#expect(calls.done == 1)
+	}
+
+	@Test func whileThePasswordIsCheckedContinueReadsInProgressAndTheSpinnerIsHidden() async throws {
+		let calls = Calls()
+		let checking = Latch()
+		let offscreen = offscreen(calls) { _ in
+			await checking.wait()
+			return nil
+		}
+		defer { offscreen.close() }
+		defer { checking.release() }
+
+		try offscreen.submit("correct horse", in: "Password:")
+		await offscreen.pump { checking.isHolding }
+		offscreen.pump(for: 0.05)
+
+		let button = try #require(offscreen.button("Continue"))
+		#expect(!button.isEnabled)
+		#expect(button.value == OnboardingLabel.busyValue)
+		#expect(isWorking(offscreen))
+		#expect(!offscreen.exposesASpinner)
+
+		checking.release()
+		await offscreen.pump { calls.done > 0 }
 	}
 
 	@Test func anEmptyPasswordSendsNothing() async throws {
@@ -84,7 +83,7 @@ struct TurnOnTouchIDViewTests {
 		let offscreen = offscreen(calls) { _ in nil }
 		defer { offscreen.close() }
 
-		try submit("", in: offscreen)
+		try offscreen.submit("", in: "Password:")
 		offscreen.pump(for: 0.1)
 
 		#expect(calls.passwords.isEmpty)
@@ -102,7 +101,7 @@ struct TurnOnTouchIDViewTests {
 		sensor.watch(keys, in: offscreen.window)
 		#expect(!isWorking(offscreen))
 
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 
 		let glyph = try #require(offscreen.glyphs.first)
@@ -116,6 +115,7 @@ struct TurnOnTouchIDViewTests {
 		#expect(!isWorking(offscreen))
 		#expect(calls.done == 0)
 		#expect(!model.isBiometricUnlockEnabled)
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine])
 
 		sensor.touch()
 		await offscreen.pump { calls.done > 0 }
@@ -139,7 +139,7 @@ struct TurnOnTouchIDViewTests {
 		sensor.watch(keys, in: offscreen.window)
 		#expect(offscreen.accessibilityElements(.button).map(\.label) == ["Cancel", "Continue"])
 
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 
 		#expect(offscreen.accessibilityElements(.button).map(\.label) == ["Cancel"])
@@ -159,11 +159,13 @@ struct TurnOnTouchIDViewTests {
 		let offscreen = offscreen(calls, turnOn: model.enableBiometricUnlock(password:))
 		defer { offscreen.close() }
 
-		let field = try submit("a guess", in: offscreen)
+		let field = try offscreen.submit("a guess", in: "Password:")
 		await offscreen.pump(turns: 4_000) { !calls.replies.isEmpty && field.stringValue.isEmpty && !isWorking(offscreen) }
 
 		#expect(calls.replies == [.wrongPassword])
 		#expect(field.stringValue.isEmpty)
+		#expect(calls.announced == ["Wrong password."])
+		#expect(calls.spoken.map(\.accessibilitySpeechAnnouncementPriority) == [.high])
 		#expect(!isWorking(offscreen))
 		#expect(calls.done == 0)
 		#expect(!model.isBiometricUnlockEnabled)
@@ -180,7 +182,7 @@ struct TurnOnTouchIDViewTests {
 		defer { offscreen.close() }
 		_ = try offscreen.type(workspacePassword, into: "Password:")
 
-		#expect(try pressEscape(in: offscreen))
+		#expect(try offscreen.pressEscape())
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(calls.done == 1)
@@ -199,7 +201,7 @@ struct TurnOnTouchIDViewTests {
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
 
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { offscreen.tryAgainButton != nil && offscreen.glyphs.isEmpty }
 
 		let button = try #require(offscreen.tryAgainButton)
@@ -208,6 +210,7 @@ struct TurnOnTouchIDViewTests {
 		#expect(keys.contexts.count == 1)
 		#expect(calls.done == 0)
 		#expect(!model.isBiometricUnlockEnabled)
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine, "Touch ID didn't match."])
 
 		keys.reply(with: .key)
 		button.press()
@@ -216,6 +219,7 @@ struct TurnOnTouchIDViewTests {
 		#expect(calls.done == 1)
 		#expect(keys.contexts.count == 2)
 		#expect(model.isBiometricUnlockEnabled)
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine, "Touch ID didn't match.", TurnOnTouchIDView.touchIDLine])
 	}
 
 	@Test func anInterruptedTouchInTheSheetWaitsForAClick() async throws {
@@ -227,13 +231,46 @@ struct TurnOnTouchIDViewTests {
 		let offscreen = sheet(calls, for: model)
 		defer { offscreen.close() }
 
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { offscreen.tryAgainButton != nil }
 
 		#expect(model.touchID == .needsClick(after: .cancel))
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine, "Touch ID stopped."])
 		#expect(calls.done == 0)
 		#expect(keys.storedKey != nil)
 		#expect(!model.isBiometricUnlockEnabled)
+	}
+
+	@Test func leavingTheAppAfterAnInterruptedTouchSaysNothingFromTheBackgroundAndRepeatsTheInstructionOnReturn() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
+		keys.reply(with: .cancel)
+		let calls = Calls()
+		let offscreen = sheet(calls, for: model)
+		defer { offscreen.close() }
+		try offscreen.submit(workspacePassword, in: "Password:")
+		await offscreen.pump(turns: 4_000) { offscreen.tryAgainButton != nil }
+		let sensor = Sensor()
+		sensor.watch(keys, in: offscreen.window)
+
+		model.appResignedActive()
+		await offscreen.pump { offscreen.tryAgainButton == nil }
+		offscreen.pump(for: 0.05)
+
+		#expect(model.touchID == .paused(.inBackground))
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine, "Touch ID stopped."])
+
+		model.appBecameActive()
+		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
+		offscreen.pump(for: 0.05)
+
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine, "Touch ID stopped.", TurnOnTouchIDView.touchIDLine])
+		keys.reply(with: .key)
+		sensor.touch()
+		await offscreen.pump { calls.done > 0 }
+		#expect(model.isBiometricUnlockEnabled)
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine, "Touch ID stopped.", TurnOnTouchIDView.touchIDLine])
 	}
 
 	@Test func leavingTheAppDimsTheSheetsGlyphAndReturningListensAgain() async throws {
@@ -245,7 +282,7 @@ struct TurnOnTouchIDViewTests {
 		defer { offscreen.close() }
 		let sensor = Sensor()
 		sensor.watch(keys, in: offscreen.window)
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 		let first = try #require(offscreen.glyphs.first?.context)
 
@@ -265,6 +302,7 @@ struct TurnOnTouchIDViewTests {
 		await offscreen.pump { calls.done > 0 }
 		#expect(model.isBiometricUnlockEnabled)
 		#expect(sensor.readsThroughAGlyphInTheWindow == [true, true])
+		#expect(calls.announced == [TurnOnTouchIDView.touchIDLine])
 	}
 
 	@Test func cancelWhileTouchIDListensClosesTheSheetWithItOff() async throws {
@@ -277,11 +315,11 @@ struct TurnOnTouchIDViewTests {
 		let sensor = Sensor()
 		sensor.watch(keys, in: offscreen.window)
 		defer { sensor.touch() }
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 		let listening = try #require(offscreen.glyphs.first?.context)
 
-		#expect(try pressEscape(in: offscreen))
+		#expect(try offscreen.pressEscape())
 		await offscreen.pump { calls.done > 0 }
 
 		#expect(calls.done == 1)
@@ -301,7 +339,7 @@ struct TurnOnTouchIDViewTests {
 		let sensor = Sensor()
 		sensor.watch(keys, in: offscreen.window)
 		defer { sensor.touch() }
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 
 		offscreen.close()
@@ -322,10 +360,11 @@ struct TurnOnTouchIDViewTests {
 		let offscreen = offscreen(calls, turnOn: model.enableBiometricUnlock(password:))
 		defer { offscreen.close() }
 
-		let field = try submit(workspacePassword, in: offscreen)
+		let field = try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { !calls.replies.isEmpty && !isWorking(offscreen) }
 
 		#expect(calls.replies == [.unexpected("Touch ID unlock could not be turned on. \(KeychainFailure(status: errSecNotAvailable).message)")])
+		#expect(calls.announced == ["Touch ID unlock could not be turned on. \(KeychainFailure(status: errSecNotAvailable).message)"])
 		#expect(field.stringValue == workspacePassword)
 		#expect(calls.done == 0)
 		#expect(!model.isBiometricUnlockEnabled)
@@ -354,7 +393,7 @@ struct TurnOnTouchIDViewTests {
 		let sensor = Sensor()
 		sensor.watch(keys, in: offscreen.window)
 
-		try submit(workspacePassword, in: offscreen)
+		try offscreen.submit(workspacePassword, in: "Password:")
 		await offscreen.pump(turns: 4_000) { sensor.isWaiting }
 		await model.lock()
 		sensor.touch()
@@ -380,7 +419,8 @@ private struct TurnOnTouchIDSheet: View {
 				return reply
 			},
 			done: { calls.done += 1 },
-			touchID: TouchIDControls(model)
+			touchID: TouchIDControls(model),
+			announce: { calls.spoken.append($0) }
 		)
 	}
 }

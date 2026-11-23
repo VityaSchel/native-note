@@ -141,7 +141,7 @@ struct TouchIDKeychainTests {
 		#expect(model.touchID.listeningContext != nil)
 		#expect(KeychainUnlockKeyStore(directory: directory).hasKey())
 
-		model.disableBiometricUnlock()
+		#expect(model.disableBiometricUnlock() == nil)
 		#expect(model.touchID == .hidden)
 		#expect(!KeychainUnlockKeyStore(directory: directory).hasKey())
 	}

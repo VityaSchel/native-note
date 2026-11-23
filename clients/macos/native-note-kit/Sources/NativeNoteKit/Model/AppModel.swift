@@ -434,8 +434,8 @@ import Observation
 		}
 	}
 
-	public func disableBiometricUnlock() {
-		if let failure = biometricUnlock.turnOff() { self.failure = failure }
+	public func disableBiometricUnlock() -> Failure? {
+		biometricUnlock.turnOff()
 	}
 
 	public func changePassword(from current: String, to new: String) async -> Failure? {
@@ -652,12 +652,7 @@ import Observation
 	}
 
 	func report(_ error: Error, as title: String) {
-		let failure = Failure(error)
-		if case let .unexpected(reason) = failure {
-			self.failure = .failed(reason, title: title)
-		} else {
-			self.failure = failure
-		}
+		failure = Failure(error, as: title)
 	}
 }
 

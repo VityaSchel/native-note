@@ -5,6 +5,7 @@ struct TurnOnTouchIDView: View {
 	let turnOn: (String) async -> AppModel.Failure?
 	let done: () -> Void
 	var touchID = TouchIDControls()
+	var announce: (AttributedString) -> Void = VoiceOver.post
 
 	@State private var form = TurnOnTouchIDForm()
 	@FocusState private var typing: Bool
@@ -19,7 +20,7 @@ struct TurnOnTouchIDView: View {
 			reservesError: !awaitsTouch
 		) {
 			if awaitsTouch {
-				TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel)
+				TouchIDStatus(controls: touchID, listeningLine: Self.touchIDLine, glyphLabel: Self.touchIDLabel) { announce(AttributedString($0)) }
 					.frame(maxWidth: .infinity)
 			} else {
 				Form {
@@ -38,8 +39,9 @@ struct TurnOnTouchIDView: View {
 				Button("Continue", action: send)
 					.keyboardShortcut(.defaultAction)
 					.disabled(!form.canSubmit)
+					.busyAccessibilityValue(form.working)
 			}
-		}
+		} announce: { announce($0) }
 		.defaultFocus($typing, true)
 		.onDisappear(perform: touchID.cancel)
 	}

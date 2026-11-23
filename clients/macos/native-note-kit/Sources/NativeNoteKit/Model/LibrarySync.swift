@@ -70,13 +70,13 @@ protocol SyncedLibrary: AnyObject {
 		await scheduler.flushAll()
 		do {
 			let applied = try await engine.sync { try await library.commit($0, to: store) }
-			guard store === self.store else { return }
+			guard store === self.store, engine === self.engine else { return }
 			var shown: Set<String> = []
 			status.problems = applied.problems.map(Self.describe).filter { shown.insert($0).inserted }
 			status.lastSynced = Date()
 			status.phase = .idle
 		} catch {
-			guard store === self.store else { return }
+			guard store === self.store, engine === self.engine else { return }
 			status.phase = .failed(Self.syncFailure(error).message)
 		}
 	}

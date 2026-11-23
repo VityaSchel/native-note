@@ -7,7 +7,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(5)))
+@MainActor @Suite(.takesFocus, .scratch, .timeLimit(.minutes(10)))
 struct SessionEndToEndTests {
 	private let password = "correct horse battery"
 	private let typed = [

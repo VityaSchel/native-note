@@ -36,6 +36,36 @@ struct ChangePasswordViewTests {
 		#expect(calls.done == 1)
 	}
 
+	@Test func whileThePasswordChangesChangePasswordReadsInProgress() async throws {
+		let calls = Calls()
+		let changing = Latch()
+		let offscreen = OffscreenWindow(ChangePasswordView(change: { current, new in
+			calls.changes.append([current, new])
+			await changing.wait()
+			return nil
+		}, done: { calls.done += 1 }))
+		defer { offscreen.close() }
+		defer { changing.release() }
+		_ = try offscreen.type("old password", into: "Current Password:")
+		_ = try offscreen.type("new password", into: "New Password:")
+		let confirmation = try offscreen.type("new password", into: "Verify:")
+		#expect(offscreen.button("Change Password")?.value == "")
+
+		confirmation.currentEditor()?.insertNewline(nil)
+		await offscreen.pump { changing.isHolding }
+		offscreen.pump(for: 0.05)
+
+		let button = try #require(offscreen.button("Change Password"))
+		#expect(!button.isEnabled)
+		#expect(button.value == OnboardingLabel.busyValue)
+		#expect(offscreen.views(of: NSProgressIndicator.self).count == 1)
+		#expect(!offscreen.exposesASpinner)
+
+		changing.release()
+		await offscreen.pump { calls.done > 0 }
+		#expect(calls.changes == [["old password", "new password"]])
+	}
+
 	@Test func aWrongCurrentPasswordStaysOpenWithTheFieldCleared() async throws {
 		let calls = Calls()
 		let offscreen = offscreen(calls, replying: .wrongPassword)

@@ -7,6 +7,7 @@ struct NoteListView: View {
 	@Binding var selection: UUID?
 	@Binding var search: String
 	var focusesSearch = Binding.constant(false)
+	var yieldsFocus = false
 	let delete: (UUID) -> Void
 
 	@FocusState private var focused: Bool
@@ -75,6 +76,12 @@ struct NoteListView: View {
 			case .noResults: ContentUnavailableView.search
 			case nil: EmptyView()
 			}
+		}
+		.onChange(of: remeasuresFirstRow) { _, rebuiltEmpty in
+			if rebuiltEmpty, focused { Task { focused = true } }
+		}
+		.onAppear {
+			Task { if !searching, !yieldsFocus { focused = true } }
 		}
 	}
 }

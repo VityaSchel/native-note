@@ -21,8 +21,13 @@ struct TouchIDStatus: View {
 	let controls: TouchIDControls
 	let listeningLine: String
 	let glyphLabel: String
+	var announce: (String) -> Void = VoiceOver.announce
+
+	@State private var spokenLine: String?
 
 	var body: some View {
+		let line = Self.line(for: controls.state, listening: listeningLine)
+		let inBackground = controls.state == .paused(.inBackground)
 		VStack(spacing: 10) {
 			switch controls.state {
 			case .hidden, .lockedOut, .working:
@@ -38,10 +43,15 @@ struct TouchIDStatus: View {
 					.labelStyle(.titleAndIcon)
 			}
 
-			ReservedLine(text: Self.line(for: controls.state, listening: listeningLine))
+			ReservedLine(text: line)
 				.font(.callout)
 				.foregroundStyle(.secondary)
 				.multilineTextAlignment(.center)
+		}
+		.onChange(of: inBackground ? nil : line, initial: true) { _, line in
+			guard !inBackground, line != spokenLine else { return }
+			spokenLine = line
+			if let line { announce(line) }
 		}
 	}
 

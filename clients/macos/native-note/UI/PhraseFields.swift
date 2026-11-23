@@ -4,10 +4,14 @@ import SwiftUI
 struct PhraseFields: View {
 	@Binding var entry: PhraseEntry
 	let submit: () -> Void
-	var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+	var announce: (String) -> Void = VoiceOver.announce
+	var tookFocus: () -> Void = {}
 
 	@FocusState private var editing: Int?
 	@State private var leaving: Int?
+	@State private var checksumSpokenFor: [String]?
+	@State private var editingBeforeDisabled: Int?
+	@Environment(\.isEnabled) private var isEnabled
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
@@ -18,7 +22,7 @@ struct PhraseFields: View {
 					}
 				}
 			}
-			ReservedLine(text: checksumMessage)
+			ReservedLine(text: checksumLine)
 				.font(.callout)
 				.foregroundStyle(.red)
 		}
@@ -29,9 +33,18 @@ struct PhraseFields: View {
 			}
 			leaving = nil
 			if let left, !spoken, entry.isInvalid(at: left, editing: now) { announce(Self.unknownWordMessage(left + 1)) }
+			if left != nil, entry.texts != checksumSpokenFor, entry.problem(editing: now) == .checksum { announceChecksum() }
+			if left == nil, now != nil { tookFocus() }
 		}
 		.onAppear {
 			Task { if editing == nil { editing = 0 } }
+		}
+		.onChange(of: isEnabled) { _, enabled in
+			if !enabled {
+				editingBeforeDisabled = editing
+			} else if let index = editingBeforeDisabled {
+				Task { if editing == nil { editing = index } }
+			}
 		}
 		.onChange(of: unknownWord) { _, index in
 			if let index, index == editing { announce(Self.unknownWordMessage(index + 1)) }
@@ -39,10 +52,14 @@ struct PhraseFields: View {
 	}
 
 	static func unknownWordMessage(_ number: Int) -> String {
-		"Word \(number) is not in the recovery word list."
+		"\(wordName(number)) is not in the recovery word list."
 	}
 
 	static let unknownWordLabel = "Not in the recovery word list"
+
+	static func wordName(_ number: Int) -> String {
+		"Word \(number)"
+	}
 
 	private var unknownWord: Int? {
 		guard case let .unknownWord(index) = entry.problem(editing: editing) else { return nil }
@@ -52,7 +69,8 @@ struct PhraseFields: View {
 	private func field(_ index: Int) -> some View {
 		HStack(spacing: 4) {
 			WordNumber(index: index)
-			TextField("Word \(index + 1)", text: word(index), prompt: Text(verbatim: ""))
+			TextField(Self.wordName(index + 1), text: word(index), prompt: Text(verbatim: ""))
+				.accessibilityLabel(Self.wordName(index + 1))
 				.focused($editing, equals: index)
 				.flagsUnknownWord(entry.isInvalid(at: index, editing: editing))
 				.autocorrectionDisabled()
@@ -82,15 +100,20 @@ struct PhraseFields: View {
 
 	private func submitted(_ index: Int) {
 		entry.complete(at: index)
-		if entry.opens {
-			submit()
-		} else if index + 1 < PhraseEntry.count {
-			editing = index + 1
-		}
+		if entry.opens { return submit() }
+		if entry.problem(editing: editing) == .checksum { announceChecksum() }
+		if index + 1 < PhraseEntry.count { editing = index + 1 }
 	}
 
-	private var checksumMessage: String? {
-		entry.problem(editing: editing) == .checksum ? "These words are not a recovery phrase. Check for a mistyped or swapped word." : nil
+	static let checksumMessage = "These words are not a recovery phrase. Check for a mistyped or swapped word."
+
+	private var checksumLine: String? {
+		entry.problem(editing: editing) == .checksum ? Self.checksumMessage : nil
+	}
+
+	private func announceChecksum() {
+		checksumSpokenFor = entry.texts
+		announce(Self.checksumMessage)
 	}
 }
 

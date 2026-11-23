@@ -135,4 +135,13 @@ struct EditorDateLineFormatTests {
 
 		#expect(NoteGrouping.editorDateLine(for: date, calendar: calendar) == "2026.08.06 at 10:22")
 	}
+
+	@Test func theEditorDateLineIsSpokenInWordsWithTheTime() {
+		var calendar = Calendar(identifier: .gregorian)
+		calendar.timeZone = TimeZone(identifier: "UTC")!
+		calendar.locale = Locale(identifier: "en_GB")
+		let date = Date(timeIntervalSince1970: 1_786_011_720)
+
+		#expect(NoteGrouping.spokenEditorDateLine(for: date, calendar: calendar) == "6 August 2026 at 10:22")
+	}
 }

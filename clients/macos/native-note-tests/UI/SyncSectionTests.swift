@@ -28,6 +28,44 @@ private final class StatusBox {
 	}
 }
 
+@MainActor
+private final class SyncRun {
+	let box: StatusBox
+	let gate = Latch()
+	var ending: AppModel.SyncStatus.Phase
+
+	init(_ box: StatusBox, ending: AppModel.SyncStatus.Phase) {
+		self.box = box
+		self.ending = ending
+	}
+
+	func sync() async -> AppModel.SyncStatus {
+		box.status.phase = .syncing
+		await gate.wait()
+		box.status.phase = ending
+		if ending == .idle { box.status.lastSynced = .now }
+		return box.status
+	}
+}
+
+private struct PressedSyncForm: View {
+	let run: SyncRun
+	let spoken: Spoken
+	let announcements: SyncAnnouncements
+
+	var body: some View {
+		Form {
+			SyncSection(
+				controls: SyncControls(status: run.box.status, syncNow: run.sync),
+				present: { _ in },
+				announce: { spoken.heard.append($0) },
+				announcements: announcements
+			)
+		}
+		.formStyle(.grouped)
+	}
+}
+
 private struct ChangingSyncForm: View {
 	let box: StatusBox
 
@@ -67,7 +105,10 @@ struct SyncSectionTests {
 	}
 
 	private func offscreen(_ status: AppModel.SyncStatus, _ requests: Requests) -> OffscreenWindow<SyncForm> {
-		let controls = SyncControls(status: status, syncNow: { requests.synced += 1 })
+		let controls = SyncControls(status: status, syncNow: {
+			requests.synced += 1
+			return status
+		})
 		return OffscreenWindow(SyncForm(section: SyncSection(controls: controls) { requests.presented.append($0) }), width: 440, height: 360)
 	}
 
@@ -99,6 +140,37 @@ struct SyncSectionTests {
 		#expect(requests.presented == [.changeServer, .changeRecoveryPhrase])
 		#expect(!offscreen.accessibilityElements(.button).contains { $0.label == "Change API Key…" })
 		#expect(offscreen.accessibilityElements(.button).contains { $0.label == "Turn Off Sync…" })
+	}
+
+	@Test func syncNowReadsInProgressHidesItsSpinnerAndReadsOutEachOutcomeOnce() async throws {
+		let reason = "The server could not be reached."
+		let run = SyncRun(StatusBox(AppModel.SyncStatus(phase: .idle, server: "http://notes.example:8080/", lastSynced: .now)), ending: .failed(reason))
+		let spoken = Spoken()
+		let offscreen = OffscreenWindow(PressedSyncForm(run: run, spoken: spoken, announcements: SyncAnnouncements()), width: 440, height: 360)
+		defer { offscreen.close() }
+		func syncNow() async throws {
+			try offscreen.press("Sync Now")
+			await offscreen.pump { run.gate.isHolding && offscreen.button("Sync Now")?.isEnabled == false }
+			let busy = try #require(offscreen.button("Sync Now"))
+			#expect(busy.value == OnboardingLabel.busyValue)
+			#expect(!offscreen.views(of: NSProgressIndicator.self).isEmpty)
+			#expect(!offscreen.exposesASpinner)
+			let heard = spoken.heard.count
+			run.gate.release()
+			await offscreen.pump { spoken.heard.count > heard }
+			offscreen.pump(for: 0.05)
+		}
+
+		try await syncNow()
+		#expect(spoken.heard == ["Sync failed: \(reason)"])
+		#expect(offscreen.button("Sync Now")?.value != OnboardingLabel.busyValue)
+
+		try await syncNow()
+		#expect(spoken.heard == ["Sync failed: \(reason)", "Sync failed: \(reason)"])
+
+		run.ending = .idle
+		try await syncNow()
+		#expect(spoken.heard == ["Sync failed: \(reason)", "Sync failed: \(reason)", "Last synced just now"])
 	}
 
 	@Test func theStatusLineReadsTheSyncPhase() {

@@ -14,6 +14,8 @@ private final class Calls {
 	var touchID: [String] = []
 	var finished = 0
 	var listened = 0
+	var announced: [String] = []
+	var voiceOver: [String] = []
 }
 
 @MainActor @Suite(.takesFocus)
@@ -43,6 +45,8 @@ struct OnboardingViewTests {
 				},
 				touchID: touchID,
 				sync: sync,
+				announce: { calls.announced.append($0) },
+				voiceOverMoved: { calls.voiceOver.append($0) },
 				finish: { calls.finished += 1 }
 			),
 			width: 720,
@@ -116,6 +120,15 @@ struct OnboardingViewTests {
 		#expect(calls.created.isEmpty)
 		#expect(try offscreen.field("Password").stringValue == "correct horse")
 		#expect(offscreen.texts().contains("The passwords do not match."))
+		#expect(calls.announced == ["The passwords do not match."])
+
+		let confirm = try offscreen.field("Confirm Password")
+		try #require(offscreen.window.makeFirstResponder(confirm))
+		try #require(confirm.currentEditor()).insertNewline(nil)
+		offscreen.pump()
+
+		#expect(calls.announced == ["The passwords do not match.", "The passwords do not match."])
+		#expect(calls.created.isEmpty)
 	}
 
 	@Test func aFailedCreateStaysOnThePasswordStep() async throws {
@@ -184,6 +197,47 @@ struct OnboardingViewTests {
 		#expect(calls.touchID.isEmpty)
 	}
 
+	private func heads(_ title: String, in offscreen: OffscreenWindow<some View>) -> Bool {
+		offscreen.accessibilityElements().contains { $0.role == NSAccessibility.Role(rawValue: "AXHeading") && ($0.value.isEmpty ? $0.label : $0.value) == title }
+	}
+
+	@Test func voiceOverIsAskedToMoveToTheTitleOfEachStepThePasswordLeadsTo() async throws {
+		let calls = Calls()
+		let offscreen = onboarding(calls, touchIDAvailable: true)
+		defer { offscreen.close() }
+		offscreen.pump(for: 0.1)
+		#expect(calls.voiceOver.isEmpty)
+
+		try enterPassword("correct horse", in: offscreen)
+		await offscreen.pump { !calls.voiceOver.isEmpty }
+		#expect(calls.voiceOver == ["Unlock with Touch ID?"])
+		#expect(heads("Unlock with Touch ID?", in: offscreen))
+
+		try offscreen.press("Skip")
+		await offscreen.pump { calls.voiceOver.count == 2 }
+
+		#expect(calls.voiceOver == ["Unlock with Touch ID?", "Sync Your Notes"])
+		#expect(heads("Sync Your Notes", in: offscreen))
+	}
+
+	@Test func withoutTouchIDThePasswordAsksVoiceOverToMoveToTheSyncTitleButAWindowOpeningThereDoesNot() async throws {
+		let calls = Calls()
+		let offscreen = onboarding(calls)
+		defer { offscreen.close() }
+		try enterPassword("correct horse", in: offscreen)
+		await offscreen.pump { !calls.voiceOver.isEmpty }
+		#expect(calls.voiceOver == ["Sync Your Notes"])
+		#expect(heads("Sync Your Notes", in: offscreen))
+
+		let reopened = Calls()
+		let returning = onboarding(reopened, libraryExists: true)
+		defer { returning.close() }
+		returning.pump(for: 0.1)
+
+		#expect(returning.texts().contains("Sync Your Notes"))
+		#expect(reopened.voiceOver.isEmpty)
+	}
+
 	@Test func aTouchIDFailureStaysOnTheStepWithItsReasonAndSkipStillLeaves() async throws {
 		let calls = Calls()
 		let offscreen = onboarding(calls, touchIDAvailable: true, turnOnTouchID: { _ in .failed("Touch ID was cancelled.", title: "") })
@@ -194,6 +248,7 @@ struct OnboardingViewTests {
 		try offscreen.press("Set Up Touch ID")
 		await offscreen.pump { offscreen.texts().contains("Touch ID was cancelled.") }
 		#expect(offscreen.texts().contains("Unlock with Touch ID?"))
+		#expect(calls.announced == ["Touch ID was cancelled."])
 
 		try offscreen.press("Skip")
 		#expect(offscreen.texts().contains("Sync Your Notes"))
@@ -218,12 +273,16 @@ struct OnboardingViewTests {
 		try offscreen.press("Set Up Touch ID")
 		await offscreen.pump { !calls.touchID.isEmpty }
 
+		await offscreen.pump { !calls.announced.isEmpty }
+		#expect(calls.announced == [OnboardingView.touchIDLine])
+
 		try offscreen.press("Skip")
 		gate.release()
 		offscreen.pump(for: 0.1)
 
 		#expect(cancelled == 1)
 		#expect(offscreen.texts().contains("Sync Your Notes"))
+		#expect(calls.announced == [OnboardingView.touchIDLine])
 	}
 
 	@Test func theSyncStepLinksTheServerGuideAndNotNowFinishes() throws {

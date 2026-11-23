@@ -10,7 +10,7 @@ struct UnlockView: View {
 	var touchID = TouchIDControls()
 	var shake = AppModel.Shake()
 	var eraseLibrary: (() -> Void)?
-	var announce: (String) -> Void = { AccessibilityNotification.Announcement($0).post() }
+	var announce: (String) -> Void = VoiceOver.announce
 
 	@State private var form = UnlockForm()
 	@State private var confirmingErase = false
@@ -55,7 +55,7 @@ struct UnlockView: View {
 			if eraseLibrary != nil {
 				Button("Forgot Password?") { confirmingErase = true }
 					.buttonStyle(.link)
-					.disabled(form.working || opensWithTouchID)
+					.disabled(busy)
 					.padding(.top, 12)
 			}
 		}
@@ -65,6 +65,9 @@ struct UnlockView: View {
 		}
 		.onChange(of: line) { _, line in
 			if line == Self.touchIDStoppedLine { announce(Self.touchIDStoppedLine) }
+		}
+		.onChange(of: touchID.state) { old, new in
+			if case .listening = old, new == .paused(.shaking) { announce(Self.touchIDMissAnnouncement) }
 		}
 		.onChange(of: shake.isRunning) { _, running in
 			if !running { selectRejectedPassword() }
@@ -85,34 +88,47 @@ struct UnlockView: View {
 			}
 
 			HStack(spacing: 6) {
-				SecureField("Password", text: $form.password)
+				SecureField(Self.passwordName, text: $form.password)
+					.accessibilityLabel(Self.passwordName)
 					.focused($typingPassword)
 					.onSubmit(send)
 					.disabled(opensWithTouchID)
 
 				ZStack {
-					if form.working || opensWithTouchID {
+					if busy {
 						ProgressView().controlSize(.small)
-					} else if !form.password.isEmpty {
+							.accessibilityHidden(true)
+					}
+					if busy || !form.password.isEmpty {
 						Button(action: send) {
 							Image(systemName: "arrow.forward.circle.fill")
 								.resizable()
 								.frame(width: Self.arrowSide, height: Self.arrowSide)
+								.opacity(busy ? 0 : 1)
 						}
 						.buttonStyle(.plain)
 						.foregroundStyle(.tint)
+						.disabled(busy)
 						.accessibilityLabel(Self.arrowLabel)
+						.busyAccessibilityValue(busy)
 					}
 				}
 				.frame(width: Self.arrowSide, height: Self.arrowSide)
 			}
 			.capsuleField(trailingInset: 7)
 		}
-		.animation(reduceMotion ? nil : .linear(duration: ShakeEffect.duration)) { $0.modifier(ShakeEffect(animatableData: CGFloat(shake.count))) }
+		.animation(.linear(duration: ShakeEffect.duration)) {
+			$0.modifier(ShakeEffect(animatableData: CGFloat(shake.count), moves: !reduceMotion))
+				.modifier(DimEffect(animatableData: CGFloat(shake.count), dims: reduceMotion))
+		}
 	}
 
 	private var opensWithTouchID: Bool {
 		touchID.state == .working
+	}
+
+	private var busy: Bool {
+		form.working || opensWithTouchID
 	}
 
 	private var line: String? {
@@ -133,7 +149,9 @@ struct UnlockView: View {
 	static let touchIDLine = "Touch ID or enter password"
 	static let touchIDStoppedLine = "Enter password to enable Touch ID"
 	static let wrongPasswordAnnouncement = "Wrong password"
+	static let touchIDMissAnnouncement = "Touch ID didn't match"
 	static let arrowLabel = "Unlock"
+	static let passwordName = "Password"
 	static let fieldHeight: CGFloat = 36
 	static let arrowSide: CGFloat = 22
 	static let coveredGlyphSide: CGFloat = 16
@@ -166,6 +184,7 @@ struct ShakeEffect: GeometryEffect {
 	static let duration = AppModel.Shake.duration / .seconds(1)
 
 	var animatableData: CGFloat
+	var moves = true
 
 	static func offset(at elapsed: TimeInterval) -> CGFloat {
 		guard elapsed > 0, elapsed < duration else { return 0 }
@@ -175,8 +194,26 @@ struct ShakeEffect: GeometryEffect {
 	}
 
 	func effectValue(size: CGSize) -> ProjectionTransform {
+		guard moves else { return ProjectionTransform() }
 		let progress = animatableData - animatableData.rounded(.down)
 		return ProjectionTransform(CGAffineTransform(translationX: Self.offset(at: progress * Self.duration), y: 0))
+	}
+}
+
+struct DimEffect: ViewModifier, Animatable {
+	static let dimmest = 0.35
+
+	var animatableData: CGFloat
+	var dims = true
+
+	static func opacity(at elapsed: TimeInterval) -> Double {
+		guard elapsed > 0, elapsed < ShakeEffect.duration else { return 1 }
+		return 1 - (1 - dimmest) * sin(.pi * elapsed / ShakeEffect.duration)
+	}
+
+	func body(content: Content) -> some View {
+		let progress = animatableData - animatableData.rounded(.down)
+		content.animation(nil) { $0.opacity(dims ? Self.opacity(at: progress * ShakeEffect.duration) : 1) }
 	}
 }
 

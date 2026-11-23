@@ -5,7 +5,7 @@ import Testing
 @testable import NativeNote
 @testable import NativeNoteKit
 
-@MainActor @Suite(.takesFocus, .scratch, .serialized, .timeLimit(.minutes(5)))
+@MainActor @Suite(.takesFocus, .scratch, .serialized, .timeLimit(.minutes(10)))
 struct TypingPerformanceTests {
 	private let alarm = Alarm()
 

@@ -783,7 +783,7 @@ struct BiometricUnlockTests {
 		let (model, _) = try await library.lockedWithTouchID(keys)
 		let listening = try #require(model.touchID.listeningContext)
 
-		model.disableBiometricUnlock()
+		#expect(model.disableBiometricUnlock() == nil)
 
 		#expect(model.touchID == .hidden)
 		#expect(isInvalidated(listening))
@@ -795,7 +795,7 @@ struct BiometricUnlockTests {
 		let (model, _) = try await library.unlocked(keys)
 		try await turnOnTouchID(model)
 
-		model.disableBiometricUnlock()
+		#expect(model.disableBiometricUnlock() == nil)
 
 		#expect(keys.storedKey == nil)
 		#expect(!model.isBiometricUnlockEnabled)

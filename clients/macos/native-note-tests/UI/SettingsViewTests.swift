@@ -1,5 +1,6 @@
 import AppKit
 import LocalAuthenticationEmbeddedUI
+import Security
 import SwiftUI
 import Testing
 
@@ -30,7 +31,10 @@ struct SettingsViewTests {
 				requests.turnOns.append(password)
 				return nil
 			},
-			turnOffTouchID: { requests.turnedOff += 1 },
+			turnOffTouchID: {
+				requests.turnedOff += 1
+				return nil
+			},
 			changePassword: { current, new in
 				requests.changes.append([current, new])
 				return nil
@@ -272,6 +276,75 @@ struct SettingsViewTests {
 		#expect(keys.storedKey == nil)
 		#expect(!model.isBiometricUnlockEnabled)
 		#expect(model.touchID == .hidden)
+	}
+
+	private func alertTexts(in offscreen: OffscreenWindow<some View>) -> [String] {
+		offscreen.sheetAccessibilityElements(.staticText).map { $0.value.isEmpty ? $0.label : $0.value }
+	}
+
+	private func choose(_ title: String, inAlertOf offscreen: OffscreenWindow<some View>) throws {
+		let sheet = try #require(offscreen.sheet)
+		if let button = offscreen.sheetViews(of: NSButton.self).first(where: { $0.title == title }) {
+			button.performClick(nil)
+			offscreen.pump()
+			if offscreen.sheet === sheet { offscreen.window.endSheet(sheet, returnCode: NSApplication.ModalResponse(rawValue: button.tag)) }
+		} else {
+			try #require(offscreen.sheetAccessibilityElements(.button).first { $0.label == title }, "\(title)").press()
+		}
+		offscreen.pump()
+	}
+
+	@Test func aTouchIDTurnOffThatFailsIsShownInTheSettingsWindowAloneAndKeepsTheSwitchOn() async throws {
+		let keys = FakeKeyStore()
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(keys)
+		model.appBecameActive()
+		try await turnOnTouchID(model)
+		keys.failWrites()
+		let library = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560, catchesSheets: true)
+		defer { library.close() }
+		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 300, catchesSheets: true)
+		defer { offscreen.close() }
+		let toggle = try #require(offscreen.views(of: NSSwitch.self).first)
+		try #require(toggle.state == .on)
+
+		toggle.performClick(nil)
+		await offscreen.pump { offscreen.sheet != nil }
+		library.pump(for: 0.05)
+
+		#expect(alertTexts(in: offscreen).contains("Native Note could not continue."))
+		#expect(alertTexts(in: offscreen).contains("Touch ID unlock could not be turned off. \(KeychainFailure(status: errSecNotAvailable).message)"))
+		#expect(model.failure == nil)
+		#expect(library.sheet == nil)
+		#expect(model.isBiometricUnlockEnabled)
+		#expect(toggle.state == .on)
+
+		try choose("OK", inAlertOf: offscreen)
+		await offscreen.pump { offscreen.sheet == nil }
+		#expect(offscreen.sheet == nil)
+	}
+
+	@Test func aSyncTurnOffThatFailsIsShownInTheSettingsWindowAlone() async throws {
+		let (model, directory) = try await Workspace(alarm: alarm).unlocked()
+		model.sync.status = AppModel.SyncStatus(phase: .idle, server: "http://notes.example:8080/")
+		let library = OffscreenWindow(ContentView(exchange: LibraryExchange(model: model)), width: 980, height: 560, catchesSheets: true)
+		defer { library.close() }
+		let offscreen = OffscreenWindow(SettingsView(model: model), width: 440, height: 520, catchesSheets: true)
+		defer { offscreen.close() }
+		try await model.store?.failAtOnceWhenLocked()
+		let blocker = try await connection(to: directory)
+		try blocker.execute("BEGIN IMMEDIATE")
+		defer { try? blocker.execute("ROLLBACK") }
+
+		try offscreen.press("Turn Off Sync…")
+		await offscreen.pump { offscreen.sheet != nil }
+		try choose("Turn Off Sync", inAlertOf: offscreen)
+		await offscreen.pump(turns: 4_000) { alertTexts(in: offscreen).contains("Sync could not be turned off.") }
+		library.pump(for: 0.05)
+
+		#expect(alertTexts(in: offscreen).contains("Sync could not be turned off."))
+		#expect(alertTexts(in: offscreen).contains("database is locked"))
+		#expect(model.failure == nil)
+		#expect(library.sheet == nil)
 	}
 
 	@Test func switchingTouchIDOffInSettingsTurnsItOffForTheLibrary() async throws {

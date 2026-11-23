@@ -39,7 +39,7 @@ struct NativeNoteApp: App {
 				Button("New Note") { delegate.exchange.newNote() }
 					.keyboardShortcut("n")
 					.disabled(!delegate.exchange.acceptsCommands)
-				Button("Sync Now") { Task { await delegate.model.syncNow() } }
+				Button("Sync Now") { Task { await delegate.exchange.syncNow() } }
 					.keyboardShortcut("r")
 					.disabled(!delegate.exchange.canSync)
 				Divider()

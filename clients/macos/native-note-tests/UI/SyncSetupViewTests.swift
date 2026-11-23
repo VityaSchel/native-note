@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 @testable import NativeNoteKit
+import SwiftUI
 import Testing
 
 @testable import NativeNote
@@ -15,12 +16,28 @@ private final class Calls {
 	var cancelled = 0
 	var done = 0
 	var announced: [String] = []
+	var stepLines: [AttributedString] = []
+	var editingAtEachStepLine: [NSTextField?] = []
+	var failureLines: [AttributedString] = []
+	var voiceOver: [String] = []
+	weak var window: NSWindow?
+
+	var steps: [String] { stepLines.map { String($0.characters) } }
+	var failures: [String] { failureLines.map { String($0.characters) } }
+}
+
+@MainActor
+private func editingField(in window: NSWindow?) -> NSTextField? {
+	(window?.firstResponder as? NSText)?.delegate as? NSTextField
 }
 
 private let realWords = Mnemonic.words(for: .init(data: Data((0 ..< 32).map { UInt8($0 * 5 + 1) }))) ?? []
 private let phrase = AppModel.RecoveryPhrase(words: realWords, positionsToConfirm: [2, 10, 19])
 private let checkedWords = [2, 10, 19].map { realWords[$0] }
 private let numberedList = realWords.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+private let wordsStep = "Write Down Your Recovery Phrase. These words are used to encrypt your notes on your sync server. Keep them safe and never share with anyone."
+private let confirmStep = "Confirm Your Recovery Phrase. Enter words \([3, 11, 20].formatted(.list(memberStyle: .number, type: .and))) from the phrase you wrote down."
+private let joinStep = "Enter Your Recovery Phrase. This server already holds a library. Enter its current 24-word recovery phrase, and this Mac syncs with it."
 
 @MainActor @Suite(.takesFocus)
 struct SyncSetupViewTests {
@@ -61,11 +78,25 @@ struct SyncSetupViewTests {
 			},
 			cancel: { calls.cancelled += 1 }
 		)
-		return OffscreenWindow(
-			SyncSetupView(form: SyncSetupForm(mode: mode, server: server), controls: controls, clipboard: clipboard, announce: { calls.announced.append($0) }, done: { calls.done += 1 }),
+		let offscreen = OffscreenWindow(
+			SyncSetupView(
+				form: SyncSetupForm(mode: mode, server: server),
+				controls: controls,
+				clipboard: clipboard,
+				announce: { calls.announced.append($0) },
+				announceStep: { line in
+					calls.stepLines.append(line)
+					calls.editingAtEachStepLine.append(editingField(in: calls.window))
+				},
+				announceFailure: { calls.failureLines.append($0) },
+				voiceOverMoved: { calls.voiceOver.append($0) },
+				done: { calls.done += 1 }
+			),
 			width: 440,
 			height: 560
 		)
+		calls.window = offscreen.window
+		return offscreen
 	}
 
 	private func wordFields(_ offscreen: OffscreenWindow<SyncSetupView>) -> [NSTextField] {
@@ -93,7 +124,7 @@ struct SyncSetupViewTests {
 	}
 
 	private func editing(_ offscreen: OffscreenWindow<SyncSetupView>) -> NSTextField? {
-		(offscreen.window.firstResponder as? NSText)?.delegate as? NSTextField
+		editingField(in: offscreen.window)
 	}
 
 	private func reachJoin(_ offscreen: OffscreenWindow<SyncSetupView>) async throws -> [NSTextField] {
@@ -108,6 +139,17 @@ struct SyncSetupViewTests {
 
 	private func onWords(_ offscreen: OffscreenWindow<SyncSetupView>) -> Bool {
 		offscreen.texts().contains("Write Down Your Recovery Phrase")
+	}
+
+	private func reachConfirm(_ offscreen: OffscreenWindow<SyncSetupView>) async throws -> [NSTextField] {
+		try offscreen.type("http://notes.example:8080", into: try #require(fields(offscreen).first { !($0 is NSSecureTextField) }))
+		let key = try #require(offscreen.views(of: NSSecureTextField.self).first)
+		try offscreen.type("0a0b", into: key)
+		key.currentEditor()?.insertNewline(nil)
+		await offscreen.pump { onWords(offscreen) }
+		try offscreen.press("Continue")
+		await offscreen.pump { fields(offscreen).count == 3 }
+		return fields(offscreen)
 	}
 
 	private func unknownWordMarks(in offscreen: OffscreenWindow<SyncSetupView>) -> Int {
@@ -155,6 +197,163 @@ struct SyncSetupViewTests {
 
 		#expect(calls.finished == [checkedWords])
 		#expect(calls.cancelled == 0)
+	}
+
+	@Test func eachNewStepIsReadOutWithItsExplanationAndContinueLeavesTheCaretInTheFirstWordToConfirm() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls)
+		defer { offscreen.close() }
+		#expect(calls.steps.isEmpty)
+
+		let answers = try await reachConfirm(offscreen)
+		await offscreen.pump { editing(offscreen) === answers.first && calls.steps.count == 2 }
+
+		#expect(editing(offscreen) === answers.first)
+		#expect(calls.steps == [wordsStep, confirmStep])
+		#expect(calls.stepLines.map(\.accessibilitySpeechAnnouncementPriority) == [nil, .low])
+		#expect(calls.editingAtEachStepLine.last.flatMap(\.self) === answers.first)
+		try #require(offscreen.window.firstResponder as? NSText).insertText(checkedWords[0])
+		offscreen.pump()
+		#expect(answers[0].stringValue == checkedWords[0])
+		#expect(calls.announced.isEmpty)
+	}
+
+	@Test func aRefusedConfirmGivesTheCaretBackToTheWordReturnWasPressedIn() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, finish: .refused)
+		defer { offscreen.close() }
+		let answers = try await reachConfirm(offscreen)
+		for (field, word) in zip(answers, checkedWords) {
+			try offscreen.type(word, into: field)
+		}
+
+		answers[2].currentEditor()?.insertNewline(nil)
+		await offscreen.pump { offscreen.texts().contains(AppModel.SyncSetupFailure.refused.message) }
+		await offscreen.pump { editing(offscreen) === answers[2] }
+
+		#expect(calls.finished == [checkedWords])
+		#expect(editing(offscreen) === answers[2])
+		#expect(calls.steps == [wordsStep, confirmStep])
+		#expect(calls.failures == [AppModel.SyncSetupFailure.refused.message])
+		#expect(calls.failureLines.map(\.accessibilitySpeechAnnouncementPriority) == [.high])
+	}
+
+	@Test func backFromARefusedConfirmReadsOutTheWordsStepThoughTheRefusalStaysShown() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, finish: .refused)
+		defer { offscreen.close() }
+		for (field, word) in zip(try await reachConfirm(offscreen), checkedWords) {
+			try offscreen.type(word, into: field)
+		}
+		try offscreen.press("Turn On Sync")
+		await offscreen.pump { offscreen.texts().contains(AppModel.SyncSetupFailure.refused.message) }
+		#expect(calls.steps == [wordsStep, confirmStep])
+
+		try offscreen.press("Back")
+		await offscreen.pump { onWords(offscreen) }
+
+		#expect(offscreen.texts().contains(AppModel.SyncSetupFailure.refused.message))
+		#expect(calls.steps == [wordsStep, confirmStep, wordsStep])
+		try offscreen.press("Continue")
+		await offscreen.pump { fields(offscreen).count == 3 && calls.steps.count == 4 }
+		#expect(calls.steps == [wordsStep, confirmStep, wordsStep, confirmStep])
+	}
+
+	@Test func aStepTheServerForcesIsReadOutByItsReasonNotAsANewStep() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, finish: .serverHasLibrary)
+		defer { offscreen.close() }
+		for (field, word) in zip(try await reachConfirm(offscreen), checkedWords) {
+			try offscreen.type(word, into: field)
+		}
+
+		try offscreen.press("Turn On Sync")
+		await offscreen.pump { offscreen.texts().contains(AppModel.SyncSetupFailure.serverHasLibrary.message) && wordFields(offscreen).count == 24 }
+
+		#expect(offscreen.texts().contains("Enter Your Recovery Phrase"))
+		#expect(calls.steps == [wordsStep, confirmStep])
+		#expect(calls.failures == [AppModel.SyncSetupFailure.serverHasLibrary.message])
+	}
+
+	@Test func theJoinStepIsReadOutAndBackReadsTheServerStepWithTheCaretInTheServer() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, prepare: .success(.existingLibrary))
+		defer { offscreen.close() }
+		let words = try await reachJoin(offscreen)
+		await offscreen.pump { !calls.steps.isEmpty }
+		#expect(calls.steps == [joinStep])
+
+		try offscreen.press("Back")
+		await offscreen.pump { fields(offscreen).count == 2 && editing(offscreen) != nil && calls.steps.count == 2 }
+
+		let server = fields(offscreen).first { !($0 is NSSecureTextField) }
+		#expect(editing(offscreen) === server)
+		#expect(calls.steps == [joinStep, "Set Up Sync"])
+		#expect(calls.stepLines.map(\.accessibilitySpeechAnnouncementPriority) == [.low, .low])
+		#expect(calls.editingAtEachStepLine.count == 2)
+		#expect(calls.editingAtEachStepLine.first.flatMap(\.self) === words.first)
+		#expect(calls.editingAtEachStepLine.last.flatMap(\.self) === server)
+	}
+
+	@Test func theSheetOpensInTheServerAndARefusedServerGivesTheCaretBackToTheFieldReturnWasPressedIn() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, prepare: .failure(.refused))
+		defer { offscreen.close() }
+		let server = try #require(fields(offscreen).first { !($0 is NSSecureTextField) })
+		await offscreen.pump { editing(offscreen) === server }
+		#expect(editing(offscreen) === server)
+		try offscreen.type("http://notes.example", into: server)
+		let key = try #require(offscreen.views(of: NSSecureTextField.self).first)
+		try offscreen.type("00", into: key)
+
+		key.currentEditor()?.insertNewline(nil)
+		await offscreen.pump { offscreen.texts().contains(AppModel.SyncSetupFailure.refused.message) }
+		await offscreen.pump { editing(offscreen) === key }
+
+		#expect(editing(offscreen) === key)
+		#expect(calls.steps.isEmpty)
+		#expect(calls.failures == [AppModel.SyncSetupFailure.refused.message])
+	}
+
+	@Test func aPhraseTheServerDoesNotOpenGivesTheCaretBackToTheWordReturnWasPressedIn() async throws {
+		try #require(realWords.count == 24)
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, prepare: .success(.existingLibrary), join: .phraseDoesNotOpen)
+		defer { offscreen.close() }
+		let words = try await reachJoin(offscreen)
+		try offscreen.type(realWords.joined(separator: " "), into: words[0])
+		await offscreen.pump { editing(offscreen) === wordFields(offscreen).last }
+
+		try #require(wordFields(offscreen).last?.currentEditor()).insertNewline(nil)
+		await offscreen.pump { offscreen.texts().contains(AppModel.SyncSetupFailure.phraseDoesNotOpen.message) }
+		await offscreen.pump { editing(offscreen) === wordFields(offscreen).last }
+
+		#expect(calls.joined.count == 1)
+		#expect(editing(offscreen) === wordFields(offscreen).last)
+		#expect(calls.failures == [AppModel.SyncSetupFailure.phraseDoesNotOpen.message])
+	}
+
+	@Test func revealAsksVoiceOverToMoveToTheWordsAndComingBackToThemDoesNot() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.rotate, calls)
+		defer { offscreen.close() }
+		await offscreen.pump { onWords(offscreen) }
+		#expect(calls.steps == [wordsStep])
+		#expect(calls.voiceOver.isEmpty)
+
+		try offscreen.press("Reveal")
+		await offscreen.pump { !calls.voiceOver.isEmpty }
+		#expect(calls.voiceOver == [numberedList])
+		#expect(offscreen.texts().contains(numberedList))
+
+		try offscreen.press("Continue")
+		await offscreen.pump { calls.steps.count == 2 }
+		try offscreen.press("Back")
+		await offscreen.pump { onWords(offscreen) && offscreen.texts().contains(numberedList) }
+		offscreen.pump(for: 0.1)
+
+		#expect(calls.voiceOver == [numberedList])
+		#expect(calls.steps == [wordsStep, confirmStep, wordsStep])
 	}
 
 	@Test func copiedWordsAreConcealedAndOutlastConfirmingThePhrase() async throws {
@@ -352,6 +551,57 @@ struct SyncSetupViewTests {
 		await stopped.wait()
 
 		#expect(calls.done == 1)
+	}
+
+	@Test func whileTheServerIsCheckedContinueReadsInProgressAndTheSpinnerIsHidden() async throws {
+		let checking = Latch()
+		let controls = SyncControls(prepareSync: { _, _ in
+			await checking.wait()
+			return .failure(.refused)
+		})
+		let offscreen = OffscreenWindow(SyncSetupView(mode: .setUp, controls: controls, done: {}), width: 440, height: 560)
+		defer { offscreen.close() }
+		defer { checking.release() }
+		try offscreen.type("http://notes.example:8080", into: try #require(fields(offscreen).first { !($0 is NSSecureTextField) }))
+		try offscreen.type("0a0b", into: try #require(offscreen.views(of: NSSecureTextField.self).first))
+		#expect(offscreen.button("Continue")?.value == "")
+
+		try offscreen.press("Continue")
+		await offscreen.pump { checking.isHolding }
+		offscreen.pump(for: 0.05)
+
+		let button = try #require(offscreen.button("Continue"))
+		#expect(!button.isEnabled)
+		#expect(button.value == OnboardingLabel.busyValue)
+		#expect(offscreen.views(of: NSProgressIndicator.self).count == 1)
+		#expect(!offscreen.exposesASpinner)
+
+		checking.release()
+		await offscreen.pump { offscreen.button("Continue")?.isEnabled == true }
+		#expect(offscreen.button("Continue")?.value == "")
+	}
+
+	@Test func whileANewRecoveryPhraseIsPreparedContinueReadsInProgress() async throws {
+		let preparing = Latch()
+		let controls = SyncControls(prepareRotation: {
+			await preparing.wait()
+			return .success(phrase)
+		})
+		let offscreen = OffscreenWindow(SyncSetupView(mode: .rotate, controls: controls, done: {}), width: 440, height: 560)
+		defer { offscreen.close() }
+		defer { preparing.release() }
+
+		await offscreen.pump { preparing.isHolding }
+		offscreen.pump(for: 0.05)
+
+		let button = try #require(offscreen.button("Continue"))
+		#expect(!button.isEnabled)
+		#expect(button.value == OnboardingLabel.busyValue)
+		#expect(!offscreen.exposesASpinner)
+
+		preparing.release()
+		await offscreen.pump { onWords(offscreen) }
+		#expect(offscreen.button("Continue")?.value == "")
 	}
 
 	@Test func cancelIsOffWhileThePhraseIsStored() async throws {
@@ -635,11 +885,76 @@ struct SyncSetupViewTests {
 
 		try offscreen.type(swapped.joined(separator: " "), into: words[0])
 		await offscreen.pump { offscreen.texts().contains { $0.hasPrefix("These words are not a recovery phrase.") } }
+		await offscreen.pump { !calls.announced.isEmpty }
 
 		#expect(!isEnabled("Turn On Sync", in: offscreen))
+		#expect(calls.announced == [PhraseFields.checksumMessage])
 		wordFields(offscreen).last?.currentEditor()?.insertNewline(nil)
 		offscreen.pump()
 		#expect(calls.joined.isEmpty)
+		#expect(calls.announced == [PhraseFields.checksumMessage, PhraseFields.checksumMessage])
+	}
+
+	@Test func theCurrentPhraseStepReadsOutWordsThatFailTheChecksumToo() async throws {
+		let calls = Calls()
+		let offscreen = offscreen(.rotate, calls, finish: .rotatedElsewhere)
+		defer { offscreen.close() }
+		await offscreen.pump { onWords(offscreen) }
+		try offscreen.press("Continue")
+		for (field, word) in zip(fields(offscreen), checkedWords) {
+			try offscreen.type(word, into: field)
+		}
+		try offscreen.press("Change Phrase")
+		await offscreen.pump { offscreen.texts().contains("Enter the Current Recovery Phrase") && wordFields(offscreen).count == 24 }
+		await offscreen.pump { editing(offscreen) === wordFields(offscreen).first }
+		let heard = calls.announced
+		var swapped = realWords
+		swapped.swapAt(3, 4)
+		try #require(Mnemonic.key(from: swapped) == nil)
+
+		try offscreen.type(swapped.joined(separator: " "), into: try #require(wordFields(offscreen).first))
+		await offscreen.pump { calls.announced.count > heard.count }
+
+		#expect(calls.announced == heard + [PhraseFields.checksumMessage])
+		#expect(!isEnabled("Continue", in: offscreen))
+		wordFields(offscreen).last?.currentEditor()?.insertNewline(nil)
+		offscreen.pump()
+		#expect(calls.announced == heard + [PhraseFields.checksumMessage, PhraseFields.checksumMessage])
+		#expect(calls.adopted.isEmpty)
+	}
+
+	@Test func aLastWordThatOnlyStartsTheRightOneIsCalledAMistakeOnReturnButNotWhileItIsTyped() async throws {
+		let (phrase, start) = try #require((0 ..< 256).lazy.compactMap { seed -> ([String], String)? in
+			guard let words = Mnemonic.words(for: SymmetricKey(data: (0 ..< 32).map { UInt8(truncatingIfNeeded: $0 * 7 + seed) })) else { return nil }
+			let last = words[23]
+			guard let start = (1 ..< last.count).lazy.map({ String(last.prefix($0)) }).first(where: PhraseEntry.isListWord) else { return nil }
+			return Mnemonic.key(from: Array(words.prefix(23)) + [start]) == nil ? (words, start) : nil
+		}.first)
+		let calls = Calls()
+		let offscreen = offscreen(.setUp, calls, prepare: .success(.existingLibrary))
+		defer { offscreen.close() }
+		let words = try await reachJoin(offscreen)
+		try offscreen.type(phrase.prefix(23).joined(separator: " "), into: words[0])
+		await offscreen.pump { editing(offscreen) === wordFields(offscreen)[23] }
+
+		try typeKeys(start, into: wordFields(offscreen)[23], of: offscreen)
+		#expect(offscreen.texts().contains(PhraseFields.checksumMessage))
+		#expect(calls.announced.isEmpty)
+
+		try #require(wordFields(offscreen)[23].currentEditor()).insertNewline(nil)
+		offscreen.pump()
+		#expect(calls.announced == [PhraseFields.checksumMessage])
+		#expect(calls.joined.isEmpty)
+
+		try #require(wordFields(offscreen)[23].currentEditor()).moveToEndOfDocument(nil)
+		try typeKeys(String(phrase[23].dropFirst(start.count)), into: wordFields(offscreen)[23], of: offscreen)
+		#expect(wordFields(offscreen)[23].stringValue == phrase[23])
+		#expect(!offscreen.texts().contains(PhraseFields.checksumMessage))
+		try #require(wordFields(offscreen)[23].currentEditor()).insertNewline(nil)
+		await offscreen.pump { calls.done > 0 }
+
+		#expect(calls.announced == [PhraseFields.checksumMessage])
+		#expect(calls.joined == [["http://notes.example", "0a"] + phrase])
 	}
 
 	@Test func aPhraseTheServerDoesNotOpenStaysOnTheWordsWithItsMessage() async throws {

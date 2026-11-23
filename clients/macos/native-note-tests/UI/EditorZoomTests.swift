@@ -86,4 +86,30 @@ struct EditorDateLineTests {
 		#expect(line.frame.maxY <= NoteEditor.dateLineInset)
 		#expect(!line.isEditable && !line.isSelectable)
 	}
+
+	@Test func anAccessibilityClientReadsTheDateLineInWordsAheadOfTheNote() throws {
+		let offscreen = OffscreenWindow(
+			NoteEditor(text: .constant("Title\nbody"), dateLine: "2026.08.06 at 10:42", spokenDateLine: "6 August 2026 at 10:42"),
+			width: 520,
+			height: 360
+		)
+		defer { offscreen.close() }
+		offscreen.pump()
+
+		let textView = try #require(offscreen.views(of: NSTextView.self).first { $0.isEditable })
+		let line = try #require(textView.subviews.compactMap { $0 as? NSTextField }.first)
+		let scrollView = try #require(textView.enclosingScrollView)
+		let areaChildren = try #require(scrollView.accessibilityChildren()).map { $0 as AnyObject }
+
+		#expect(line.isAccessibilityElement())
+		#expect(line.accessibilityRole() == .staticText)
+		#expect(line.accessibilityValue() == "6 August 2026 at 10:42")
+		#expect(line.accessibilityChildren()?.isEmpty != false)
+		#expect(line.accessibilityParent() as AnyObject? === scrollView)
+		#expect(areaChildren.first === line)
+		#expect(areaChildren.contains { $0 === textView })
+		#expect(textView.accessibilityChildren()?.isEmpty != false)
+		#expect(textView.accessibilityLabel() == NoteEditor.spokenName)
+	}
+
 }

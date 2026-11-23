@@ -3,14 +3,14 @@ import SwiftUI
 
 struct SyncControls {
 	var status = AppModel.SyncStatus()
-	var syncNow: () async -> Void = {}
+	var syncNow: () async -> AppModel.SyncStatus = { AppModel.SyncStatus() }
 	var prepareSync: (String, String) async -> Result<AppModel.SyncSetupStart, AppModel.SyncSetupFailure> = { _, _ in .failure(.invalidServer) }
 	var finishSync: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var joinSync: (String, String, PhraseEntry) async -> AppModel.SyncSetupFailure? = { _, _, _ in nil }
 	var prepareRotation: () async -> Result<AppModel.RecoveryPhrase, AppModel.SyncSetupFailure> = { .failure(.notSetUp) }
 	var finishRotation: ([String]) async -> AppModel.SyncSetupFailure? = { _ in nil }
 	var adoptCurrentPhrase: (PhraseEntry) async -> AppModel.SyncSetupFailure? = { _ in nil }
-	var turnOffSync: () async -> Bool = { false }
+	var turnOffSync: () async -> AppModel.Failure? = { nil }
 	var cancel: () -> Void = {}
 }
 
@@ -18,7 +18,7 @@ extension SyncControls {
 	init(_ model: AppModel) {
 		self.init(
 			status: model.syncStatus,
-			syncNow: model.syncNow,
+			syncNow: model.statusAfterSyncing,
 			prepareSync: model.prepareSync(server:apiKey:),
 			finishSync: model.finishSync(answers:),
 			joinSync: model.joinSync(server:apiKey:phrase:),
@@ -37,11 +37,25 @@ struct SyncSetupView: View {
 	let done: () -> Void
 	let clipboard: RecoveryClipboard
 	let announce: (String) -> Void
+	let announceStep: (AttributedString) -> Void
+	let announceFailure: (AttributedString) -> Void
+	let voiceOverMoved: (String) -> Void
 
 	@State private var form: SyncSetupForm
-	@FocusState private var serverFocused: Bool
+	@FocusState private var focus: Field?
+	@State private var focusBeforeWork: Field?
 	@State private var phraseTookEffect = false
 	@State private var running: Task<Void, Never>?
+	@State private var stepLineAwaitingFocus: String?
+
+	private enum Field: Hashable {
+		case server, apiKey, answer(Int)
+	}
+
+	private struct ShownStep: Equatable {
+		let step: SyncSetupForm.Step
+		let message: String?
+	}
 
 	init(mode: SyncSetupForm.Mode, controls: SyncControls, clipboard: RecoveryClipboard = .shared, syncTurnedOn: @escaping () -> Void = {}, done: @escaping () -> Void) {
 		self.init(form: SyncSetupForm(mode: mode), controls: controls, clipboard: clipboard, syncTurnedOn: syncTurnedOn, done: done)
@@ -51,13 +65,19 @@ struct SyncSetupView: View {
 		form: SyncSetupForm,
 		controls: SyncControls,
 		clipboard: RecoveryClipboard = .shared,
-		announce: @escaping (String) -> Void = { AccessibilityNotification.Announcement($0).post() },
+		announce: @escaping (String) -> Void = VoiceOver.announce,
+		announceStep: @escaping (AttributedString) -> Void = VoiceOver.post,
+		announceFailure: @escaping (AttributedString) -> Void = VoiceOver.post,
+		voiceOverMoved: @escaping (String) -> Void = { _ in },
 		syncTurnedOn: @escaping () -> Void = {},
 		done: @escaping () -> Void
 	) {
 		self.controls = controls
 		self.clipboard = clipboard
 		self.announce = announce
+		self.announceStep = announceStep
+		self.announceFailure = announceFailure
+		self.voiceOverMoved = voiceOverMoved
 		self.syncTurnedOn = syncTurnedOn
 		self.done = done
 		_form = State(initialValue: form)
@@ -65,7 +85,25 @@ struct SyncSetupView: View {
 
 	var body: some View {
 		sheet
-			.defaultFocus($serverFocused, true)
+			.onChange(of: ShownStep(step: form.step, message: form.message)) { old, new in
+				stepLineAwaitingFocus = nil
+				guard new.step != old.step, new.step != .preparing, new.message == nil || new.message == old.message else { return }
+				if stepMovesFocus {
+					stepLineAwaitingFocus = stepLine
+				} else {
+					announceStep(AttributedString(stepLine))
+				}
+			}
+			.onChange(of: focus) { _, field in
+				if field != nil { focusArrived() }
+			}
+			.onChange(of: form.working) { _, working in
+				if working {
+					focusBeforeWork = focus
+				} else {
+					Task { restoreFocus() }
+				}
+			}
 			.onDisappear {
 				if !phraseTookEffect { clipboard.clear() }
 			}
@@ -90,6 +128,8 @@ struct SyncSetupView: View {
 			.disabled(form.storesThePhrase)
 		} buttons: {
 			buttons
+		} announce: {
+			announceFailure($0)
 		}
 	}
 
@@ -110,6 +150,7 @@ struct SyncSetupView: View {
 			.keyboardShortcut(.defaultAction)
 			.buttonStyle(.borderedProminent)
 			.disabled(!form.canContinue)
+			.busyAccessibilityValue(form.working)
 	}
 
 	private var explanation: String? {
@@ -126,6 +167,23 @@ struct SyncSetupView: View {
 
 	static func list(_ numbers: [Int]) -> String {
 		numbers.formatted(.list(memberStyle: .number, type: .and))
+	}
+
+	private var stepLine: String {
+		[title, explanation].compactMap(\.self).joined(separator: ". ")
+	}
+
+	private var stepMovesFocus: Bool {
+		switch form.step {
+		case .server, .confirm, .join, .currentPhrase: true
+		case .preparing, .words: false
+		}
+	}
+
+	private func focusArrived() {
+		guard let line = stepLineAwaitingFocus else { return }
+		stepLineAwaitingFocus = nil
+		announceStep(VoiceOver.afterFocusSpeech(line))
 	}
 
 	private var title: String {
@@ -147,21 +205,25 @@ struct SyncSetupView: View {
 		case .server:
 			Form {
 				TextField("Server:", text: $form.server, prompt: Text(verbatim: "http://notes.example:8080"))
-					.focused($serverFocused)
+					.focused($focus, equals: .server)
 					.onSubmit(send)
 				SecureField("API Key:", text: $form.apiKey)
+					.focused($focus, equals: .apiKey)
 					.onSubmit(send)
 			}
 			.formStyle(.columns)
+			.onAppear { Task { if focus == nil { focus = .server } } }
 		case let .words(phrase):
-			RecoveryWords(words: phrase.words, revealed: form.wordsRevealed) { form.revealWords() }
+			RecoveryWords(words: phrase.words, revealed: form.wordsRevealed, reveal: { form.revealWords() }, voiceOverMoved: voiceOverMoved)
 			Button("Copy Words") { clipboard.copy(phrase.words) }
 		case let .confirm(phrase):
 			Grid(alignment: .leading, horizontalSpacing: 4, verticalSpacing: 6) {
 				ForEach(Array(phrase.positionsToConfirm.enumerated()), id: \.offset) { position, index in
 					GridRow {
 						WordNumber(index: index)
-						TextField("Word \(index + 1)", text: $form.answers[position], prompt: Text(verbatim: ""))
+						TextField(PhraseFields.wordName(index + 1), text: $form.answers[position], prompt: Text(verbatim: ""))
+							.accessibilityLabel(PhraseFields.wordName(index + 1))
+							.focused($focus, equals: .answer(position))
 							.flagsUnknownWord(!PhraseEntry.couldBeListWord(form.answers[position]))
 							.autocorrectionDisabled()
 							.onSubmit(send)
@@ -171,10 +233,19 @@ struct SyncSetupView: View {
 			.onChange(of: unknownAnswer(phrase)) { _, number in
 				if let number { announce(PhraseFields.unknownWordMessage(number)) }
 			}
+			.onAppear { Task { if focus == nil { focus = .answer(0) } } }
 		case .join:
-			PhraseFields(entry: $form.phrase, submit: send, announce: announce)
+			PhraseFields(entry: $form.phrase, submit: send, announce: announce, tookFocus: focusArrived)
 		case .currentPhrase:
-			PhraseFields(entry: $form.currentEntry, submit: send, announce: announce)
+			PhraseFields(entry: $form.currentEntry, submit: send, announce: announce, tookFocus: focusArrived)
+		}
+	}
+
+	private func restoreFocus() {
+		guard let field = focusBeforeWork else { return }
+		switch (field, form.step) {
+		case (.server, .server), (.apiKey, .server), (.answer, .confirm): focus = field
+		default: break
 		}
 	}
 
@@ -240,12 +311,16 @@ struct RecoveryWords: View {
 	let words: [String]
 	var revealed = true
 	var reveal: () -> Void = {}
+	var voiceOverMoved: (String) -> Void = { _ in }
+
+	@AccessibilityFocusState private var wordsFocused: Bool
 
 	var body: some View {
 		ZStack {
 			if revealed {
 				RecoveryColumns(words: words)
 					.accessibilityRepresentation { Text(verbatim: RecoveryClipboard.list(words)) }
+					.accessibilityFocused($wordsFocused)
 			} else {
 				RecoveryColumns(words: words.map { _ in Self.hiddenWord })
 					.blur(radius: 7)
@@ -260,6 +335,13 @@ struct RecoveryWords: View {
 		.padding(12)
 		.frame(maxWidth: .infinity)
 		.background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 8))
+		.onChange(of: revealed) { _, revealed in
+			guard revealed else { return }
+			Task {
+				wordsFocused = true
+				voiceOverMoved(RecoveryClipboard.list(words))
+			}
+		}
 	}
 
 	static func positions(inColumn column: Int, of count: Int) -> Range<Int> {

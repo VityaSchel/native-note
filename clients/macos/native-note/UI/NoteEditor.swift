@@ -7,6 +7,7 @@ struct NoteEditor: NSViewRepresentable {
 	var tookFocus: () -> Void = {}
 	var zoom = 1.0
 	var dateLine = ""
+	var spokenDateLine = ""
 
 	func makeCoordinator() -> Coordinator {
 		Coordinator(text: $text)
@@ -18,19 +19,25 @@ struct NoteEditor: NSViewRepresentable {
 
 	func updateNSView(_ scrollView: NSScrollView, context: Context) {
 		Self.show(text, in: scrollView)
-		if context.coordinator.dateLabel?.stringValue != dateLine {
-			context.coordinator.dateLabel?.stringValue = dateLine
-		}
+		context.coordinator.dateLabel?.show(dateLine, spoken: spokenDateLine)
 		context.coordinator.zoom(to: zoom)
 		guard takesFocus, let textView = scrollView.documentView as? NSTextView else { return }
-		DispatchQueue.main.async { [tookFocus] in
-			guard let window = textView.window else { return }
+		Self.focus(textView, then: tookFocus)
+	}
+
+	static func focus(_ textView: NSTextView, waitingForAWindow attempts: Int = 20, then tookFocus: @escaping () -> Void) {
+		DispatchQueue.main.asyncAfter(deadline: .now() + (attempts < 20 ? 0.05 : 0)) {
+			guard let window = textView.window else {
+				if attempts > 0 { focus(textView, waitingForAWindow: attempts - 1, then: tookFocus) }
+				return
+			}
 			window.makeFirstResponder(textView)
 			tookFocus()
 		}
 	}
 
 	static let dateLineInset: CGFloat = 46
+	static let spokenName = "Note"
 
 	static func makeScrollView(delegate: Coordinator) -> NSScrollView {
 		let textView = ComposingTextView(usingTextLayoutManager: true)
@@ -45,8 +52,9 @@ struct NoteEditor: NSViewRepresentable {
 		textView.isIncrementalSearchingEnabled = true
 		textView.drawsBackground = false
 		textView.textContainerInset = NSSize(width: 28, height: Self.dateLineInset)
+		textView.setAccessibilityLabel(Self.spokenName)
 
-		let dateLabel = NSTextField(labelWithString: "")
+		let dateLabel = DateLineField(labelWithString: "")
 		dateLabel.font = .preferredFont(forTextStyle: .subheadline)
 		dateLabel.textColor = .secondaryLabelColor
 		dateLabel.alignment = .center
@@ -63,7 +71,8 @@ struct NoteEditor: NSViewRepresentable {
 		textView.defaultParagraphStyle = delegate.styles.bodyParagraph
 		textView.typingAttributes = delegate.styles.headingTyping
 
-		let scrollView = NSScrollView()
+		let scrollView = EditorScrollView()
+		scrollView.dateLabel = dateLabel
 		scrollView.documentView = textView
 		scrollView.hasVerticalScroller = true
 		scrollView.drawsBackground = false
@@ -92,7 +101,7 @@ struct NoteEditor: NSViewRepresentable {
 		private let text: Binding<String>
 		private let history = UndoManager()
 		fileprivate weak var textView: NSTextView?
-		fileprivate weak var dateLabel: NSTextField?
+		fileprivate weak var dateLabel: DateLineField?
 		fileprivate var shown: String?
 		fileprivate private(set) var styles = EditorStyles(zoom: 1)
 		private weak var editedStorage: NSTextStorage?
@@ -210,6 +219,45 @@ private final class ComposingTextView: NSTextView {
 	override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
 		super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
 		(delegate as? NoteEditor.Coordinator)?.finishEdit()
+	}
+}
+
+private final class DateLineField: NSTextField {
+	private(set) var spoken = ""
+
+	func show(_ line: String, spoken: String) {
+		if stringValue != line { stringValue = line }
+		self.spoken = spoken
+	}
+
+	override func isAccessibilityElement() -> Bool {
+		true
+	}
+
+	override func accessibilityRole() -> NSAccessibility.Role? {
+		.staticText
+	}
+
+	override func accessibilityValue() -> String? {
+		spoken
+	}
+
+	override func accessibilityChildren() -> [Any]? {
+		[]
+	}
+
+	override func accessibilityParent() -> Any? {
+		enclosingScrollView ?? super.accessibilityParent()
+	}
+}
+
+private final class EditorScrollView: NSScrollView {
+	weak var dateLabel: DateLineField?
+
+	override func accessibilityChildren() -> [Any]? {
+		let children = super.accessibilityChildren() ?? []
+		guard let dateLabel, !dateLabel.spoken.isEmpty else { return children }
+		return [dateLabel] + children
 	}
 }
 
