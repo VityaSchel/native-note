@@ -47,6 +47,8 @@ App Transport Security allows arbitrary loads, for plain-`http` servers.
 
 [PrivacyInfo.xcprivacy](native-note/PrivacyInfo.xcprivacy) declares no tracking and no collected data, and three required-reason APIs: `UserDefaults` for the editor zoom (`CA92.1`), and file timestamps (`C617.1`) and disk space (`E174.1`), which SQLite reads for files in the container, the reasons SQLCipher's own manifest gives.
 
+[Credits.rtf](native-note/Credits.rtf), which the standard About panel shows, carries SQLCipher's BSD notice, SQLite's public-domain statement and Argon2's header (used under CC0), in the words of Android's `assets/licenses.txt`.
+
 ### Unlock record
 
 The [unlock record](../DESIGN.md#unlock-record) is a binary plist, kept in a data-protection keychain item of the signing team's group: service `dev.hloth.nativenote.library`, account `unlockRecord:` and the library folder's path, `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`, never synchronizable. Other code running as the user cannot read it, and it stays out of backups. A build without `keychain-access-groups` writes it to `app-lock.plist` beside the database instead, mode `0600`, in `~/Library/Containers/dev.hloth.nativenote/Data/Library/Application Support/`; a library made by a build of one kind, or signed by another team, does not open in the other.
