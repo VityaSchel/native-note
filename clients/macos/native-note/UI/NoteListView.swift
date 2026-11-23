@@ -10,6 +10,7 @@ struct NoteListView: View {
 	var yieldsFocus = false
 	let delete: (UUID) -> Void
 
+	@Environment(\.calendar) private var calendar
 	@FocusState private var focused: Bool
 	@FocusState private var searching: Bool
 
@@ -46,7 +47,7 @@ struct NoteListView: View {
 			ForEach(groups) { group in
 				Section(group.title) {
 					ForEach(group.notes) { note in
-						Self.previewSafe(NoteRow(note: note, now: now))
+						Self.previewSafe(NoteRow(note: note, now: now, calendar: calendar))
 							.listRowInsets(EdgeInsets(top: 0, leading: 18.5, bottom: 0, trailing: 15.5))
 							.listRowSeparator(.hidden, edges: Self.separatorsHidden(for: note, in: group))
 							.tag(note.id)

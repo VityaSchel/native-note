@@ -111,6 +111,7 @@ struct ContentView: View {
 	}
 
 	private static let allNotes = "all"
+	static let narrowestList: CGFloat = 240
 
 	@ViewBuilder
 	private var detail: some View {
@@ -167,7 +168,7 @@ struct ContentView: View {
 					delete(id)
 				}
 			}
-			.navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 420)
+			.navigationSplitViewColumnWidth(min: Self.narrowestList, ideal: 280, max: 420)
 			.navigationTitle("All Notes")
 			.navigationSubtitle(Self.noteCount(model.noteCount))
 			.onChange(of: model.search) { Task { await model.runSearch() } }

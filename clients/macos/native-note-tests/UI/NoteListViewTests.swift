@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import SwiftUI
 import Testing
 
@@ -89,6 +90,27 @@ struct NoteListViewTests {
 		#expect(list.rect(ofRow: 2).height == 56)
 		#expect(abs(textLeft - 35) <= 1, "text starts \(textLeft) pt from the list edge")
 		#expect(abs(inkTop - 15.8) <= 1.5, "the title's ink starts \(inkTop) pt below the row top")
+	}
+
+	private func rowHeights(of list: some View, width: CGFloat) throws -> [CGFloat] {
+		let offscreen = OffscreenWindow(NavigationStack { list }, width: width, height: 400)
+		defer { offscreen.close() }
+		offscreen.pump(for: 0.2)
+		let table = try #require(offscreen.views(of: NSTableView.self).first)
+		return (0 ..< table.numberOfRows).map { table.rect(ofRow: $0).height }
+	}
+
+	@Test func theNarrowestListKeepsTheLongestDatesOnOneLine() throws {
+		for calendar in LongestDateLabels.calendars {
+			let (notes, now) = LongestDateLabels.notes(in: calendar)
+			let list = NoteListView(groups: [NoteGroup(title: "Today", notes: notes)], now: now, selection: .constant(nil), search: .constant("")) { _ in }
+				.environment(\.calendar, calendar)
+			let labels = notes.map { NoteGrouping.dateLabel(for: $0.updated, now: now, calendar: calendar) }
+			let wide = try rowHeights(of: list, width: 1_200)
+			try #require(wide.count == notes.count + 1)
+
+			#expect(try rowHeights(of: list, width: ContentView.narrowestList) == wide, "\(labels)")
+		}
 	}
 
 	@Test func onlyNotesOfTheSameDayAreSeparated() {
@@ -202,5 +224,62 @@ struct NoteListViewTests {
 		let list = NoteListView(groups: NoteGroup.samples, now: Note.sampleNow, selection: .constant(nil), search: .constant("kayak")) { _ in }
 
 		#expect(list.emptyState == nil)
+	}
+}
+
+@MainActor
+private enum LongestDateLabels {
+	private static let font = NoteRow.detailFont.resolve(in: EnvironmentValues().fontResolutionContext).ctFont
+	private static let preview = "shipped the storage layer and the export format, then reviewed the plan"
+
+	static var calendars: [Calendar] {
+		let locales = Locale.availableIdentifiers.map(calendar(_:))
+		let weekdays = locales.map { widestWeekday(in: $0).width }
+		let times = locales.map(widestCommonTime(in:))
+		return [.current, locales[weekdays.indices.max { weekdays[$0] < weekdays[$1] }!], locales[times.indices.max { times[$0] < times[$1] }!]]
+	}
+
+	static func notes(in calendar: Calendar) -> (notes: [Note], now: Date) {
+		let weekday = widestWeekday(in: calendar).weekday
+		var today = calendar.startOfDay(for: Note.sampleNow)
+		while calendar.component(.weekday, from: day(-3, from: today, in: calendar)) != weekday {
+			today = day(1, from: today, in: calendar)
+		}
+		let now = calendar.date(byAdding: .minute, value: 1_439, to: today)!
+		let width = { (date: Date) in self.width(NoteGrouping.dateLabel(for: date, now: now, calendar: calendar)) }
+		let minutes = (0 ..< 1_440).map { calendar.date(byAdding: .minute, value: $0, to: today)! }
+		let older = (8 ... 800).map { day(-$0, from: today, in: calendar) }
+		let dates = [minutes.max { width($0) < width($1) }!, day(-1, from: today, in: calendar), day(-3, from: today, in: calendar), older.max { width($0) < width($1) }!]
+		let notes = dates.map { date in
+			Note(id: UUID(), body: "Standup\n\(preview)", createdAt: date.epochMilliseconds, updatedAt: date.epochMilliseconds)
+		}
+		return (notes, now)
+	}
+
+	private static func calendar(_ identifier: String) -> Calendar {
+		let locale = Locale(identifier: identifier)
+		var calendar = locale.calendar
+		calendar.locale = locale
+		return calendar
+	}
+
+	private static func day(_ offset: Int, from date: Date, in calendar: Calendar) -> Date {
+		calendar.date(byAdding: .day, value: offset, to: date)!
+	}
+
+	private static func width(_ label: String) -> CGFloat {
+		CTLineGetTypographicBounds(CTLineCreateWithAttributedString(NSAttributedString(string: label, attributes: [.font: font])), nil, nil, nil)
+	}
+
+	private static func widestWeekday(in calendar: Calendar) -> (weekday: Int, width: CGFloat) {
+		calendar.standaloneWeekdaySymbols.enumerated().map { ($0 + 1, width($1)) }.max { $0.1 < $1.1 }!
+	}
+
+	private static func widestCommonTime(in calendar: Calendar) -> CGFloat {
+		let today = calendar.startOfDay(for: Note.sampleNow)
+		let now = calendar.date(byAdding: .minute, value: 1_439, to: today)!
+		return [0, 10, 11, 12, 21, 22, 23].map { hour in
+			width(NoteGrouping.dateLabel(for: calendar.date(byAdding: .minute, value: hour * 60 + 58, to: today)!, now: now, calendar: calendar))
+		}.max()!
 	}
 }

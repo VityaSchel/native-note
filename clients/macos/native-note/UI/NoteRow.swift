@@ -7,6 +7,7 @@ struct NoteRow: View {
 
 	let note: Note
 	let now: Date
+	var calendar = Calendar.current
 
 	@Environment(\.colorSchemeContrast) private var contrast
 	@Environment(\.backgroundProminence) private var prominence
@@ -30,11 +31,11 @@ struct NoteRow: View {
 	}
 
 	var dateLabel: String {
-		NoteGrouping.dateLabel(for: note.updated, now: now)
+		NoteGrouping.dateLabel(for: note.updated, now: now, calendar: calendar)
 	}
 
 	var spokenDate: String {
-		NoteGrouping.spokenDateLabel(for: note.updated, now: now)
+		NoteGrouping.spokenDateLabel(for: note.updated, now: now, calendar: calendar)
 	}
 
 	var body: some View {
@@ -46,6 +47,8 @@ struct NoteRow: View {
 			HStack(spacing: 8) {
 				Text(dateLabel)
 					.font(Self.detailFont)
+					.lineLimit(1)
+					.fixedSize()
 					.accessibilityLabel(spokenDate)
 				Text(displayPreview)
 					.font(Self.detailFont)
