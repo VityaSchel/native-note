@@ -13,8 +13,8 @@ members = ["."]
 
 [dependencies]
 libfuzzer-sys = "=0.4.13"
-native-note-core = { path = "..", version = "=0.1.0" }
-native-note-testkit = { path = "../../native-note-testkit", version = "=0.1.0" }
+native-note-core = { path = "..", version = "=0.1.1" }
+native-note-testkit = { path = "../../native-note-testkit", version = "=0.1.1" }
 ring = { version = "=0.17.14", default-features = false }
 
 [lints.clippy]

@@ -3,7 +3,7 @@
 Check out the release tag with its submodules:
 
 ```sh
-git clone --recurse-submodules --branch v0.1.0 https://git.hloth.dev/hloth/native-note.git
+git clone --recurse-submodules --branch v0.1.1 https://git.hloth.dev/hloth/native-note.git
 cd native-note
 ```
 
@@ -11,9 +11,10 @@ cd native-note
 
 Platforms that reproduced each release:
 
-| Release  | Sync server               | macOS app   | Android app |
-| -------- | ------------------------- | ----------- | ----------- |
-| `v0.1.0` | Linux x86_64, macOS arm64 | macOS arm64 | —           |
+| Release  | Sync server               | macOS app   | Android app               |
+| -------- | ------------------------- | ----------- | ------------------------- |
+| `v0.1.1` | Linux x86_64, macOS arm64 | macOS arm64 | Linux x86_64, macOS arm64 |
+| `v0.1.0` | Linux x86_64, macOS arm64 | macOS arm64 | —                         |
 
 ## Sync server
 
@@ -40,8 +41,8 @@ Platforms that reproduced each release:
 .forgejo/scripts/server-release.sh
 
 # 2. Fetch the published binaries and the SHA-256 sums signed in the release notes, with gpg and jq installed
-curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-server-linux-{x86_64,aarch64,armv7l,armv6l}"
-curl -fsSL https://git.hloth.dev/api/v1/repos/hloth/native-note/releases/tags/v0.1.0 | jq -r .body | tr -d '\r' | sed -n '/^-----BEGIN PGP SIGNED MESSAGE-----$/,/^-----END PGP SIGNATURE-----$/p' > SHA256SUMS.asc
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.1/native-note-server-linux-{x86_64,aarch64,armv7l,armv6l}"
+curl -fsSL https://git.hloth.dev/api/v1/repos/hloth/native-note/releases/tags/v0.1.1 | jq -r .body | tr -d '\r' | sed -n '/^-----BEGIN PGP SIGNED MESSAGE-----$/,/^-----END PGP SIGNATURE-----$/p' > SHA256SUMS.asc
 
 # 3. Compare
 gpg --verify SHA256SUMS.asc && gpg --output - --decrypt SHA256SUMS.asc 2>/dev/null | grep -E '^[0-9a-f]{64}  ' > SHA256SUMS
@@ -73,10 +74,10 @@ sha256sum -c --ignore-missing SHA256SUMS
 .forgejo/scripts/macos-build.sh
 
 # 2. Fetch the published zips
-curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/native-note-v0.1.0-macos-{arm64,x86_64}.zip"
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.1/native-note-v0.1.1-macos-{arm64,x86_64}.zip"
 
 # 3. Compare
-.forgejo/scripts/macos-verify.sh native-note-v0.1.0-macos-arm64.zip native-note-v0.1.0-macos-x86_64.zip
+.forgejo/scripts/macos-verify.sh native-note-v0.1.1-macos-arm64.zip native-note-v0.1.1-macos-x86_64.zip
 ```
 
 ## Android app
@@ -109,10 +110,10 @@ curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.0/na
 .forgejo/scripts/android-build.sh
 
 # 2. Fetch the published APK
-curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/<tag>/native-note-<tag>-android.apk"
+curl -fsSLO "https://git.hloth.dev/hloth/native-note/releases/download/v0.1.1/native-note-v0.1.1-android.apk"
 
 # 3. Compare
-.forgejo/scripts/android-verify.sh native-note-<tag>-android.apk
+.forgejo/scripts/android-verify.sh native-note-v0.1.1-android.apk
 ```
 
 [^1]: `server-cross.sh` pins `zig` for Linux x86_64 and arm64 and for macOS arm64 only.

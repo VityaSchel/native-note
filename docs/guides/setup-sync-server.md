@@ -8,7 +8,7 @@ Download the server for this machine, check it against the SHA-256 sums the main
 
 ```sh
 sudo apt install -y curl gpg jq
-v=v0.1.0
+v=v0.1.1
 release=https://git.hloth.dev/hloth/native-note/releases/download/$v
 cd "$(mktemp -d)"
 curl -fLO "$release/native-note-server-linux-$(uname -m)"

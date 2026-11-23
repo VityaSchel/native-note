@@ -14,8 +14,8 @@ android {
 		applicationId = "dev.hloth.nativenote"
 		minSdk = 31
 		targetSdk = 36
-		versionCode = 100
-		versionName = "0.1.0"
+		versionCode = 101
+		versionName = "0.1.1"
 		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 		ndk {
 			abiFilters += setOf("arm64-v8a", "armeabi-v7a", "x86_64")
