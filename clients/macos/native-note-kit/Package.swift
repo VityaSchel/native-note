@@ -54,7 +54,7 @@ let package = Package(
 		.testTarget(
 			name: "NativeNoteKitTests",
 			dependencies: ["NativeNoteKit"],
-			resources: [.copy("vectors")],
+			resources: [.copy("vectors"), .copy("fixtures")],
 			swiftSettings: upcomingFeatures
 		),
 	]
