@@ -48,7 +48,24 @@ coverage/
 
 # Editors
 .idea/
+!clients/android/.idea/
+clients/android/.idea/*
+!clients/android/.idea/.name
+!clients/android/.idea/icon.svg
+!clients/android/.idea/icon_dark.svg
 .vscode/*
 
 # Local signing
 clients/macos/Local.xcconfig
+
+# Android
+clients/android/.gradle/
+clients/android/.kotlin/
+clients/android/**/.cxx/
+clients/android/**/build/
+clients/android/local.properties
+*.apk
+*.aab
+*.jks
+*.p12
+*.keystore

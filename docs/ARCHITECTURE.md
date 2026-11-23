@@ -26,10 +26,11 @@ All keys are 256-bit. Nonces are random 96-bit.
 
 ## Components
 
-| Component                                  | Stack                        |
-| ------------------------------------------ | ---------------------------- |
-| [Server](../server/DESIGN.md)              | Rust 1.95+                   |
-| [macOS client](../clients/macos/DESIGN.md) | Swift 6.2+, SwiftUI + AppKit |
+| Component                                      | Stack                        |
+| ---------------------------------------------- | ---------------------------- |
+| [Server](../server/DESIGN.md)                  | Rust 1.95+                   |
+| [macOS client](../clients/macos/DESIGN.md)     | Swift 6.2+, SwiftUI + AppKit |
+| [Android client](../clients/android/DESIGN.md) | Kotlin 2.4+, Jetpack Compose |
 
 No shared core. Each client implements [clients/DESIGN.md](../clients/DESIGN.md) and must pass the [conformance vectors](../spec/README.md).
 
@@ -53,7 +54,7 @@ Offline-first. Notes are encrypted at rest under a mandatory unlock password; a 
 | Reverse proxy                 | Untrusted, sees sealed envelopes only                                                      |
 | Network                       | Untrusted, sees sealed envelopes only                                                      |
 
-[ThreatModelCoverageTests](../clients/macos/native-note-kit/Tests/NativeNoteKitTests/ThreatModel/ThreatModelCoverageTests.swift) maps every row and entry in this section, non-goals included, to the tests that prove it.
+[ThreatModelCoverageTests](../clients/macos/native-note-kit/Tests/NativeNoteKitTests/ThreatModel/ThreatModelCoverageTests.swift) maps every row and entry in this section, non-goals included, to the tests that prove it; [ThreatModelCoverageTest](../clients/android/app/src/test/kotlin/dev/hloth/nativenote/threatmodel/ThreatModelCoverageTest.kt) does the same for Android, reusing the macOS and server proofs of what the server stores.
 
 Known limitations, out of scope:
 
@@ -69,14 +70,14 @@ Known limitations, out of scope:
 Documented risks and vulnerabilities:
 
 - **No forward secrecy for metadata.** A leaked `apiKey` retroactively decrypts captured envelopes, except those that also crossed TLS.
-- **Argon2 and SQLCipher** are third-party C in the client, built from pinned source.
+- **Argon2 and SQLCipher** are third-party C in the client, built from pinned source. On Android, SQLCipher's crypto provider is LibTomCrypt, also built from pinned source.
 - **Hand-rolled HTTP parser.** Constrained grammar, fuzzed; a reverse proxy is recommended for public deployments.
 - **Plaintext `v` leaks per-note edit counts.** Encrypting it would stop the server enforcing the version rule. Blinded IDs show how many notes exist, deleted ones included, and which change in the same request.
 - **Payload length leaks note size in 4 KiB steps.** The server and its backups see how many [4 KiB blocks](./PROTOCOL.md#content) each version takes, not which writes delete or how long a short note is.
 - **An API-key holder can destroy the recovery path.** Overwriting `contentKeyEncrypted` needs neither the Recovery key nor the Content key. A planted blob fails the tag on decrypt, so they can only make recovery unusable.
 - **Server data-directory compromise leaks the API key.** Reading `/var/lib/native-note-server/api-key` decrypts metadata and forges writes.
 - **No per-device revocation.** Losing a device means [replacing the API key](guides/setup-sync-server.md#connect-a-client) and entering it on the rest.
-- **A short password or pin without hardware binding** is brute-forceable offline in hours by whoever holds the unlock record, which only a build without a keychain group keeps in a file.
+- **A short password or pin without hardware binding** is brute-forceable offline in hours by whoever holds the unlock record, which only a build without a keychain group keeps in a file. On Android the record is always a file, readable only by the app, and binding needs StrongBox or a TEE.
 - **No in-app unlock attempt limiting.** An attacker goes after the database file, not the app. Erasing a library with a forgotten password needs only a confirmation, since anyone in an unlocked session can delete its folder anyway.
 - **Hardware binding does not add per-guess cost.** A disk image alone cannot be attacked offline at all, but code running on the machine that can read the unlock record reads `machineId` with one call and then guesses offline at Argon2id cost. A record kept in the keychain is readable only by Native Note's own signature.
 - **The content key never rotates.** A leaked mnemonic opens any older copy of the recovery blob, such as a server backup, and with it every note, even after rotation.

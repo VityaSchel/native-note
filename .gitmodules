@@ -2,3 +2,11 @@
 	path = clients/macos/native-note-kit/sqlcipher
 	url = https://github.com/sqlcipher/sqlcipher.git
 	shallow = true
+[submodule "argon2"]
+	path = clients/android/argon2
+	url = https://github.com/P-H-C/phc-winner-argon2.git
+	shallow = true
+[submodule "libtomcrypt"]
+	path = clients/android/libtomcrypt
+	url = https://github.com/sqlcipher/libtomcrypt.git
+	shallow = true

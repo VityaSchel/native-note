@@ -1,0 +1,10 @@
+Native Note is a personal note-taking app with no account, ads, analytics or tracking.
+
+• Your notes are encrypted on the phone with your unlock password, bound to the phone's secure hardware when it has StrongBox or a TEE. The library locks as soon as you leave the app.
+• Unlock with a fingerprint or face if you like.
+• Notes are grouped by date, searchable, and saved as you type.
+• Optionally, sync between your phones and Macs through a Native Note server you host yourself. Notes leave the phone only end-to-end encrypted; the server never sees their text.
+• A 24-word recovery phrase restores every note onto a new or wiped phone.
+• Export every note as markdown files in one zip, with an optional passphrase, and import them anywhere Native Note runs.
+
+Native Note is free and open source under the MIT license. Every release is reproducible from its source.

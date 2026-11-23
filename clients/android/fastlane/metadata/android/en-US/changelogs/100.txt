@@ -1,0 +1,1 @@
+First Android release: encrypted notes with biometric unlock, search, export and import, and sync through your own Native Note server.

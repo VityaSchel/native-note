@@ -1,0 +1,2 @@
+-dontobfuscate
+-keep class dev.hloth.nativenote.storage.SQLiteException { <init>(int, java.lang.String); }

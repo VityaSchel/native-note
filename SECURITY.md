@@ -33,4 +33,4 @@ Claims in the README and the documents below are verified against the code befor
 
 ## Cryptography
 
-No custom primitives; platform crypto where available. Primitives: [docs/ARCHITECTURE.md § Cryptography](docs/ARCHITECTURE.md#cryptography). Dependencies: [server/DESIGN.md](server/DESIGN.md) and [clients/macos/DESIGN.md](clients/macos/DESIGN.md).
+No custom primitives; platform crypto where available. Primitives: [docs/ARCHITECTURE.md § Cryptography](docs/ARCHITECTURE.md#cryptography). Dependencies: [server/DESIGN.md](server/DESIGN.md), [clients/macos/DESIGN.md](clients/macos/DESIGN.md) and [clients/android/DESIGN.md](clients/android/DESIGN.md).

@@ -9,12 +9,13 @@ server/            Rust server workspace, docs in its root
 contrib/           the server's systemd unit
 clients/           shared client design, one directory per platform
 clients/macos/     Xcode project, docs in its root
+clients/android/   Gradle project, docs in its root
 devtools/          development-only tools, never shipped
 ```
 
 ## Checks
 
-CI runs repository hygiene, the link check and the Rust checks below with `--locked`, and the server tests on arm64, armv7 and ARMv6 under qemu, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server binaries for a release tag it is dispatched with ([release.yml](.forgejo/workflows/release.yml)).
+CI runs repository hygiene, the link check and the Rust checks below with `--locked`, the server tests on arm64, armv7 and ARMv6 under qemu, and the Android lint, unit tests and unsigned release build, on every pull request ([checks.yml](.forgejo/workflows/checks.yml)), the supply-chain checks nightly ([audit.yml](.forgejo/workflows/audit.yml)), and builds the server binaries for a release tag it is dispatched with ([release.yml](.forgejo/workflows/release.yml)).
 
 ### Conformance vectors
 
@@ -75,6 +76,27 @@ The package's sync tests build and run the server. Hosted coverage needs `ENABLE
 - Every feature gets unit tests and headless end-to-end tests, which run real Argon2 and the Secure Enclave on the generated `RealisticCorpus` library and relaunch through a fresh `AppModel`.
 - Tests never present windows, sheets or alerts; host views in `OffscreenWindow`.
 - Power loss and the [force-quit budget](clients/DESIGN.md#local-db): [devtools/macos-power-loss](devtools/macos-power-loss/README.md).
+
+### Android client
+
+JDK 21 and the Android SDK with platform 37.1 revision 1, build-tools 36.0.0, NDK r30 (`30.0.16248370`) and CMake 4.1.2, with `ANDROID_HOME` set to it, a C compiler and `make` for SQLCipher's amalgamation, and the native submodules (`git submodule update --init clients/android/argon2 clients/android/libtomcrypt clients/macos/native-note-kit/sqlcipher`); on Debian or Ubuntu, as root, `.forgejo/scripts/install-android-sdk.sh <sdk directory>` installs them. Instrumented tests run on a headless emulator of the `google_atd` API 36 image, or a phone, under the application ID `dev.hloth.nativenote.debug`.
+
+```sh
+cd clients/android
+./gradlew lint testDebugUnitTest
+"$ANDROID_HOME/emulator/emulator" -avd <API 36 AVD> -no-window -no-audio -no-snapshot -gpu swiftshader_indirect &
+"$ANDROID_HOME/platform-tools/adb" wait-for-device shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 1; done'
+./gradlew connectedDebugAndroidTest
+```
+
+Tests that need no device live in `app/src/sharedTest` and run both with `testDebugUnitTest` and on the device; vector files reach them from `spec/` on the JVM and through an asset link on the device.
+
+- `ScreenRenderTest` writes every screen in light and dark to the debug app's `files/renders`; on the emulator `captureToImage` needs the software GPU above.
+- `BiometricTouchTest` runs only with `-e touch true`, on a phone with an enrolled fingerprint and someone to touch it.
+- The force-kill budget: [devtools/android-force-kill](devtools/android-force-kill/README.md).
+- Sync against real servers through `adb reverse`: [devtools/android-sync-e2e](devtools/android-sync-e2e/README.md); without it `ServerSyncTest` skips.
+
+After a dependency change, empty `<components>` in `gradle/verification-metadata.xml`, keeping `<configuration>`, run `./gradlew --write-verification-metadata sha256 help assembleRelease bundleRelease lint testDebugUnitTest assembleDebugAndroidTest` with an empty `GRADLE_USER_HOME`, then add the AAPT2 classifiers this host did not fetch. The unsigned release APK and AAB, with their SHA-256: `.forgejo/scripts/android-build.sh [<commit>]`.
 
 ## Rules
 
