@@ -55,7 +55,7 @@ struct OnboardingView: View {
 	private var page: some View {
 		switch step {
 		case .welcome:
-			OnboardingPage(title: "Welcome to Native Note", subtitle: Text("A personal encrypted self-hosted note-taking app")) {
+			OnboardingPage(title: "Welcome to Native Note", subtitle: Text("A personal encrypted self-hosted note-taking app.")) {
 				Image(nsImage: NSApp.applicationIconImage)
 					.resizable()
 					.frame(width: 96, height: 96)
@@ -82,7 +82,7 @@ struct OnboardingView: View {
 		case .touchID:
 			OnboardingPage(
 				title: "Unlock with Touch ID?",
-				subtitle: Text("Unlock the app with your fingerprint"),
+				subtitle: Text("Unlock the app with your fingerprint."),
 				symbol: "touchid",
 				movesVoiceOverToTitle: chosen != nil,
 				voiceOverMoved: voiceOverMoved

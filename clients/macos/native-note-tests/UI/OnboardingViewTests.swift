@@ -68,7 +68,7 @@ struct OnboardingViewTests {
 		defer { offscreen.close() }
 		offscreen.pump()
 		#expect(offscreen.texts().contains("Welcome to Native Note"))
-		#expect(offscreen.texts().contains("A personal encrypted self-hosted note-taking app"))
+		#expect(offscreen.texts().contains("A personal encrypted self-hosted note-taking app."))
 		#expect(offscreen.views(of: NSSecureTextField.self).isEmpty)
 
 		try offscreen.press("Next")
@@ -171,7 +171,7 @@ struct OnboardingViewTests {
 
 		try enterPassword("correct horse", in: offscreen)
 		await offscreen.pump { offscreen.texts().contains("Unlock with Touch ID?") }
-		#expect(offscreen.texts().contains("Unlock the app with your fingerprint"))
+		#expect(offscreen.texts().contains("Unlock the app with your fingerprint."))
 		#expect(offscreen.button("Set Up Touch ID") != nil && offscreen.button("Skip") != nil)
 		let primary = try #require(offscreen.button("Set Up Touch ID")).frame
 		let secondary = try #require(offscreen.button("Skip")).frame

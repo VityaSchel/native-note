@@ -266,7 +266,7 @@ private enum DrivenScreens {
 		let listening = Latch()
 		let retrying = Latch()
 		return [
-			Screen(onboarding(touchIDAvailable: true), width: 720, height: 560, expecting: AuditExpectations(mustHear: ["Unlock with Touch ID?", "Unlock the app with your fingerprint"])) { offscreen in
+			Screen(onboarding(touchIDAvailable: true), width: 720, height: 560, expecting: AuditExpectations(mustHear: ["Unlock with Touch ID?", "Unlock the app with your fingerprint."])) { offscreen in
 				try await offscreen.reachTouchIDOffer()
 			},
 			Screen(
