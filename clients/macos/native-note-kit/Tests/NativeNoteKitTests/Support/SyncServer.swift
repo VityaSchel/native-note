@@ -103,7 +103,8 @@ final class SyncServer: @unchecked Sendable {
 		process.standardOutput = FileHandle.nullDevice
 		try process.run()
 		let line = try Self.firstListeningLine(from: stderr.fileHandleForReading)
-		let port = try #require(line.split(separator: ":").last.flatMap { Int($0) }, "\(line)")
+		let listening = line.split(separator: " ").first { $0.hasPrefix("address=") }
+		let port = try #require(listening?.split(separator: ":").last.flatMap { Int($0) }, "\(line)")
 		lock.withLock {
 			self.process = process
 			address = URL(string: "http://127.0.0.1:\(port)/")
