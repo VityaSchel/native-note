@@ -113,6 +113,8 @@ class ScreenRenderTest {
 			save("settings")
 			compose.onNodeWithText(context.getString(R.string.change_password)).performClick()
 			save("settings-change-password", dialog = true)
+			show { LicensesScreen(onBack = {}) }
+			save("licenses")
 		}
 	}
 

@@ -134,6 +134,9 @@
 		<item quantity="other">%d not imported because Native Note locked</item>
 	</plurals>
 
+	<string name="settings_about">About</string>
+	<string name="third_party_licenses">Third-Party Licenses</string>
+
 	<string name="settings_unlock">Unlock</string>
 	<string name="change_password">Change Password</string>
 	<string name="change_password_explanation">The new password unlocks your notes on this phone. It cannot be recovered.</string>

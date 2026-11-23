@@ -79,10 +79,16 @@ private fun Locked(model: AppModel) {
 @Composable
 private fun Library(model: AppModel) {
 	var showingSettings by rememberSaveable { mutableStateOf(false) }
+	var showingLicenses by rememberSaveable { mutableStateOf(false) }
 	var syncSetup by rememberSaveable { mutableStateOf<SyncSetupMode?>(null) }
 	val prompt = rememberBiometricPrompt(stringResource(R.string.biometric_enable_prompt_title))
 	syncSetup?.let { mode ->
 		SyncSetupScreen(model, mode, onDone = { syncSetup = null })
+		return
+	}
+	if (showingLicenses) {
+		BackHandler { showingLicenses = false }
+		LicensesScreen(onBack = { showingLicenses = false })
 		return
 	}
 	if (showingSettings) {
@@ -95,6 +101,7 @@ private fun Library(model: AppModel) {
 			onDisableBiometrics = { model.disableBiometricUnlock().await() },
 			exchange = { LibraryExchange(model) },
 			sync = { SyncSettingsSection(model, onSetUp = { syncSetup = it }) },
+			onLicenses = { showingLicenses = true },
 		)
 		return
 	}

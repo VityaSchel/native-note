@@ -8,17 +8,21 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -130,5 +134,28 @@ class AccessScreensTest {
 		answer = null
 		dialogButton(R.string.change_password).performClick()
 		node(R.string.change_password_explanation).assertDoesNotExist()
+	}
+
+	@Test
+	fun settingsOpensTheThirdPartyLicenses() {
+		var opened = false
+		compose.setContent { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, onLicenses = { opened = true }) }
+
+		node(R.string.third_party_licenses).performClick()
+
+		assertTrue(opened)
+	}
+
+	@Test
+	fun theLicensesScreenShowsEveryNoticeThroughTheApacheTermsAndGoesBack() {
+		var closed = false
+		compose.setContent { LicensesScreen(onBack = { closed = true }) }
+
+		compose.onNodeWithText("SQLCipher").assertIsDisplayed()
+		compose.onNode(hasScrollAction()).performScrollToNode(hasText("END OF TERMS AND CONDITIONS"))
+		compose.onNodeWithText("END OF TERMS AND CONDITIONS").assertIsDisplayed()
+		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+
+		assertTrue(closed)
 	}
 }

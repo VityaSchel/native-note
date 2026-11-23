@@ -44,6 +44,7 @@ fun SettingsScreen(
 	onDisableBiometrics: suspend () -> Failure? = { null },
 	exchange: @Composable () -> Unit = {},
 	sync: @Composable () -> Unit = {},
+	onLicenses: () -> Unit = {},
 ) {
 	var changingPassword by rememberSaveable { mutableStateOf(false) }
 	var enablingBiometrics by rememberSaveable { mutableStateOf(false) }
@@ -85,6 +86,13 @@ fun SettingsScreen(
 				color = MaterialTheme.colorScheme.primary,
 			)
 			exchange()
+			Text(
+				stringResource(R.string.settings_about),
+				Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 8.dp),
+				style = MaterialTheme.typography.titleSmall,
+				color = MaterialTheme.colorScheme.primary,
+			)
+			ListItem(onClick = onLicenses) { Text(stringResource(R.string.third_party_licenses)) }
 		}
 	}
 	if (changingPassword) ChangePasswordDialog(onDismiss = { changingPassword = false }, onChangePassword)
