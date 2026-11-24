@@ -32,6 +32,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -45,6 +46,7 @@ data class SyncStatus(
 	val server: String? = null,
 	val lastSynced: Long? = null,
 	val problems: List<SyncProblem> = emptyList(),
+	val lastFailure: Throwable? = null,
 ) {
 	sealed interface Phase {
 		data object Off : Phase
@@ -86,16 +88,12 @@ class LibrarySync(
 		val wanted = ++syncRequests
 		if (syncLoop == null) {
 			syncLoop = scope.launch {
-				try {
-					while (syncedThrough < syncRequests && isActive) {
-						val covered = syncRequests
-						once()
-						syncedThrough = covered
-					}
-				} finally {
-					syncLoop = null
+				while (syncedThrough < syncRequests && isActive) {
+					val covered = syncRequests
+					once()
+					syncedThrough = covered
 				}
-			}
+			}.also { it.invokeOnCompletion { syncLoop = null } }
 		}
 		while (syncedThrough < wanted) (syncLoop ?: break).join()
 	}
@@ -109,12 +107,12 @@ class LibrarySync(
 		try {
 			val applied = engine.sync { commit(it, store) }
 			if (store !== currentStore() || engine !== this.engine) return
-			status = status.copy(phase = SyncStatus.Phase.Idle, lastSynced = clock(), problems = applied.problems.distinct())
+			status = status.copy(phase = SyncStatus.Phase.Idle, lastSynced = clock(), problems = applied.problems.distinct(), lastFailure = null)
 		} catch (cancelled: CancellationException) {
 			throw cancelled
 		} catch (error: Exception) {
 			if (store !== currentStore() || engine !== this.engine) return
-			status = status.copy(phase = SyncStatus.Phase.Failed(error))
+			status = status.copy(phase = SyncStatus.Phase.Failed(error), lastFailure = error)
 		}
 	}
 
@@ -131,6 +129,8 @@ class LibrarySync(
 	suspend fun start(store: NoteStore) {
 		val settings = try {
 			withContext(worker) { store.syncSettings() }
+		} catch (cancelled: CancellationException) {
+			throw cancelled
 		} catch (error: Exception) {
 			if (store === currentStore()) report(error)
 			return
@@ -176,7 +176,11 @@ class LibrarySync(
 		try {
 			val (address, key) = endpoint(server, apiKey)
 			val joined = flow(address, key).join(recoveryKey) ?: return SetupFailure.PhraseDoesNotOpen
-			withContext(worker) { store.enableSync(SyncSettings(address, key, joined.contentKey), joined.pin) }
+			withContext(NonCancellable) {
+				withContext(worker) { store.enableSync(SyncSettings(address, key, joined.contentKey), joined.pin) }
+				recovery = null
+				start(store)
+			}
 		} catch (cancelled: CancellationException) {
 			throw cancelled
 		} catch (error: Exception) {
@@ -184,8 +188,6 @@ class LibrarySync(
 		} finally {
 			recoveryKey.fill(0)
 		}
-		recovery = null
-		start(store)
 		return null
 	}
 
@@ -257,17 +259,15 @@ class LibrarySync(
 
 	fun cancelRecovery() {
 		recovery = null
+		serverChange?.cancel()
+		serverChange = null
 	}
 
 	private suspend fun changeServer(kept: KeptLibrary, server: String, apiKey: ByteArray, store: NoteStore): SetupResult<SetupStart> {
 		val change = scope.async { guarded { reattachOrMove(kept, server, apiKey, store) } }
 		serverChange = change
 		val result = change.await()
-		if (serverChange !== change) return result
-		serverChange = null
-		if (result != SetupResult.Ok(SetupStart.Reattached) || store !== currentStore()) return result
-		stop()?.join()
-		start(store)
+		if (serverChange === change) serverChange = null
 		return result
 	}
 
@@ -282,7 +282,14 @@ class LibrarySync(
 		if (stored < kept.pin) return SetupResult.Err(SetupFailure.ServerBehind)
 		if (kept.mark != null && !SyncEngine.holds(kept.mark, connection, kept.since)) return SetupResult.Err(SetupFailure.ServerHoldsAnotherLibrary)
 		currentCoroutineContext().ensureActive()
-		withContext(worker) { store.reattachSync(server, apiKey) }
+		withContext(NonCancellable) {
+			withContext(worker) { store.reattachSync(server, apiKey) }
+			if (store === currentStore()) {
+				serverChange = null
+				stop()?.join()
+				start(store)
+			}
+		}
 		return SetupResult.Ok(SetupStart.Reattached)
 	}
 
@@ -321,7 +328,6 @@ class LibrarySync(
 			is InvalidEndpoint -> error.failure
 			is SyncAlreadySetUp -> SetupFailure.AlreadySetUp
 			is RecoveryFlow.Failure.NoLibrary -> SetupFailure.ServerHasNoLibrary
-			is RecoveryFlow.Failure.ServerHasLibrary -> SetupFailure.ServerHasLibrary
 			is RecoveryFlow.Failure.RotatedElsewhere -> SetupFailure.RotatedElsewhere
 			is RecoveryFlow.Failure.ServerBehind -> SetupFailure.ServerBehind
 			is RecoveryFlow.Failure.OutcomeUnknown -> SetupFailure.OutcomeUnknown

@@ -95,6 +95,19 @@ class LibraryModelTest {
 	}
 
 	@Test
+	fun leavingANewNoteForgetsThatItsEditorWantedFocus() {
+		val model = unlocked()
+		val id = model.newNote()
+		onMain { model.edit(id, "kept") }
+
+		onMain { model.select(null) }
+		assertNull(onMain { model.focusesEditor })
+
+		onMain { model.select(id) }
+		assertNull(onMain { model.focusesEditor })
+	}
+
+	@Test
 	fun aNewNoteLeftEmptyLeavesNoTrace() {
 		val model = unlocked()
 		val id = model.newNote()

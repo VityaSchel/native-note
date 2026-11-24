@@ -17,7 +17,9 @@ import dev.hloth.nativenote.unlock.UnlockRecordFile
 import java.security.KeyStore
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -242,5 +244,32 @@ class AppModelTest {
 		assertNotEquals(cheapArgon, files.record.read()!!.parameters.argon)
 		relaunched.await { lock() }
 		runCatching { relaunched.await { erase() } }
+	}
+
+	@Test
+	fun aPasswordChangeCanceledBeforeItStartsDoesNotBlockTheNext() {
+		val model = setUpLibrary()
+		val changed = runBlocking {
+			withContext(Dispatchers.Main) {
+				val change = model.changePassword(password, "never applied")
+				model.lock()
+				change
+			}
+		}
+		runBlocking { changed.join() }
+		model.await { unlock(password) }
+
+		assertNull(runBlocking { onMain { model.changePassword(password, "a new password") }.await() })
+	}
+
+	@Test
+	fun anUnlockIsRefusedWhileErasing() {
+		val model = locked()
+
+		val jobs = onMain { listOf(model.erase(), model.unlock(password)) }
+		runBlocking { jobs.forEach { it.join() } }
+
+		assertEquals(AppModel.Phase.NeedsSetup, onMain { model.phase })
+		assertNull(onMain { model.failure })
 	}
 }

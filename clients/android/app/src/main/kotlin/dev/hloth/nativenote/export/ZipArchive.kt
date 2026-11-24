@@ -3,7 +3,6 @@ package dev.hloth.nativenote.export
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.util.zip.CRC32
@@ -157,11 +156,7 @@ object ZipArchive {
 
 	private fun decodedName(bytes: ByteArray): String {
 		val name = try {
-			Charsets.UTF_8.newDecoder()
-				.onMalformedInput(CodingErrorAction.REPORT)
-				.onUnmappableCharacter(CodingErrorAction.REPORT)
-				.decode(ByteBuffer.wrap(bytes))
-				.toString()
+			bytes.decodeToString(throwOnInvalidSequence = true)
 		} catch (_: CharacterCodingException) {
 			throw Failure.UnsafeName()
 		}

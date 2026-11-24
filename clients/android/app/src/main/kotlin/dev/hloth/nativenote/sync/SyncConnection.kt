@@ -2,12 +2,15 @@ package dev.hloth.nativenote.sync
 
 import dev.hloth.nativenote.crypto.AesGcm
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 fun interface SyncTransport {
 	suspend fun post(body: ByteArray): ByteArray
@@ -35,16 +38,21 @@ sealed class SyncError(message: String) : Exception(message) {
 	}
 }
 
-class HttpTransport(private val server: String) : SyncTransport {
-	override suspend fun post(body: ByteArray): ByteArray = coroutineScope {
+class HttpTransport(private val server: String, private val limitMillis: Long = REQUEST_MILLISECONDS) : SyncTransport {
+	override suspend fun post(body: ByteArray): ByteArray {
 		val connection = withContext(Dispatchers.IO) { URL(server).openConnection() as HttpURLConnection }
-		val exchange = async(Dispatchers.IO) { exchange(connection, body) }
-		try {
-			exchange.await()
+		val exchange = requests.async { exchange(connection, body) }
+		val reply = try {
+			withTimeoutOrNull(limitMillis) { exchange.await() }
 		} catch (cancelled: CancellationException) {
+			exchange.cancel()
 			connection.disconnect()
 			throw cancelled
 		}
+		if (reply != null) return reply
+		exchange.cancel()
+		connection.disconnect()
+		throw SocketTimeoutException("no answer in ${limitMillis / 1000} s")
 	}
 
 	private fun exchange(connection: HttpURLConnection, body: ByteArray): ByteArray {
@@ -52,8 +60,8 @@ class HttpTransport(private val server: String) : SyncTransport {
 			connection.requestMethod = "POST"
 			connection.instanceFollowRedirects = false
 			connection.useCaches = false
-			connection.connectTimeout = TIMEOUT_MILLISECONDS
-			connection.readTimeout = TIMEOUT_MILLISECONDS
+			connection.connectTimeout = SILENCE_MILLISECONDS
+			connection.readTimeout = SILENCE_MILLISECONDS
 			connection.doOutput = true
 			connection.setFixedLengthStreamingMode(body.size)
 			for ((name, value) in HEADERS) connection.setRequestProperty(name, value)
@@ -74,7 +82,9 @@ class HttpTransport(private val server: String) : SyncTransport {
 			"Accept-Encoding" to "identity",
 			"Content-Type" to "application/octet-stream",
 		)
-		private const val TIMEOUT_MILLISECONDS = 30_000
+		private const val SILENCE_MILLISECONDS = 30_000
+		private const val REQUEST_MILLISECONDS = 120_000L
+		private val requests = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 	}
 }
 

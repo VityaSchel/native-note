@@ -7,8 +7,6 @@ import java.net.UnknownHostException
 
 class RecoveryFlow(private val connection: SyncConnection) {
 	sealed class Failure(message: String) : Exception(message) {
-		class ServerHasLibrary : Failure("the server now holds a library")
-
 		class RotatedElsewhere : Failure("the recovery phrase was changed on another device")
 
 		class ServerBehind : Failure("the server holds an older recovery blob than this device pinned")

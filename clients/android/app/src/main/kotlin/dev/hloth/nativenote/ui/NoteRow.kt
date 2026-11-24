@@ -19,7 +19,7 @@ import dev.hloth.nativenote.storage.Note
 @Composable
 fun NoteRow(note: Note, grouping: NoteGrouping, selected: Boolean, onClick: () -> Unit) {
 	val title = note.title.ifEmpty { stringResource(R.string.untitled_note) }
-	val preview = note.preview.ifEmpty { stringResource(R.string.no_additional_text) }
+	val preview = note.preview().ifEmpty { stringResource(R.string.no_additional_text) }
 	val date = grouping.dateLabel(note.updatedAt)
 	val spoken = "${grouping.spokenDateLabel(note.updatedAt)}, $preview"
 	ListItem(

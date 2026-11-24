@@ -31,11 +31,11 @@ class NoteTest {
 
 	@Test
 	fun previewIsTheRestOnOneLine() {
-		assertEquals("milk eggs", note("Groceries\nmilk\neggs").preview)
-		assertEquals("milk  eggs", note("Groceries\n\n  milk\n\neggs  \n").preview)
-		assertEquals("milk eggs", note("Groceries\r\nmilk\r\neggs").preview)
-		assertEquals("", note("Groceries").preview)
-		assertEquals("", note("Groceries\n \n\t").preview)
+		assertEquals("milk eggs", note("Groceries\nmilk\neggs").preview())
+		assertEquals("milk  eggs", note("Groceries\n\n  milk\n\neggs  \n").preview())
+		assertEquals("milk eggs", note("Groceries\r\nmilk\r\neggs").preview())
+		assertEquals("", note("Groceries").preview())
+		assertEquals("", note("Groceries\n \n\t").preview())
 	}
 
 	@Test
@@ -60,5 +60,12 @@ class NoteTest {
 
 		assertEquals(Note(id, "a", 1, 2, ext = byteArrayOf(3)), Note(id, "a", 1, 2, ext = byteArrayOf(3)))
 		assertNotEquals(Note(id, "a", 1, 2, ext = byteArrayOf(3)), Note(id, "a", 1, 2, ext = byteArrayOf(4)))
+	}
+
+	@Test
+	fun aCappedPreviewReadsOnlyItsFirstCharacters() {
+		assertEquals("milk eg", note("Groceries\n\n  milk\neggs and more").preview(7))
+		assertEquals("milk eggs", note("Groceries\nmilk\r\neggs").preview(300))
+		assertEquals("", note("Groceries\n \n").preview(300))
 	}
 }

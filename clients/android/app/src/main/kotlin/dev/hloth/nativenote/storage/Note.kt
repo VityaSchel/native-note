@@ -14,12 +14,13 @@ class Note(
 ) {
 	val title: String get() = body.takeWhile { !it.isNewline() }.trim { it == '\t' || Character.getType(it) == Character.SPACE_SEPARATOR.toInt() }
 
-	val preview: String
-		get() {
-			val lines = body.replace("\r\n", "\n")
-			val rest = lines.indexOfFirst { it.isNewline() }.let { if (it < 0) "" else lines.substring(it + 1) }
-			return rest.trim().split { it.isNewline() }.joinToString(" ")
-		}
+	fun preview(limit: Int = body.length): String {
+		val newline = body.indexOfFirst { it.isNewline() }
+		if (newline < 0) return ""
+		val start = (newline until body.length).firstOrNull { !body[it].isWhitespace() } ?: return ""
+		val shown = body.substring(start, if (limit < body.length - start) start + limit else body.length)
+		return shown.replace("\r\n", "\n").trim().split { it.isNewline() }.joinToString(" ")
+	}
 
 	fun copy(body: String = this.body, updatedAt: Long = this.updatedAt, dirty: Boolean = this.dirty) =
 		Note(id, body, createdAt, updatedAt, deleted, dirty, v, ext)

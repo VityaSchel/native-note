@@ -61,6 +61,8 @@ class SaveScheduler(
 
 	fun isPending(id: UUID) = id in pending
 
+	val isHeld get() = holds > 0
+
 	fun hold() {
 		holds++
 	}

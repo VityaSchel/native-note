@@ -101,7 +101,9 @@ fun NoteStore.awaitEchoes(firstPushes: List<UUID>) {
 	if (firstPushes.isEmpty()) return
 	connection.transaction {
 		val awaited = firstPushesAwaitingEcho() + firstPushes
-		setMeta(Meta.FirstPushes, awaited.fold(ByteArray(0)) { stored, id -> stored + id.bytes() })
+		val stored = ByteBuffer.allocate(awaited.size * 16)
+		for (id in awaited) stored.put(id.bytes())
+		setMeta(Meta.FirstPushes, stored.array())
 	}
 }
 

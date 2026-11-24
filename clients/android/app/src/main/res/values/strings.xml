@@ -169,10 +169,12 @@
 	<string name="failure_delete">The note could not be deleted.</string>
 	<string name="failure_search">Search could not run.</string>
 	<string name="failure_export">The notes could not be exported.</string>
+	<string name="failure_export_locked">Native Note locked before the notes were saved. Export again.</string>
+	<string name="failure_import_locked">Native Note locked before the notes were imported. Import again.</string>
 	<string name="failure_import">The file could not be imported.</string>
 	<string name="failure_export_too_large">The library is too large to export as one zip.</string>
 	<string name="failure_import_too_large">The file is too large to be a Native Note export.</string>
-	<string name="failure_import_too_large_for_device">The file is too large to import on this device.</string>
+	<string name="failure_too_large_for_device">This is too large for the memory Native Note has on this device.</string>
 	<string name="failure_export_newer">This export was made by a newer version of Native Note. Update Native Note to import it.</string>
 	<string name="failure_export_parameters">The export asks for more memory or time than Native Note allows.</string>
 	<string name="failure_not_an_export">This file is not a Native Note export, or it is damaged.</string>

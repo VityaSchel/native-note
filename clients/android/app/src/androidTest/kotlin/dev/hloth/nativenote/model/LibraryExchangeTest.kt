@@ -5,6 +5,7 @@ import dev.hloth.nativenote.R
 import dev.hloth.nativenote.crypto.Argon2
 import dev.hloth.nativenote.export.ExportEnvelope
 import dev.hloth.nativenote.export.LibraryArchive
+import dev.hloth.nativenote.support.FakeBiometricVault
 import dev.hloth.nativenote.support.RealisticCorpus
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
@@ -12,11 +13,15 @@ import dev.hloth.nativenote.support.cheapArgon
 import dev.hloth.nativenote.support.onMain
 import java.io.File
 import java.io.IOException
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -39,8 +44,15 @@ class LibraryExchangeTest {
 		bodies: List<String> = emptyList(),
 		exportParameters: Argon2.Parameters = cheapArgon,
 		memoryAvailable: () -> Long = { Long.MAX_VALUE },
+		biometricVault: FakeBiometricVault? = null,
 	): AppModel {
-		val model = appModel(File(folder.root, name).apply { mkdirs() }, exportParameters = exportParameters, memoryAvailable = memoryAvailable)
+		val model = appModel(
+			File(folder.root, name).apply { mkdirs() },
+			exportParameters = exportParameters,
+			memoryAvailable = memoryAvailable,
+			biometricVault = biometricVault ?: FakeBiometricVault(),
+			biometricsAvailable = { biometricVault != null },
+		)
 		model.await { start() }
 		model.await { setUp(password) }
 		onMain { model.finishOnboarding() }
@@ -200,6 +212,116 @@ class LibraryExchangeTest {
 	}
 
 	@Test
+	fun anExportTheLockRefusedSaysSoAndACanceledPickerSaysNothing() {
+		val model = library("library", listOf("Note"))
+		onMain { model.prepareExport(null) }
+		model.await { lock() }
+		model.await { unlock(password) }
+
+		assertFalse(runBlocking { withContext(Dispatchers.Main) { model.exportLibrary { }.await() } })
+		assertEquals(R.string.failure_export_locked, model.failureReason())
+
+		onMain { model.dismissFailure() }
+		onMain { model.prepareExport(null) }
+		assertFalse(runBlocking { withContext(Dispatchers.Main) { model.exportLibrary(null).await() } })
+		assertNull(onMain { model.failure })
+	}
+
+	@Test
+	fun aTouchThatUnlocksKeepsTheMessageThatNothingWasExported() {
+		val vault = FakeBiometricVault()
+		val model = library("library", listOf("Note"), biometricVault = vault)
+		model.await { appStarted() }
+		assertNull(runBlocking {
+			onMain {
+				model.enableBiometricUnlock(password) {
+					vault.touched = true
+					AppModel.BiometricOutcome.Succeeded
+				}
+			}.await()
+		})
+		onMain {
+			model.prepareExport(null)
+			model.screenTurnedOff()
+		}
+		model.await { lock() }
+
+		assertFalse(runBlocking { withContext(Dispatchers.Main) { model.exportLibrary { }.await() } })
+		model.await { appStarted() }
+		onMain { model.biometricPromptShown() }
+		vault.touched = true
+		model.await { biometricPromptEnded(AppModel.BiometricOutcome.Succeeded) }
+
+		assertEquals(AppModel.Phase.Unlocked, onMain { model.phase })
+		assertEquals(R.string.failure_export_locked, model.failureReason())
+	}
+
+	@Test
+	fun aFilePickedAfterTheLockSaysItWasNotImported() {
+		val file = library("source", listOf("Note")).exported()!!
+		val model = library("target")
+		onMain { model.prepareImport() }
+		model.await { lock() }
+
+		assertNull(runBlocking { withContext(Dispatchers.Main) { model.importLibrary(null, { file.size.toLong() }) { file }.await() } })
+
+		assertEquals(R.string.failure_import_locked, model.failureReason())
+	}
+
+	@Test
+	fun anExportAndAnImportReportWhatTheyDid() {
+		val source = library("source", listOf("One", "Two"))
+		val target = library("target")
+
+		val file = source.exported()!!
+		assertEquals(AppModel.Exchanged.Exported(2), onMain { source.exchanged })
+		onMain { source.dismissExchanged() }
+		assertNull(onMain { source.exchanged })
+
+		target.imported(file)
+		assertEquals(AppModel.Exchanged.Imported(ImportSummary(added = 2)), onMain { target.exchanged })
+	}
+
+	@Test
+	fun runningOutOfMemorySaysSo() {
+		val model = library("library", listOf("Note"))
+
+		onMain { model.prepareExport(null) }
+		assertFalse(runBlocking { withContext(Dispatchers.Main) { model.exportLibrary { throw OutOfMemoryError() }.await() } })
+		assertEquals(R.string.failure_too_large_for_device, model.failureReason())
+	}
+
+	@Test
+	fun aSlowDocumentProviderDoesNotHoldUpSaves() {
+		val model = library("library", listOf("Note"))
+		val released = CountDownLatch(1)
+		val reading = onMain {
+			model.importLibrary(null, { 1 }) {
+				released.await()
+				ByteArray(0)
+			}
+		}
+
+		onMain { model.edit(model.notes.single().id, "edited while the file is read") }
+		runBlocking { withTimeout(5_000) { withContext(Dispatchers.Main) { model.flushPendingSaves() } } }
+
+		released.countDown()
+		runBlocking { reading.await() }
+	}
+
+	@Test
+	fun anImportRerunsAnActiveSearch() {
+		val file = library("source", listOf("Kayak rental")).exported()!!
+		val target = library("target", listOf("Groceries"))
+		onMain { target.updateSearch("kayak") }
+
+		target.imported(file)
+
+		val grouping = NoteGrouping(0, ZoneId.of("UTC"), NoteGrouping.Words("", "", "", { day, time -> "$day $time" }, DateTimeFormatter.ISO_TIME, Locale.US))
+		assertEquals(listOf("Kayak rental"), onMain { target.groups(grouping, "Results") }.flatMap { it.notes }.map { it.title })
+	}
+
+	@Test
 	fun leavingForThePickerKeepsTheLibraryUnlockedUntilItCloses() {
 		val model = library("library")
 
@@ -268,7 +390,7 @@ class LibraryExchangeTest {
 		}
 
 		assertFalse(read)
-		assertEquals(R.string.failure_import_too_large_for_device, model.failureReason())
+		assertEquals(R.string.failure_too_large_for_device, model.failureReason())
 	}
 
 	@Test

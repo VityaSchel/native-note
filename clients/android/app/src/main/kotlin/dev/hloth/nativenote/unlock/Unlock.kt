@@ -16,8 +16,6 @@ object Unlock {
 		class DatabaseMissing : Failure("the notes database is missing")
 
 		class KeyRejected : Failure("the notes database does not open with its unlock record")
-
-		class PasswordNotChanged : Failure("the new unlock record did not land")
 	}
 
 	class Unlocked(val connection: SQLiteConnection, val record: UnlockRecord)

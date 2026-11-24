@@ -60,7 +60,7 @@ object ExportEnvelope {
 		val header = file.copyOfRange(0, HEADER_LENGTH)
 		val fields = WireReader(header.copyOfRange(MAGIC.size, HEADER_LENGTH))
 		val parameters = Argon2.Parameters(fields.u32().toInt(), fields.u32().toInt(), fields.u32().toInt())
-		if (parameters.m < 0 || parameters.t < 0 || parameters.p < 0 || !isWithinBounds(parameters)) throw Failure.ParametersOutOfBounds()
+		if (!isWithinBounds(parameters)) throw Failure.ParametersOutOfBounds()
 		val key = key(passphrase, header.copyOfRange(HEADER_LENGTH - SALT_LENGTH, HEADER_LENGTH), parameters)
 		try {
 			return AesGcm.open(key, file.copyOfRange(HEADER_LENGTH, file.size), header) ?: throw Failure.WrongPassphraseOrDamaged()

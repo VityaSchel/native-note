@@ -14,11 +14,11 @@ import dev.hloth.nativenote.storage.Note
 import dev.hloth.nativenote.storage.NoteStore
 import dev.hloth.nativenote.storage.commit
 import dev.hloth.nativenote.storage.disconnectSync
-import dev.hloth.nativenote.sync.Mnemonic
-import dev.hloth.nativenote.sync.PhraseEntry
 import dev.hloth.nativenote.sync.Applied
 import dev.hloth.nativenote.sync.Commit
 import dev.hloth.nativenote.sync.HttpTransport
+import dev.hloth.nativenote.sync.Mnemonic
+import dev.hloth.nativenote.sync.PhraseEntry
 import dev.hloth.nativenote.sync.SyncTransport
 import dev.hloth.nativenote.unlock.BiometricVault
 import dev.hloth.nativenote.unlock.KeystoreBiometricVault
@@ -32,8 +32,10 @@ import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.ensureActive
@@ -63,6 +65,12 @@ class AppModel(
 
 	private class StoredKeyUnreadable(cause: Throwable) : Exception(cause)
 
+	sealed interface Exchanged {
+		data class Exported(val notes: Int) : Exchanged
+
+		data class Imported(val summary: ImportSummary) : Exchanged
+	}
+
 	private class PendingExport(val passphrase: String?)
 
 	private class FailingSave(val note: Note, val reason: Failure.Unexpected)
@@ -89,6 +97,8 @@ class AppModel(
 	var biometricOffer by mutableStateOf(BiometricOffer.Hidden)
 		private set
 	var isImporting by mutableStateOf(false)
+		private set
+	var exchanged by mutableStateOf<Exchanged?>(null)
 		private set
 	val canUseBiometrics get() = biometricsAvailable()
 
@@ -130,17 +140,18 @@ class AppModel(
 
 	fun cancelRecovery() = sync.cancelRecovery()
 
-	suspend fun turnOffSync(): Failure? {
-		val store = store ?: return Failure.Unexpected(R.string.failure_turn_off_sync_unlock)
+	suspend fun turnOffSync(): Failure? = scope.async {
+		val store = store ?: return@async Failure.Unexpected(R.string.failure_turn_off_sync_unlock)
 		sync.stop()?.join()
-		return try {
+		try {
 			withContext(worker) { store.disconnectSync() }
 			null
 		} catch (error: Exception) {
 			sync.start(store)
 			Failure.of(error, R.string.failure_turn_off_sync)
 		}
-	}
+	}.await()
+
 	private var store: NoteStore? = null
 	private var retiring: NoteStore? = null
 	private var record: UnlockRecord? = null
@@ -290,6 +301,10 @@ class AppModel(
 		failure = null
 	}
 
+	fun dismissExchanged() {
+		exchanged = null
+	}
+
 	fun appStopped() {
 		if (pickerOpen) return
 		screenTurnedOff()
@@ -319,20 +334,28 @@ class AppModel(
 		val pending = pendingExport
 		pendingExport = null
 		pickerOpen = false
-		if (pending == null || write == null || phase != Phase.Unlocked || store == null) return CompletableDeferred(false)
+		if (write == null) return CompletableDeferred(false)
+		if (pending == null || phase != Phase.Unlocked || store == null) {
+			failure = Failure.Unexpected(R.string.failure_export_locked, title = R.string.failure_export)
+			return CompletableDeferred(false)
+		}
 		val passphrase = pending.passphrase
 		val shown = notes
 		return scope.async {
 			try {
-				withContext(worker) {
+				val file = withContext(worker) {
 					val archive = LibraryArchive.archive(shown)
-					val file = passphrase?.let { ExportEnvelope.seal(archive, it, exportParameters) } ?: archive
-					if (file.size > LibraryArchive.MAXIMUM_SIZE) throw ZipArchive.Failure.TooLarge()
-					write(file)
+					passphrase?.let { ExportEnvelope.seal(archive, it, exportParameters) } ?: archive
 				}
+				if (file.size > LibraryArchive.MAXIMUM_SIZE) throw ZipArchive.Failure.TooLarge()
+				withContext(Dispatchers.IO) { write(file) }
+				exchanged = Exchanged.Exported(shown.size)
 				true
 			} catch (error: Exception) {
 				failure = Failure.of(error, R.string.failure_export)
+				false
+			} catch (_: OutOfMemoryError) {
+				failure = Failure.of(TooLargeForDevice(), R.string.failure_export)
 				false
 			}
 		}
@@ -342,42 +365,56 @@ class AppModel(
 
 	fun importLibrary(passphrase: String?, size: () -> Long, read: () -> ByteArray): Deferred<ImportSummary?> {
 		pickerOpen = false
+		if (isImporting) return CompletableDeferred(value = null)
 		val store = store
-		if (store == null || isImporting) return CompletableDeferred(value = null)
+		if (store == null) {
+			failure = Failure.Unexpected(R.string.failure_import_locked, title = R.string.failure_import)
+			return CompletableDeferred(value = null)
+		}
 		isImporting = true
 		return scope.async {
 			try {
-				val incoming = try {
-					withContext(worker) {
-						val bytes = size()
-						if (bytes > LibraryArchive.MAXIMUM_SIZE) throw LibraryArchive.Failure.TooLarge()
-						if (bytes * IMPORT_MEMORY_FACTOR > memoryAvailable()) throw TooLargeForDevice()
-						val file = read()
-						ExportEnvelope.refuseNewerVersion(file)
-						LibraryArchive.notes(passphrase?.let { ExportEnvelope.open(file, it) } ?: file)
-					}
-				} catch (error: Exception) {
-					failure = Failure.of(error, R.string.failure_import)
-					return@async null
-				}
-				if (store !== this@AppModel.store) return@async ImportSummary(notImported = incoming.size)
-				val added = try {
-					withContext(worker) { store.insertMissing(incoming) }
-				} catch (error: Exception) {
-					if (store !== this@AppModel.store) return@async ImportSummary(notImported = incoming.size)
-					failure = Failure.of(error, R.string.failure_import)
-					return@async null
-				}
-				if (store === this@AppModel.store) {
-					val shown = notes.mapTo(HashSet()) { it.id }
-					notes = notes + added.filter { it.id !in shown }
-					sync.soon()
-				}
-				ImportSummary(added = added.size, skipped = incoming.size - added.size)
+				import(store, passphrase, size, read)?.also { exchanged = Exchanged.Imported(it) }
 			} finally {
 				isImporting = false
 			}
 		}
+	}
+
+	private suspend fun import(store: NoteStore, passphrase: String?, size: () -> Long, read: () -> ByteArray): ImportSummary? {
+		val incoming = try {
+			val file = withContext(Dispatchers.IO) {
+				val bytes = size()
+				if (bytes > LibraryArchive.MAXIMUM_SIZE) throw LibraryArchive.Failure.TooLarge()
+				if (bytes * IMPORT_MEMORY_FACTOR > memoryAvailable()) throw TooLargeForDevice()
+				read()
+			}
+			withContext(worker) {
+				ExportEnvelope.refuseNewerVersion(file)
+				LibraryArchive.notes(passphrase?.let { ExportEnvelope.open(file, it) } ?: file)
+			}
+		} catch (error: Exception) {
+			failure = Failure.of(error, R.string.failure_import)
+			return null
+		} catch (_: OutOfMemoryError) {
+			failure = Failure.of(TooLargeForDevice(), R.string.failure_import)
+			return null
+		}
+		if (store !== this.store) return ImportSummary(notImported = incoming.size)
+		val added = try {
+			withContext(worker) { store.insertMissing(incoming) }
+		} catch (error: Exception) {
+			if (store !== this.store) return ImportSummary(notImported = incoming.size)
+			failure = Failure.of(error, R.string.failure_import)
+			return null
+		}
+		if (store === this.store) {
+			val shown = notes.mapTo(HashSet()) { it.id }
+			notes = notes + added.filter { it.id !in shown }
+			refreshSearch()
+			sync.soon()
+		}
+		return ImportSummary(added = added.size, skipped = incoming.size - added.size)
 	}
 
 	fun lock(): Job {
@@ -414,25 +451,30 @@ class AppModel(
 
 	fun erase(): Job = scope.launch {
 		if (phase != Phase.Locked || isOpening) return@launch
-		locking?.join()
-		passwordChange?.join()
-		retiring?.let {
-			retiring = null
-			withContext(worker) { it.connection.close() }
+		isOpening = true
+		try {
+			locking?.join()
+			passwordChange?.join()
+			retiring?.let {
+				retiring = null
+				withContext(worker) { it.connection.close() }
+			}
+			scheduler.discardAll()
+			failingSaves.clear()
+			failure = null
+			searchText = ""
+			matches = null
+			val failed = withContext(worker) {
+				val vault = runCatching { biometricVault.delete() }.exceptionOrNull()?.let { listOf(KeystoreBiometricVault.FILE_NAME) }.orEmpty()
+				vault + files.erase()
+			}
+			isBiometricUnlockOn = false
+			biometricOffer = BiometricOffer.Hidden
+			if (failed.isNotEmpty()) failure = Failure.Unexpected(R.string.failure_erase, failed.joinToString())
+			phase = Phase.NeedsSetup
+		} finally {
+			isOpening = false
 		}
-		scheduler.discardAll()
-		failingSaves.clear()
-		failure = null
-		searchText = ""
-		matches = null
-		val failed = withContext(worker) {
-			val vault = runCatching { biometricVault.delete() }.exceptionOrNull()?.let { listOf(KeystoreBiometricVault.FILE_NAME) }.orEmpty()
-			vault + files.erase()
-		}
-		isBiometricUnlockOn = false
-		biometricOffer = BiometricOffer.Hidden
-		if (failed.isNotEmpty()) failure = Failure.Unexpected(R.string.failure_erase, failed.joinToString())
-		phase = Phase.NeedsSetup
 	}
 
 	fun changePassword(current: String, new: String): Deferred<Failure?> {
@@ -450,11 +492,10 @@ class AppModel(
 				Failure.Unexpected(R.string.failure_password_not_changed)
 			} catch (error: Exception) {
 				Failure.of(error)
-			} finally {
-				passwordChange = null
 			}
 		}
 		passwordChange = change
+		change.invokeOnCompletion { passwordChange = null }
 		return change
 	}
 
@@ -475,12 +516,16 @@ class AppModel(
 
 	private suspend fun create(note: Note, store: NoteStore) {
 		if (!write(R.string.failure_create) { it.save(note) }) return
-		if (store !== this.store) return discard(note, store)
+		if (store !== this.store) {
+			if (note.body.isBlank()) discard(note, store)
+			return
+		}
 		if (searchText.isNotEmpty()) updateSearch("")
 		notes = listOf(note) + notes
 		createdThisSession += note.id
 		select(note.id)
 		focusesEditor = note.id
+		if (note.dirty) sync.soon()
 	}
 
 	fun editorTookFocus() {
@@ -490,11 +535,12 @@ class AppModel(
 	fun select(id: UUID?) {
 		val previous = selection
 		selection = id
+		if (focusesEditor != id) focusesEditor = null
 		if (previous == null || previous == id) return
 		val leftEmpty = emptyNewNote(previous)
 		createdThisSession -= previous
 		if (leftEmpty == null) {
-			scope.launch { scheduler.flush(previous) }
+			if (!scheduler.isHeld) scope.launch { scheduler.flush(previous) }
 			return
 		}
 		notes = notes.filter { it.id != previous }
@@ -522,10 +568,10 @@ class AppModel(
 		}
 	}
 
-	fun edit(id: UUID, body: String) {
+	fun edit(id: UUID, body: String, shownAt: Long? = null) {
 		val index = notes.indexOfFirst { it.id == id }
 		if (index < 0 || notes[index].body == body) return
-		val edited = notes[index].copy(body = body, updatedAt = clock(), dirty = true)
+		val edited = notes[index].copy(body = body, updatedAt = clock(), dirty = true).withV(shownAt ?: notes[index].v)
 		notes = notes.toMutableList().also { it[index] = edited }
 		scheduleSave(edited, store ?: return)
 		sync.soon()
@@ -608,12 +654,18 @@ class AppModel(
 			if (text != searchText || store !== this.store) return
 			matches = found
 			searchFailing = false
+		} catch (cancelled: CancellationException) {
+			throw cancelled
 		} catch (error: Exception) {
 			if (text != searchText || store !== this.store) return
 			matches = emptyList()
 			if (!searchFailing) failure = Failure.of(error, R.string.failure_search)
 			searchFailing = true
 		}
+	}
+
+	private suspend fun refreshSearch() {
+		if (matches != null) runSearch()
 	}
 
 	suspend fun flushPendingSaves() = scheduler.flushAll()
@@ -636,9 +688,12 @@ class AppModel(
 		scheduler.hold()
 		try {
 			scheduler.flushAll()
-			val applied = withContext(worker) { store.commit(commit) }
-			reconcile(applied, store)
-			return applied
+			return withContext(NonCancellable) {
+				val applied = withContext(worker) { store.commit(commit) }
+				reconcile(applied, store)
+				if (applied.pulled.isNotEmpty() || applied.copies.isNotEmpty()) refreshSearch()
+				applied
+			}
 		} finally {
 			scheduler.release()
 		}
@@ -665,9 +720,16 @@ class AppModel(
 
 	private suspend fun saveBecameCopy(note: Note, copy: UUID, store: NoteStore) {
 		if (store !== this.store) return
-		if (notes.any { it.id == note.id }) moveEdit(note.id, copy, store) else show(note.unsyncedCopy(copy))
+		val shown = notes.firstOrNull { it.id == note.id }
+		if (shown == null || shown.v != note.v) {
+			show(note.unsyncedCopy(copy))
+			if (selection == note.id) select(copy)
+			return
+		}
+		moveEdit(note.id, copy, store)
 		try {
-			withContext(worker) { store.note(note.id) }?.let(::show)
+			val original = withContext(worker) { store.note(note.id) }
+			if (original != null && shown in notes) show(original)
 		} catch (error: Exception) {
 			if (store === this.store) failure = Failure.of(error, R.string.failure_read_note)
 		}
@@ -726,7 +788,7 @@ class AppModel(
 	): Job = scope.launch {
 		if (isOpening) return@launch
 		isOpening = true
-		failure = null
+		if (failure !is Failure.Unexpected) failure = null
 		val away = awayEvents
 		try {
 			locking?.join()
@@ -775,7 +837,7 @@ class AppModel(
 	companion object {
 		private const val IMPORT_MEMORY_FACTOR = 4
 
-		private fun newer(held: Note?, other: Note) = if (held != null && held.updatedAt > other.updatedAt) held else other
+		private fun newer(held: Note?, other: Note) = if (held != null && held.dirty && held.updatedAt > other.updatedAt) held else other
 
 		fun parameters(strongBox: Boolean): () -> UnlockParameters = { UnlockKeys.makeParameters(strongBox) }
 	}

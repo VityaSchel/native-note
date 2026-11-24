@@ -35,6 +35,7 @@ fun appModel(
 	exportParameters: Argon2.Parameters = cheapArgon,
 	memoryAvailable: () -> Long = { Long.MAX_VALUE },
 	makeTransport: (String) -> SyncTransport = ::HttpTransport,
+	syncDelayMillis: Long = 30_000,
 ) = AppModel(
 	LibraryFiles(directory),
 	hasSecureHardware,
@@ -46,6 +47,7 @@ fun appModel(
 	exportParameters = exportParameters,
 	memoryAvailable = memoryAvailable,
 	makeTransport = makeTransport,
+	syncDelayMillis = syncDelayMillis,
 	loadMnemonic = { Mnemonic(InstrumentationRegistry.getInstrumentation().targetContext.assets.open("english.txt").use { it.readBytes() }) },
 )
 
