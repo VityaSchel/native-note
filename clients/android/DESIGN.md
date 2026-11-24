@@ -19,6 +19,7 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - `NavigableListDetailPaneScaffold`: two panes on wide windows, one on phones. Onboarding, locked and unlocked are model state, not navigation
 - `MaterialExpressiveTheme` with `dynamicLightColorScheme` or `dynamicDarkColorScheme` and no colors of its own
 - The editor is `BasicTextField(TextFieldState)`; an `OutputTransformation` styles the first line as the title
+- The search field is a plain `TextField`: `AppBarWithSearch` blocks the keyboard of the field inside it, since it expects a separate expanded search
 - HKDF is written over `Mac("HmacSHA256")`
 - The export zip writer and reader are our own, as on macOS: `ZipOutputStream` records MS-DOS as the creator, so `unzip` reads UTF-8 names in a DOS code page, and it refuses repeated names and adds a timestamp extra field after 2099. An import needing more than a quarter of the free heap is refused as too large for this device
 - The export and import pickers keep the library unlocked while they are in front; turning the screen off locks it anyway, and a lock cancels the export the save picker was opened for

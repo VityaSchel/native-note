@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -15,11 +16,14 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
-import androidx.compose.material3.AppBarWithSearch
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -27,12 +31,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
-import androidx.compose.material3.SearchBarDefaults
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
@@ -41,7 +47,6 @@ import androidx.compose.material3.adaptive.navigation.BackNavigationBehavior
 import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.rememberSearchBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -58,6 +63,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -69,9 +75,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.hintText
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.AppModel
@@ -177,10 +185,7 @@ private fun NoteList(
 	val results = stringResource(R.string.results)
 	val groups by remember(grouping, results) { derivedStateOf { model.groups(grouping, results) } }
 	val search = remember { TextFieldState(model.searchText) }
-	val searchBar = rememberSearchBarState()
-	val searchFocus = remember { FocusRequester() }
 	val focusManager = LocalFocusManager.current
-	val keyboard = LocalSoftwareKeyboardController.current
 	LaunchedEffect(search) { snapshotFlow { search.text.toString() }.collect(model::updateSearch) }
 	LaunchedEffect(model.searchText) { if (model.searchText.isEmpty()) search.clearText() }
 	BackHandler(enabled = search.text.isNotEmpty()) {
@@ -193,30 +198,15 @@ private fun NoteList(
 		containerColor = MaterialTheme.colorScheme.surface,
 		snackbarHost = { SnackbarHost(snackbar) },
 		topBar = {
-			AppBarWithSearch(
-				state = searchBar,
-				inputField = {
-					SearchBarDefaults.InputField(
-						textFieldState = search,
-						searchBarState = searchBar,
-						onSearch = { keyboard?.hide() },
-						modifier = Modifier.focusRequester(searchFocus),
-						placeholder = { Text(stringResource(R.string.search), Modifier.clearAndSetSemantics {}) },
-						leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
-						trailingIcon = if (search.text.isEmpty()) null else ({
-							IconButton(onClick = {
-								search.clearText()
-								searchFocus.requestFocus()
-							}) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.clear_search)) }
-						}),
-					)
-				},
-				actions = {
-					SyncStatusButton(model.syncStatus, announcedSync, onSyncAnnounced, onTryAgain = { model.syncNow() })
-					IconButton(onClick = { model.lock() }) { Icon(painterResource(R.drawable.ic_lock), stringResource(R.string.lock)) }
-					IconButton(onClick = onSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings)) }
-				},
-			)
+			Row(
+				Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).windowInsetsPadding(TopAppBarDefaults.windowInsets).padding(start = 8.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
+				verticalAlignment = Alignment.CenterVertically,
+			) {
+				SearchField(search, Modifier.weight(1f))
+				SyncStatusButton(model.syncStatus, announcedSync, onSyncAnnounced, onTryAgain = { model.syncNow() })
+				IconButton(onClick = { model.lock() }) { Icon(painterResource(R.drawable.ic_lock), stringResource(R.string.lock)) }
+				IconButton(onClick = onSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings)) }
+			}
 		},
 		floatingActionButton = {
 			FloatingActionButton(onClick = { model.createNote() }) { Icon(painterResource(R.drawable.ic_add), stringResource(R.string.new_note)) }
@@ -237,6 +227,35 @@ private fun NoteList(
 			))
 		}
 	}
+}
+
+@Composable
+private fun SearchField(search: TextFieldState, modifier: Modifier) {
+	val name = stringResource(R.string.search)
+	val focus = remember { FocusRequester() }
+	val keyboard = LocalSoftwareKeyboardController.current
+	TextField(
+		search,
+		modifier.focusRequester(focus).semantics { hintText = name },
+		placeholder = { Text(name, Modifier.clearAndSetSemantics {}) },
+		leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
+		trailingIcon = if (search.text.isEmpty()) null else ({
+			IconButton(onClick = {
+				search.clearText()
+				focus.requestFocus()
+			}) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.clear_search)) }
+		}),
+		lineLimits = TextFieldLineLimits.SingleLine,
+		keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+		onKeyboardAction = { keyboard?.hide() },
+		shape = CircleShape,
+		colors = TextFieldDefaults.colors(
+			focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+			unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+			focusedIndicatorColor = Color.Transparent,
+			unfocusedIndicatorColor = Color.Transparent,
+		),
+	)
 }
 
 @Composable
