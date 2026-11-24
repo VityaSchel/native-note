@@ -18,6 +18,7 @@ struct NoteEditor: NSViewRepresentable {
 	}
 
 	func updateNSView(_ scrollView: NSScrollView, context: Context) {
+		context.coordinator.text = $text
 		Self.show(text, in: scrollView)
 		context.coordinator.dateLabel?.show(dateLine, spoken: spokenDateLine)
 		context.coordinator.zoom(to: zoom)
@@ -98,7 +99,7 @@ struct NoteEditor: NSViewRepresentable {
 	}
 
 	@MainActor final class Coordinator: NSObject, NSTextViewDelegate, NSTextStorageDelegate {
-		private let text: Binding<String>
+		fileprivate var text: Binding<String>
 		private let history = UndoManager()
 		fileprivate weak var textView: NSTextView?
 		fileprivate weak var dateLabel: DateLineField?

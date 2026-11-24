@@ -289,12 +289,13 @@ import Observation
 		}
 	}
 
-	public func edit(_ id: UUID, _ body: String) {
+	public func edit(_ id: UUID, _ body: String, shownAt v: UInt32? = nil) {
 		guard let index = notes.firstIndex(where: { $0.id == id }), notes[index].body != body else { return }
 		var edited = notes[index]
 		edited.body = body
 		edited.updatedAt = Date().epochMilliseconds
 		edited.dirty = true
+		if let v { edited.v = v }
 		notes[index] = edited
 
 		guard let store else { return }
@@ -596,7 +597,7 @@ import Observation
 	}
 
 	private static func newer(_ held: Note?, _ other: Note) -> Note {
-		guard let held, held.updatedAt > other.updatedAt else { return other }
+		guard let held, held.dirty, held.updatedAt > other.updatedAt else { return other }
 		return held
 	}
 

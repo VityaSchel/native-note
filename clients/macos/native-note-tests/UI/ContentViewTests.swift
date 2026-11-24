@@ -289,6 +289,47 @@ struct ContentViewTests {
 		#expect(await model.flushPendingSaves())
 	}
 
+	private func pull(_ body: String, v: UInt32, over id: UUID, into model: AppModel) async throws {
+		let content = Content.note(id: id, createdAt: 1, updatedAt: 2, body: body)
+		let exchange = Exchange(changes: [PulledChange(content: content, v: v, writeId: NoteCipher.randomWriteId())], nextSeq: UInt64(v))
+		_ = try await model.commit(.exchange(exchange), to: #require(model.store))
+	}
+
+	@Test func aKeyTypedBeforeTheEditorShowsAPullKeepsBothTexts() async throws {
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["Title"])
+		let id = try #require(model.selection)
+		try await pull("Title", v: 1, over: id, into: model)
+		let offscreen = window(showing: model)
+		defer { offscreen.close() }
+		let editor = try #require(offscreen.views(of: NSTextView.self).first { $0.string == "Title" })
+
+		try await pull("from the other device", v: 2, over: id, into: model)
+		try #require(editor.string == "Title", "the editor has not shown the pull yet")
+		editor.insertText(" typed", replacementRange: NSRange(location: 5, length: 0))
+		await model.flushPendingSaves()
+		await offscreen.pump { model.selection != id }
+
+		#expect(model.selectedNote?.body == "Title typed")
+		#expect(Set(model.notes.map(\.body)) == ["Title typed", "from the other device"])
+		#expect(await model.flushPendingSaves())
+	}
+
+	@Test func typingAfterAPullThatKeptTheTextStaysInTheNote() async throws {
+		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["Title"])
+		let id = try #require(model.selection)
+		let offscreen = window(showing: model)
+		defer { offscreen.close() }
+		let editor = try #require(offscreen.views(of: NSTextView.self).first { $0.string == "Title" })
+
+		try await pull("Title", v: 1, over: id, into: model)
+		offscreen.pump()
+		editor.insertText(" typed", replacementRange: NSRange(location: 5, length: 0))
+		await model.flushPendingSaves()
+
+		#expect(model.selection == id)
+		#expect(model.notes.map(\.body) == ["Title typed"])
+	}
+
 	@Test func theToolbarNamesTheNotebookAndCountsItsNotes() async throws {
 		let (model, _) = try await Workspace(alarm: alarm).unlocked(holding: ["kayak", "canoe"])
 		let offscreen = window(showing: model)

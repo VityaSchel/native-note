@@ -117,7 +117,7 @@ struct ContentView: View {
 	private var detail: some View {
 		if let note = model.selectedNote {
 			NoteEditor(
-				text: Binding(get: { note.body }, set: { model.edit(note.id, $0) }),
+				text: Binding(get: { note.body }, set: { model.edit(note.id, $0, shownAt: note.v) }),
 				takesFocus: model.focusesEditor == note.id,
 				tookFocus: model.editorTookFocus,
 				zoom: zoom,

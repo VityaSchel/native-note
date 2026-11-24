@@ -7,7 +7,7 @@ nonisolated public struct Note: Equatable, Identifiable, Sendable {
 	var updatedAt: Int64
 	var deleted = false
 	var dirty = false
-	var v: UInt32 = 0
+	public internal(set) var v: UInt32 = 0
 	var ext = Data()
 
 	public var updated: Date {

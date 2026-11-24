@@ -68,6 +68,10 @@ final class SaveScheduler {
 		pending[id] != nil
 	}
 
+	func isUnsaved(_ id: UUID) -> Bool {
+		isPending(id) || writing[id] != nil
+	}
+
 	func hold() {
 		holds += 1
 	}

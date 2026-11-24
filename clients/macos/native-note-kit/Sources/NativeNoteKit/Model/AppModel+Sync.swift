@@ -138,7 +138,7 @@ extension AppModel: SyncedLibrary {
 		for (id, row) in applied.changed {
 			if scheduler.isPending(id), applied.pulled.contains(id) {
 				moveEdit(of: id, to: applied.copies[id] ?? UUID(), in: store)
-			} else if scheduler.isPending(id), let index = notes.firstIndex(where: { $0.id == id }) {
+			} else if scheduler.isUnsaved(id), !applied.pulled.contains(id), let index = notes.firstIndex(where: { $0.id == id }) {
 				notes[index].v = row.v
 				continue
 			}
@@ -154,13 +154,16 @@ extension AppModel: SyncedLibrary {
 
 	func saveBecameCopy(_ note: Note, copy: UUID, in store: NoteStore) async {
 		guard store === self.store else { return }
-		if notes.contains(where: { $0.id == note.id }) {
-			moveEdit(of: note.id, to: copy, in: store)
-		} else {
+		guard let shown = notes.first(where: { $0.id == note.id }), shown.v == note.v else {
 			show(note.unsyncedCopy(id: copy))
+			if selection == note.id { selection = copy }
+			return
 		}
+		moveEdit(of: note.id, to: copy, in: store)
 		do {
-			if let original = try await store.note(id: note.id) { show(original) }
+			let original = try await store.note(id: note.id)
+			guard let original, notes.contains(shown) else { return }
+			show(original)
 		} catch {
 			if store === self.store { report(error, as: "The note could not be read.") }
 		}
