@@ -95,6 +95,7 @@ Tests that need no device live in `app/src/sharedTest` and run both with `testDe
 - `BiometricTouchTest` runs only with `-e touch true`, on a phone with an enrolled fingerprint and someone to touch it.
 - The force-kill budget: [devtools/android-force-kill](devtools/android-force-kill/README.md).
 - Sync against real servers through `adb reverse`: [devtools/android-sync-e2e](devtools/android-sync-e2e/README.md); without it `ServerSyncTest` skips.
+- What TalkBack says over the common tasks, after a change to screens, focus or live regions: [devtools/android-talkback](devtools/android-talkback/README.md).
 
 After a dependency change, empty `<components>` in `gradle/verification-metadata.xml`, keeping `<configuration>`, run `./gradlew --write-verification-metadata sha256 help assembleRelease bundleRelease lint testDebugUnitTest assembleDebugAndroidTest` with an empty `GRADLE_USER_HOME`, then add the AAPT2 classifiers this host did not fetch. The unsigned release APK and AAB, with their SHA-256: `.forgejo/scripts/android-build.sh [<commit>]`. Pull requests run lint without the Google Play SDK Index checks, whose index changes without a commit; [audit.yml](.forgejo/workflows/audit.yml) runs them nightly with `./gradlew lint -PplaySdkIndex`. Store listings live in `clients/android/fastlane/metadata/android`, with each release's notes in `changelogs/<versionCode>.txt`. Checking a published APK: [BUILD.md](BUILD.md#android-app).
 

@@ -104,6 +104,7 @@ Turning it on takes one touch: encrypt `localDbKey`, store the blob, read it bac
 - JVM unit tests for code that needs no device, with the vectors that need no native code
 - Instrumented tests on a headless API 36 emulator: native code, Keystore, SQLCipher, end-to-end flows, and sync against the real server through `adb reverse`
 - A hardware suite on a physical phone before each release, for StrongBox or TEE binding and the fingerprint
+- Real TalkBack on an emulator, whose speech semantics assertions cannot predict: [devtools/android-talkback](../../devtools/android-talkback/README.md)
 - Android Lint and Kotlin warnings are errors. Tabs, per `.editorconfig`; no formatter
 
 ## Release

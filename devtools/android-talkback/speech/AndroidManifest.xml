@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+	package="dev.hloth.devtools.speech">
+
+	<application android:label="Speech log (development only)" android:hasCode="true">
+		<service
+			android:name=".SpeechLog"
+			android:exported="true"
+			android:label="Speech log">
+			<intent-filter>
+				<action android:name="android.intent.action.TTS_SERVICE" />
+				<category android:name="android.intent.category.DEFAULT" />
+			</intent-filter>
+		</service>
+	</application>
+</manifest>
