@@ -10,8 +10,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.NoteGrouping
-import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import kotlinx.coroutines.delay
 
 @Composable
@@ -19,10 +20,10 @@ fun rememberGrouping(): NoteGrouping {
 	val resources = LocalResources.current
 	val locale = LocalConfiguration.current.locales[0]
 	val is24Hour = DateFormat.is24HourFormat(LocalContext.current)
-	val now by produceState(System.currentTimeMillis()) {
+	val today by produceState(ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS)) {
 		while (true) {
 			delay(MINUTE - System.currentTimeMillis() % MINUTE)
-			value = System.currentTimeMillis()
+			value = ZonedDateTime.now().truncatedTo(ChronoUnit.DAYS)
 		}
 	}
 	val words = remember(resources, locale, is24Hour) {
@@ -35,7 +36,7 @@ fun rememberGrouping(): NoteGrouping {
 			locale = locale,
 		)
 	}
-	return remember(now, words) { NoteGrouping(now, ZoneId.systemDefault(), words) }
+	return remember(today, words) { NoteGrouping(today.toInstant().toEpochMilli(), today.zone, words) }
 }
 
 private const val MINUTE = 60_000L

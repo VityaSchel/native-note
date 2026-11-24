@@ -26,7 +26,7 @@ fun FailureDialog(failure: Failure, onDismiss: () -> Unit) {
 	AlertDialog(
 		onDismissRequest = onDismiss,
 		title = { Text(title) },
-		text = { Text(message) },
+		text = { DialogBody { Text(message) } },
 		confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },
 	)
 }

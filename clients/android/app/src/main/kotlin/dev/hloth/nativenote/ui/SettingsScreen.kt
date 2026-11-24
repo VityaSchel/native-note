@@ -1,13 +1,11 @@
 package dev.hloth.nativenote.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,7 +48,7 @@ fun SettingsScreen(
 						SettingsRow(
 							stringResource(R.string.biometric_unlock),
 							stringResource(R.string.biometric_unlock_explanation),
-							trailing = { Switch(checked = on, onCheckedChange = null) },
+							checked = on,
 							onClick = { if (on) scope.launch { failure = onDisableBiometrics() } else enablingBiometrics = true },
 						)
 					},
@@ -87,9 +85,17 @@ private fun EnableBiometricsDialog(onDismiss: () -> Unit, onEnable: suspend (Str
 		onDismissRequest = { if (!working) onDismiss() },
 		title = { Text(stringResource(R.string.biometric_enable_prompt_title)) },
 		text = {
-			Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+			DialogBody {
 				Text(stringResource(R.string.biometric_enable_explanation))
-				PasswordField(password, stringResource(R.string.password), enabled = !working, error = failure?.let { failureMessage(it) }, onAction = submit)
+				PasswordField(
+					password,
+					stringResource(R.string.password),
+					enabled = !working,
+					error = failure?.let { failureMessage(it) },
+					takesFocus = true,
+					onEdit = { failure = null },
+					onAction = submit,
+				)
 			}
 		},
 		confirmButton = {
@@ -125,15 +131,24 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit, onChangePassword: suspen
 		onDismissRequest = { if (!working) onDismiss() },
 		title = { Text(stringResource(R.string.change_password)) },
 		text = {
-			Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+			DialogBody {
 				Text(stringResource(R.string.change_password_explanation))
-				PasswordField(current, stringResource(R.string.current_password), enabled = !working, error = failure?.let { failureMessage(it) }, imeAction = ImeAction.Next)
-				PasswordField(new, stringResource(R.string.new_password), enabled = !working, imeAction = ImeAction.Next)
+				PasswordField(
+					current,
+					stringResource(R.string.current_password),
+					enabled = !working,
+					error = failure?.let { failureMessage(it) },
+					takesFocus = true,
+					imeAction = ImeAction.Next,
+					onEdit = { failure = null },
+				)
+				PasswordField(new, stringResource(R.string.new_password), enabled = !working, imeAction = ImeAction.Next, onEdit = { mismatched = false })
 				PasswordField(
 					verify,
 					stringResource(R.string.verify_password),
 					enabled = !working,
 					error = if (mismatched) stringResource(R.string.new_passwords_mismatch) else null,
+					onEdit = { mismatched = false },
 					onAction = submit,
 				)
 			}

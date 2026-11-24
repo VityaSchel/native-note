@@ -114,7 +114,7 @@ class SyncSetupUiTest {
 			compose.onNode(hasHint(context.getString(R.string.word_number, number))).performTextInput(words.getValue(number))
 		}
 		save("setup-confirm")
-		compose.onNodeWithText(text(R.string.continue_action)).performClick()
+		compose.onNodeWithText(text(R.string.turn_on_sync)).performClick()
 		compose.waitUntil(10_000) { done }
 		first.await { syncNow() }
 		assertEquals(SyncStatus.Phase.Idle, onMain { first.syncStatus.phase })
@@ -125,7 +125,7 @@ class SyncSetupUiTest {
 		for (number in 1..24) assertWordIsClosedToAutofill(number)
 		compose.onNode(hasHint(context.getString(R.string.word_number, 1))).performTextInput((1..24).joinToString(" ") { words.getValue(it) })
 		save("setup-join")
-		compose.onNodeWithText(text(R.string.continue_action)).performClick()
+		compose.onNodeWithText(text(R.string.turn_on_sync)).performClick()
 		compose.waitUntil(10_000) { done }
 		second.await { syncNow() }
 

@@ -1,6 +1,8 @@
 package dev.hloth.nativenote
 
 import android.Manifest
+import android.content.ComponentName
+import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
@@ -30,6 +32,17 @@ class PlatformPolicyTest {
 		}
 
 		assertEquals(expected, elementsOf(R.xml.data_extraction_rules).filter { "/exclude " in it })
+	}
+
+	@Test
+	fun aRotationThemeOrTextSizeChangeKeepsTheActivitySoTypedSecretsSurviveIt() {
+		val activity = context.packageManager.getActivityInfo(ComponentName(context, MainActivity::class.java), 0)
+		val kept = ActivityInfo.CONFIG_ORIENTATION or ActivityInfo.CONFIG_SCREEN_SIZE or ActivityInfo.CONFIG_SMALLEST_SCREEN_SIZE or
+			ActivityInfo.CONFIG_SCREEN_LAYOUT or ActivityInfo.CONFIG_KEYBOARD or ActivityInfo.CONFIG_KEYBOARD_HIDDEN or ActivityInfo.CONFIG_UI_MODE or
+			ActivityInfo.CONFIG_DENSITY or ActivityInfo.CONFIG_FONT_SCALE or ActivityInfo.CONFIG_FONT_WEIGHT_ADJUSTMENT or
+			ActivityInfo.CONFIG_LOCALE or ActivityInfo.CONFIG_LAYOUT_DIRECTION
+
+		assertEquals(kept, activity.configChanges and kept)
 	}
 
 	@Test

@@ -20,8 +20,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -41,20 +39,18 @@ fun UnlockScreen(
 	onBiometrics: () -> Unit = {},
 ) {
 	val password = remember { TextFieldState() }
-	val focus = remember { FocusRequester() }
 	val haptics = LocalHapticFeedback.current
 	var confirmingErase by rememberSaveable { mutableStateOf(false) }
 	val submit = { if (password.text.isNotEmpty() && !isWorking) onUnlock(password.text.toString()) }
 
-	LaunchedEffect(Unit) { focus.requestFocus() }
 	LaunchedEffect(wrongPassword) {
 		if (!wrongPassword) return@LaunchedEffect
 		haptics.performHapticFeedback(HapticFeedbackType.Reject)
 		password.edit { selectAll() }
-		focus.requestFocus()
 	}
 
 	FormPage(
+		pane = stringResource(R.string.unlock),
 		title = stringResource(R.string.app_name),
 		icon = R.drawable.ic_lock,
 		actions = {
@@ -66,9 +62,9 @@ fun UnlockScreen(
 		PasswordField(
 			password,
 			stringResource(R.string.password),
-			modifier = Modifier.focusRequester(focus),
 			enabled = !isWorking,
 			error = if (wrongPassword) stringResource(R.string.wrong_password) else null,
+			takesFocus = true,
 			imeAction = ImeAction.Go,
 			onAction = submit,
 		)
@@ -85,7 +81,7 @@ fun UnlockScreen(
 		AlertDialog(
 			onDismissRequest = { confirmingErase = false },
 			title = { Text(stringResource(R.string.erase_title)) },
-			text = { Text(stringResource(R.string.erase_message)) },
+			text = { DialogBody { Text(stringResource(R.string.erase_message)) } },
 			confirmButton = {
 				TextButton(onClick = {
 					confirmingErase = false

@@ -22,13 +22,24 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - HKDF is written over `Mac("HmacSHA256")`
 - The export zip writer and reader are our own, as on macOS: `ZipOutputStream` records MS-DOS as the creator, so `unzip` reads UTF-8 names in a DOS code page, and it refuses repeated names and adds a timestamp extra field after 2099. An import needing more than a quarter of the free heap is refused as too large for this device
 - The export and import pickers keep the library unlocked while they are in front; turning the screen off locks it anyway, and a lock cancels the export the save picker was opened for
-- Requests go through `HttpURLConnection` with the same fixed headers as macOS, no redirects and 30 s timeouts. Cleartext is allowed; https trusts system and user CAs
-- Sync's requests run off the library's worker thread, so a slow server never delays a save; a lock disconnects a request in flight and waits only for that
+- Requests go through `HttpURLConnection` with the same fixed headers as macOS, no redirects, 30 s without data and 120 s in all. Cleartext is allowed; https trusts system and user CAs
+- Sync's requests run off the library's worker thread, so a slow server never delays a save; a lock disconnects a request in flight and does not wait for its thread, which a name lookup or a connect can hold
 - `IME_FLAG_NO_PERSONALIZED_LEARNING` on the password, API key and recovery-word fields only
 - Recovery-word fields set `ContentDataType.None`, which keeps autofill services out; `importantForAutofill` on the Compose view does not. Passwords and the API key keep Compose's defaults
 - English only, every string in `strings.xml`; the libraries' translations are left out
 - Share to Native Note (`ACTION_SEND`, `text/plain`) and a New Note launcher shortcut unlock first; shared text stays in memory only
-- Password fields, the editor, the search field, the API key and the recovery words keep their text in `remember`, never in saveable state: a stopped activity's saved state goes to the system process
+- Password fields, the editor, the search field, the API key and the recovery words keep their text in `remember`, never in saveable state: a stopped activity's saved state goes to the system process. `configChanges` keeps the activity through every change Compose applies itself, so a rotation or a new font size loses none of it
+- The pane scaffold's navigator moves its panes only when navigated, so the list screen re-applies its value when the window changes
+- An edit carries the `v` of the note the editor shows, not of the row now in the list, so a key handled after a pull lands on a copy; a note left during a commit is flushed when the commit ends
+- An export refused or cut off deletes the document it left empty or partly written
+
+## Accessibility
+
+- An editable field's name is its `hintText`, and a visible placeholder is cleared from semantics: `contentDescription` on an editable field replaces its value. An error's text is set with `error()`; `isError` alone is spoken as "Invalid input"
+- Each screen and step has a pane title that differs from its heading and from the screen before it, which is what makes TalkBack announce the change and move to the heading. The adaptive panes' own titles are replaced through their string resources
+- With touch exploration on, a screen's first field takes focus only once the screen has been announced, and the Undo snackbar stays until it is dismissed or a note opens
+- The pane scaffold focuses the pane it shows; in touch mode an empty focus target takes that focus, so neither the search field nor the editor opens the keyboard
+- A busy button keeps its label in semantics with the state "In progress"; outcomes and errors are live regions, assertive where focus moves at the same time
 
 ## Platform equivalents
 

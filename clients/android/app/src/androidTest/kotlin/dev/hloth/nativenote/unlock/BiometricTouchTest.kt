@@ -52,7 +52,7 @@ class BiometricTouchTest {
 	fun oneTouchSealsAndReadsBackThenTheWindowCloses() {
 		vault.create()
 		lateinit var authenticate: suspend () -> BiometricOutcome
-		compose.setContent { authenticate = rememberBiometricPrompt("Touch to test Native Note") }
+		compose.setContent { authenticate = rememberBiometricPrompt("Touch to test Native Note", "Cancel") }
 		compose.waitForIdle()
 
 		val outcome = runBlocking { withContext(Dispatchers.Main) { authenticate() } }

@@ -19,11 +19,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.test.DarkMode
 import androidx.compose.ui.test.DeviceConfigurationOverride
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -100,7 +98,11 @@ class ScreenRenderTest {
 
 			show { UnlockScreen(wrongPassword = true, isWorking = false, onUnlock = {}, onErase = {}, biometrics = AppModel.BiometricOffer.Button) }
 			save("unlock-wrong-password-biometrics")
-			show { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}, offersBiometrics = true) }
+			var offers by mutableStateOf(false)
+			show { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { offers = true }, offersBiometrics = offers) }
+			compose.onNodeWithText(context.getString(R.string.next)).performClick()
+			for (label in listOf(R.string.password, R.string.confirm_password)) compose.onNode(hasHint(context.getString(label))).performTextInput("correct horse")
+			compose.onNodeWithText(context.getString(R.string.next)).performClick()
 			save("onboarding-biometrics")
 			show { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, biometricUnlock = true) }
 			save("settings-biometrics")
@@ -140,7 +142,6 @@ class ScreenRenderTest {
 			show { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, biometricUnlock = false, exchange = { LibraryExchange(model) }) }
 			save("settings-notes")
 			compose.onNodeWithText(context.getString(R.string.export_notes)).performClick()
-			compose.onNode(isToggleable() and hasAnyAncestor(isDialog())).performClick()
 			save("export", dialog = true)
 		}
 		onMain { model.lock() }

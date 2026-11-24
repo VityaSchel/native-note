@@ -1,6 +1,7 @@
 package dev.hloth.nativenote
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -51,6 +52,11 @@ class AppJourneyTest {
 			node(R.string.next).performClick()
 			waitFor(AppModel.Phase.Unlocked)
 			if (model.canUseBiometrics) node(R.string.not_now).performClick()
+			node(R.string.sync_offer_title).assertIsDisplayed()
+			node(R.string.set_up).performClick()
+			field(R.string.server).assertIsFocused()
+			compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+			node(R.string.not_now).performClick()
 			compose.waitUntil(5_000) { !model.isOnboarding }
 			compose.onNodeWithContentDescription(text(R.string.settings)).assertIsDisplayed()
 

@@ -2,6 +2,7 @@ package dev.hloth.nativenote.ui
 
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.foundation.text.input.TextFieldState
@@ -39,10 +41,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.hintText
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.NoteGrouping
@@ -75,7 +81,7 @@ fun NoteEditor(
 		},
 	) { padding ->
 		key(note.id) {
-			EditorText(note, grouping, takesFocus, onFocused, onEdit, Modifier.padding(padding).imePadding())
+			EditorText(note, grouping, takesFocus, onFocused, onEdit, Modifier.padding(padding).consumeWindowInsets(padding).imePadding())
 		}
 	}
 }
@@ -96,14 +102,25 @@ private fun EditorText(
 	val title = remember(titleStyle) { TitleLine(titleStyle) }
 	var dateHeight by remember { mutableIntStateOf(0) }
 	val spokenDate = grouping.spokenEditorDateLine(note.updatedAt)
+	val name = stringResource(R.string.note)
+	val sent = remember { ArrayDeque<String>() }
 
-	LaunchedEffect(text) { snapshotFlow { text.text.toString() }.collect { edit(it) } }
-	LaunchedEffect(note.body) { if (text.text.toString() != note.body) text.setTextAndPlaceCursorAtEnd(note.body) }
-	LaunchedEffect(takesFocus) {
-		if (!takesFocus) return@LaunchedEffect
-		focus.requestFocus()
-		onFocused()
+	LaunchedEffect(text) {
+		snapshotFlow { text.text.toString() }.collect {
+			sent += it
+			edit(it)
+		}
 	}
+	LaunchedEffect(note.body) {
+		val echoed = sent.indexOf(note.body)
+		if (echoed >= 0) {
+			repeat(echoed) { sent.removeFirst() }
+		} else if (text.text.toString() != note.body) {
+			sent.clear()
+			text.setTextAndPlaceCursorAtEnd(note.body)
+		}
+	}
+	TakeFocus(focus, takesFocus, onFocused)
 
 	BoxWithConstraints(modifier.fillMaxSize()) {
 		val fieldHeight = maxHeight - with(LocalDensity.current) { dateHeight.toDp() }
@@ -117,8 +134,12 @@ private fun EditorText(
 			)
 			BasicTextField(
 				text,
-				Modifier.fillMaxWidth().heightIn(min = fieldHeight).focusRequester(focus).padding(horizontal = 16.dp, vertical = 12.dp),
-				textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+				Modifier.fillMaxWidth().heightIn(min = fieldHeight).focusRequester(focus).semantics {
+					hintText = name
+					traversalIndex = -1f
+				}.padding(horizontal = 16.dp, vertical = 12.dp),
+				textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface, textDirection = TextDirection.Content),
+				keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
 				cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
 				outputTransformation = title,
 			)

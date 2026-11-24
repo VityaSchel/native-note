@@ -1,23 +1,56 @@
 package dev.hloth.nativenote.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.DeviceConfigurationOverride
+import androidx.compose.ui.test.ForcedSize
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.WindowSize
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.then
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.ResolvedTextDirection
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.AppModel
+import dev.hloth.nativenote.storage.NoteStore
+import dev.hloth.nativenote.storage.SQLiteConnection
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
+import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.onMain
+import dev.hloth.nativenote.support.pressBack
+import dev.hloth.nativenote.unlock.LibraryFiles
+import dev.hloth.nativenote.unlock.UnlockKeys
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -49,7 +82,29 @@ class LibraryScreenTest {
 		return model
 	}
 
-	private fun show(model: AppModel) = compose.setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
+	private var focusManager: FocusManager? = null
+	private var size by mutableStateOf(DpSize.Unspecified)
+
+	private fun show(model: AppModel) = compose.setContent {
+		focusManager = LocalFocusManager.current
+		if (size == DpSize.Unspecified) {
+			NativeNoteTheme { LibraryScreen(model, onSettings = {}) }
+		} else {
+			DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size) then DeviceConfigurationOverride.WindowSize(size)) {
+				NativeNoteTheme { LibraryScreen(model, onSettings = {}) }
+			}
+		}
+	}
+
+	private fun <T> disk(read: (NoteStore) -> T): T = LibraryFiles(folder.root).let { files ->
+		SQLiteConnection(files.database, UnlockKeys.databaseKey("correct horse", files.record.read()!!), create = false).use { read(NoteStore(it)) }
+	}
+
+	private val editor get() = compose.onNode(hasHint(text(R.string.note)))
+	private val newNote get() = compose.onNodeWithContentDescription(text(R.string.new_note))
+	private val back get() = compose.onNodeWithContentDescription(text(R.string.back))
+
+	private fun click(node: SemanticsNodeInteraction) = node.fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
 
 	private fun waitFor(condition: () -> Boolean) = compose.waitUntil(10_000, condition)
 
@@ -69,6 +124,212 @@ class LibraryScreenTest {
 
 		compose.onNode(hasSetTextAction()).performClick()
 		compose.onNode(hasSetTextAction()).assertIsFocused()
+	}
+
+	@Test
+	fun aNoteRowIsAButtonNotARadioButton() {
+		show(unlocked("Groceries"))
+
+		val row = compose.onNodeWithText("Groceries").fetchSemanticsNode().config
+		assertFalse(SemanticsProperties.Selected in row)
+		assertFalse(SemanticsProperties.ToggleableState in row)
+		assertNotEquals(Role.RadioButton, row.getOrNull(SemanticsProperties.Role))
+	}
+
+	@Test
+	fun theFocusSinkIsInvisibleToAccessibility() {
+		InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
+		show(unlocked("Groceries"))
+		compose.waitForIdle()
+
+		assertEquals(0, compose.onAllNodes(isFocused()).fetchSemanticsNodes().size)
+	}
+
+	@Test
+	fun aNoteSelectedBeforeTheScreenAppearsOpens() {
+		val model = unlocked("Groceries\nmilk")
+		onMain { model.select(model.notes.single().id) }
+		show(model)
+
+		compose.onNode(hasHint(text(R.string.note))).assertIsDisplayed()
+		assertNotNull(onMain { model.selection })
+	}
+
+	@Test
+	fun openingANoteLeavesTheKeyboardDownAndANewNoteTakesIt() {
+		InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
+		show(unlocked("Groceries"))
+		compose.onNodeWithText("Groceries").performClick()
+		compose.waitForIdle()
+		compose.onNode(hasHint(text(R.string.note))).assertIsNotFocused()
+
+		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+		compose.onNodeWithContentDescription(text(R.string.new_note)).performClick()
+		compose.waitUntil(10_000) { compose.onAllNodes(hasHint(text(R.string.note)) and isFocused()).fetchSemanticsNodes().size == 1 }
+	}
+
+	@Test
+	fun backLeavesTheSearchBeforeTheApp() {
+		val model = unlocked("Groceries", "Kayak")
+		show(model)
+		compose.onNode(hasSetTextAction()).performTextInput("kayak")
+		waitFor { count("Groceries") == 0 }
+
+		pressBack()
+		compose.waitForIdle()
+		if (onMain { model.searchText }.isNotEmpty()) pressBack()
+
+		waitFor { count("Groceries") == 1 }
+		compose.onNodeWithText("Kayak").assertIsDisplayed()
+	}
+
+	@Test
+	fun noResultsIsAnnouncedAndClearingReturnsToTheField() {
+		show(unlocked("Groceries"))
+		compose.onNode(hasSetTextAction()).performTextInput("kayak")
+		waitFor { count(text(R.string.no_results)) == 1 }
+		assertEquals(LiveRegionMode.Polite, compose.onNodeWithText(text(R.string.no_results)).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
+
+		compose.runOnIdle { focusManager!!.clearFocus(force = true) }
+		compose.onNode(hasSetTextAction()).assertIsNotFocused()
+		compose.onNodeWithContentDescription(text(R.string.clear_search)).performClick()
+		compose.onNode(hasSetTextAction()).assertIsFocused()
+	}
+
+	@Test
+	fun theListComesAfterItsActionsForScreenReaders() {
+		show(unlocked("Groceries"))
+
+		assertEquals(1f, compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().config[SemanticsProperties.TraversalIndex])
+	}
+
+	@Test
+	fun undoAfterTwoDeletesBringsBackTheSecond() {
+		val model = unlocked("First", "Second")
+		show(model)
+		for (title in listOf("First", "Second")) {
+			compose.onNodeWithText(title).performClick()
+			waitFor { model.selection != null }
+			compose.onNodeWithContentDescription(text(R.string.delete)).performClick()
+			waitFor { model.selection == null && model.notes.none { it.title == title } }
+		}
+		waitFor { disk { it.liveNotes() }.isEmpty() }
+		waitFor { count(text(R.string.undo)) == 1 }
+		compose.mainClock.advanceTimeBy(1_000)
+		compose.waitForIdle()
+		compose.onNodeWithText(text(R.string.undo)).performClick()
+
+		waitFor { model.notes.size == 1 }
+		assertEquals("Second", model.notes.single().title)
+	}
+
+	@Test
+	fun thePanesFollowTheWindowWhenItIsRotatedOrUnfolded() {
+		size = PORTRAIT
+		val model = unlocked("Groceries\nmilk", "Kayak\nrental")
+		show(model)
+		compose.onNodeWithText("Groceries").performClick()
+		waitFor { compose.onAllNodes(hasHint(text(R.string.note))).fetchSemanticsNodes().size == 1 }
+		newNote.assertIsNotDisplayed()
+
+		size = LANDSCAPE
+		compose.waitForIdle()
+		newNote.assertIsDisplayed()
+		editor.assertIsDisplayed()
+		back.assertDoesNotExist()
+
+		size = PORTRAIT
+		compose.waitForIdle()
+		newNote.assertIsNotDisplayed()
+		editor.assertIsDisplayed()
+		back.assertIsDisplayed()
+
+		size = LANDSCAPE
+		compose.waitForIdle()
+		onMain { model.select(null) }
+		compose.waitForIdle()
+		size = PORTRAIT
+		compose.waitForIdle()
+		newNote.assertIsDisplayed()
+		editor.assertIsNotDisplayed()
+		assertEquals(0, count(text(R.string.no_note_selected)))
+	}
+
+	@Test
+	fun pressingBackTwiceReturnsToTheListOnce() {
+		size = PORTRAIT
+		val model = unlocked("Groceries")
+		show(model)
+		compose.onNodeWithText("Groceries").performClick()
+		waitFor { compose.onAllNodes(hasHint(text(R.string.note))).fetchSemanticsNodes().size == 1 }
+		compose.waitForIdle()
+
+		val goBack = click(back)
+		onMain {
+			goBack()
+			goBack()
+		}
+		compose.waitForIdle()
+
+		newNote.assertIsDisplayed()
+		editor.assertIsNotDisplayed()
+	}
+
+	@Test
+	fun openingAnotherNoteDuringTheSlideFinishesIt() {
+		size = PORTRAIT
+		val model = unlocked("Groceries", "Kayak")
+		val (first, second) = onMain { model.notes.map { it.id } }
+		show(model)
+		onMain { model.select(first) }
+		compose.waitForIdle()
+		val atRest = back.fetchSemanticsNode().boundsInRoot.left
+		onMain { model.select(null) }
+		compose.waitForIdle()
+		compose.mainClock.autoAdvance = false
+
+		onMain { model.select(first) }
+		compose.mainClock.advanceTimeBy(150)
+		onMain { model.select(second) }
+		compose.mainClock.advanceTimeBy(100)
+		compose.mainClock.autoAdvance = true
+		compose.waitForIdle()
+
+		newNote.assertIsNotDisplayed()
+		assertEquals(back.fetchSemanticsNode().boundsInRoot.left, atRest, 1f)
+		editor.assertIsDisplayed()
+		editor.assertTextContains(onMain { model.selectedNote!!.body })
+	}
+
+	@Test
+	fun deletingNeverFlashesThePlaceholder() {
+		size = PORTRAIT
+		val model = unlocked("Groceries")
+		show(model)
+		compose.onNodeWithText("Groceries").performClick()
+		waitFor { compose.onAllNodes(hasHint(text(R.string.note))).fetchSemanticsNodes().size == 1 }
+		compose.waitForIdle()
+		val delete = click(compose.onNodeWithContentDescription(text(R.string.delete)))
+		compose.mainClock.autoAdvance = false
+
+		onMain { delete() }
+		repeat(40) {
+			compose.mainClock.advanceTimeByFrame()
+			assertEquals("frame $it", 0, count(text(R.string.no_note_selected)))
+		}
+		compose.mainClock.autoAdvance = true
+		newNote.assertIsDisplayed()
+	}
+
+	@Test
+	fun aHebrewNoteRunsRightToLeft() {
+		val model = unlocked("\u05E9\u05DC\u05D5\u05DD")
+		onMain { model.select(model.notes.single().id) }
+		show(model)
+
+		val layouts = mutableListOf<TextLayoutResult>()
+		compose.onNode(hasHint(text(R.string.note))).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+		assertEquals(ResolvedTextDirection.Rtl, layouts.single().getParagraphDirection(0))
 	}
 
 	@Test
@@ -152,7 +413,7 @@ class LibraryScreenTest {
 		compose.onNodeWithText("Doomed").performClick()
 		waitFor { model.selection != null }
 		compose.onNodeWithContentDescription(text(R.string.delete)).performClick()
-		waitFor { model.notes.isEmpty() }
+		waitFor { model.notes.isEmpty() && count(text(R.string.undo)) == 1 }
 		compose.onNodeWithText(text(R.string.undo)).performClick()
 
 		waitFor { model.notes.size == 1 }
@@ -168,5 +429,10 @@ class LibraryScreenTest {
 
 		waitFor { model.phase == AppModel.Phase.Locked }
 		assertEquals(emptyList<Any>(), model.notes)
+	}
+
+	private companion object {
+		val PORTRAIT = DpSize(411.dp, 800.dp)
+		val LANDSCAPE = DpSize(914.dp, 500.dp)
 	}
 }

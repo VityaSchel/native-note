@@ -1,5 +1,6 @@
 package dev.hloth.nativenote.ui
 
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +11,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.hloth.nativenote.R
 
@@ -23,12 +26,12 @@ fun LicensesScreen(onBack: () -> Unit) {
 				if (paragraph.startsWith("# ")) {
 					Text(
 						paragraph.removePrefix("# "),
-						Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 8.dp),
+						Modifier.padding(start = 16.dp, top = 24.dp, end = 16.dp, bottom = 8.dp).semantics { heading() },
 						style = MaterialTheme.typography.titleSmall,
 						color = MaterialTheme.colorScheme.primary,
 					)
 				} else {
-					Text(paragraph, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium)
+					Text(paragraph, Modifier.focusable().padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium)
 				}
 			}
 		}

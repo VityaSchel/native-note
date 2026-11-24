@@ -6,12 +6,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
 import dev.hloth.nativenote.model.SyncStatus
@@ -20,17 +26,28 @@ import dev.hloth.nativenote.sync.SyncProblem
 import java.io.IOException
 
 @Composable
-fun SyncStatusButton(status: SyncStatus, onTryAgain: () -> Unit) {
-	val failed = status.phase as? SyncStatus.Phase.Failed
-	if (failed == null && status.problems.isEmpty()) return
+fun SyncStatusButton(status: SyncStatus, announced: Boolean?, onAnnounced: (Boolean?) -> Unit, onTryAgain: () -> Unit) {
+	val failed = status.lastFailure
+	val stopped = if (failed != null) true else if (status.problems.isNotEmpty()) false else null
+	val isNews = remember(stopped) { stopped != announced }
+	LaunchedEffect(stopped) { onAnnounced(stopped) }
+	if (stopped == null) return
 	var showing by remember { mutableStateOf(false) }
-	val title = stringResource(if (failed != null) R.string.sync_stopped else R.string.sync_problems)
-	IconButton(onClick = { showing = true }) { Icon(painterResource(R.drawable.ic_sync_problem), title) }
+	val title = stringResource(if (stopped) R.string.sync_stopped else R.string.sync_problems)
+	IconButton(
+		onClick = { showing = true },
+		modifier = Modifier.semantics {
+			contentDescription = title
+			if (isNews) liveRegion = LiveRegionMode.Polite
+		},
+	) {
+		Icon(painterResource(R.drawable.ic_sync_problem), contentDescription = null)
+	}
 	if (!showing) return
 	AlertDialog(
 		onDismissRequest = { showing = false },
 		title = { Text(title) },
-		text = { Text(failed?.let { syncFailureMessage(it.reason) } ?: status.problems.map { problemMessage(it) }.distinct().joinToString("\n\n")) },
+		text = { DialogBody { Text(failed?.let { syncFailureMessage(it) } ?: problemMessages(status.problems)) } },
 		confirmButton = {
 			if (failed != null) {
 				TextButton(onClick = {
@@ -62,6 +79,9 @@ fun syncFailureMessage(error: Throwable): String = when (error) {
 	is IOException -> stringResource(R.string.sync_unreachable, error.message.orEmpty())
 	else -> failureMessage(Failure.reason(error))
 }
+
+@Composable
+fun problemMessages(problems: List<SyncProblem>): String = problems.map { problemMessage(it) }.distinct().joinToString("\n\n")
 
 @Composable
 private fun problemMessage(problem: SyncProblem): String = stringResource(

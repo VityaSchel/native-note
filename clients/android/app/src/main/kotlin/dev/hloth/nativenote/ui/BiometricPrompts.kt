@@ -7,16 +7,13 @@ import android.os.CancellationSignal
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.res.stringResource
-import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.AppModel.BiometricOutcome
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 @Composable
-fun rememberBiometricPrompt(title: String): suspend () -> BiometricOutcome {
+fun rememberBiometricPrompt(title: String, cancel: String): suspend () -> BiometricOutcome {
 	val activity = LocalActivity.current
-	val cancel = stringResource(R.string.use_password)
 	return remember(activity, title, cancel) {
 		{ activity?.let { authenticate(it, title, cancel) } ?: BiometricOutcome.Unavailable }
 	}

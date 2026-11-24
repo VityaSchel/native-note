@@ -13,6 +13,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedListItem
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -20,6 +21,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import dev.hloth.nativenote.R
 
@@ -27,7 +37,8 @@ class SettingsRow(
 	val headline: String,
 	val supporting: String? = null,
 	val enabled: Boolean = true,
-	val trailing: (@Composable () -> Unit)? = null,
+	val announces: Boolean = false,
+	val checked: Boolean? = null,
 	val onClick: (() -> Unit)? = null,
 )
 
@@ -37,11 +48,11 @@ fun SubpageScaffold(title: String, onBack: () -> Unit, content: @Composable (Pad
 	val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 	val background = MaterialTheme.colorScheme.surfaceContainer
 	Scaffold(
-		modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
+		modifier = Modifier.nestedScroll(scroll.nestedScrollConnection).semantics { paneTitle = title },
 		containerColor = background,
 		topBar = {
 			LargeFlexibleTopAppBar(
-				title = { Text(title) },
+				title = { Text(title, Modifier.semantics { heading() }) },
 				navigationIcon = {
 					IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
 				},
@@ -58,7 +69,7 @@ fun SubpageScaffold(title: String, onBack: () -> Unit, content: @Composable (Pad
 fun SettingsSection(title: String, rows: List<SettingsRow>) {
 	Text(
 		title,
-		Modifier.padding(start = 32.dp, top = 24.dp, end = 32.dp, bottom = 8.dp),
+		Modifier.padding(start = 32.dp, top = 24.dp, end = 32.dp, bottom = 8.dp).semantics { heading() },
 		style = MaterialTheme.typography.titleSmall,
 		color = MaterialTheme.colorScheme.primary,
 	)
@@ -66,12 +77,20 @@ fun SettingsSection(title: String, rows: List<SettingsRow>) {
 		rows.forEachIndexed { index, row ->
 			val shapes = ListItemDefaults.segmentedShapes(index, rows.size)
 			val colors = ListItemDefaults.segmentedColors(containerColor = MaterialTheme.colorScheme.surfaceBright)
-			val supporting: (@Composable () -> Unit)? = row.supporting?.let { { Text(it) } }
+			val supporting: (@Composable () -> Unit)? = row.supporting?.let { { Text(it, if (row.announces) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier) } }
 			val onClick = row.onClick
 			if (onClick == null) {
-				SegmentedListItem(shapes = shapes, colors = colors, enabled = row.enabled, supportingContent = supporting, trailingContent = row.trailing) { Text(row.headline) }
+				SegmentedListItem(shapes = shapes, colors = colors, supportingContent = supporting) { Text(row.headline) }
 			} else {
-				SegmentedListItem(onClick = onClick, shapes = shapes, colors = colors, enabled = row.enabled, supportingContent = supporting, trailingContent = row.trailing) { Text(row.headline) }
+				SegmentedListItem(
+					onClick = onClick,
+					shapes = shapes,
+					modifier = row.checked?.let { checked -> Modifier.semantics { role = Role.Switch; toggleableState = ToggleableState(checked) } } ?: Modifier,
+					colors = colors,
+					enabled = row.enabled,
+					supportingContent = supporting,
+					trailingContent = row.checked?.let { checked -> { Switch(checked = checked, onCheckedChange = null) } },
+				) { Text(row.headline) }
 			}
 		}
 	}

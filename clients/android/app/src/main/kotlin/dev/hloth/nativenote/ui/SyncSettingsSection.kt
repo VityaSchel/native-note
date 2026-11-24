@@ -22,6 +22,7 @@ fun SyncSettingsSection(model: AppModel, onSetUp: (SyncSetupMode) -> Unit) {
 	val status = model.syncStatus
 	val scope = rememberCoroutineScope()
 	var confirmingTurnOff by remember { mutableStateOf(false) }
+	var requested by remember { mutableStateOf(false) }
 	var failure by remember { mutableStateOf<Failure?>(null) }
 	val title = stringResource(R.string.settings_sync)
 	if (status.phase == SyncStatus.Phase.Off) {
@@ -30,16 +31,12 @@ fun SyncSettingsSection(model: AppModel, onSetUp: (SyncSetupMode) -> Unit) {
 		))
 		return
 	}
-	val lastSynced = status.lastSynced?.let {
-		if (System.currentTimeMillis() - it < DateUtils.MINUTE_IN_MILLIS) {
-			stringResource(R.string.last_synced_just_now)
-		} else {
-			stringResource(R.string.last_synced, DateUtils.getRelativeTimeSpanString(it).toString())
-		}
-	}
 	SettingsSection(title, listOf(
-		SettingsRow(stringResource(R.string.server), listOfNotNull(status.server, lastSynced).joinToString("\n")),
-		SettingsRow(stringResource(R.string.sync_now), enabled = status.phase != SyncStatus.Phase.Syncing, onClick = { model.syncNow() }),
+		SettingsRow(stringResource(R.string.server), status.server),
+		SettingsRow(stringResource(R.string.sync_now), syncOutcome(status), enabled = status.phase != SyncStatus.Phase.Syncing, announces = requested, onClick = {
+			requested = true
+			model.syncNow()
+		}),
 		SettingsRow(stringResource(R.string.change_recovery_phrase_row), onClick = { onSetUp(SyncSetupMode.Rotate) }),
 		SettingsRow(stringResource(R.string.change_server_row), onClick = { onSetUp(SyncSetupMode.ChangeServer) }),
 		SettingsRow(stringResource(R.string.turn_off_sync_row), onClick = { confirmingTurnOff = true }),
@@ -48,7 +45,7 @@ fun SyncSettingsSection(model: AppModel, onSetUp: (SyncSetupMode) -> Unit) {
 		AlertDialog(
 			onDismissRequest = { confirmingTurnOff = false },
 			title = { Text(stringResource(R.string.turn_off_sync_title)) },
-			text = { Text(stringResource(R.string.turn_off_sync_message)) },
+			text = { DialogBody { Text(stringResource(R.string.turn_off_sync_message)) } },
 			confirmButton = {
 				TextButton(onClick = {
 					confirmingTurnOff = false
@@ -59,4 +56,18 @@ fun SyncSettingsSection(model: AppModel, onSetUp: (SyncSetupMode) -> Unit) {
 		)
 	}
 	failure?.let { FailureDialog(it) { failure = null } }
+}
+
+@Composable
+private fun syncOutcome(status: SyncStatus): String {
+	val failure = status.lastFailure
+	val lastSynced = status.lastSynced
+	val outcome = when {
+		status.phase == SyncStatus.Phase.Syncing -> stringResource(R.string.syncing)
+		failure != null -> "${stringResource(R.string.sync_stopped)}. ${syncFailureMessage(failure)}"
+		lastSynced == null -> stringResource(R.string.not_synced_yet)
+		System.currentTimeMillis() - lastSynced < DateUtils.MINUTE_IN_MILLIS -> stringResource(R.string.last_synced_just_now)
+		else -> stringResource(R.string.last_synced, DateUtils.getRelativeTimeSpanString(lastSynced).toString())
+	}
+	return if (failure != null || status.problems.isEmpty()) outcome else "$outcome\n\n${problemMessages(status.problems)}"
 }

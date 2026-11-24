@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
 	<string name="app_name">Native Note</string>
 
 	<string name="next">Next</string>
@@ -10,20 +10,21 @@
 	<string name="settings">Settings</string>
 	<string name="busy">In progress</string>
 
+	<string name="welcome">Welcome</string>
 	<string name="welcome_title">Welcome to Native Note</string>
-	<string name="welcome_subtitle">A personal encrypted self-hosted note-taking app</string>
+	<string name="welcome_subtitle">A personal encrypted self-hosted note-taking app.</string>
 	<string name="password_title">Set an Unlock Password</string>
 	<string name="password_subtitle">The app is encrypted with this password. It cannot be recovered.</string>
 	<string name="password">Password</string>
 	<string name="confirm_password">Confirm Password</string>
 	<string name="passwords_mismatch">The passwords do not match.</string>
-	<string name="no_secure_hardware">This phone has no secure hardware, so only this password protects your notes.</string>
+	<string name="no_secure_hardware">This device has no secure hardware, so only this password protects your notes.</string>
 
 	<string name="unlock">Unlock</string>
 	<string name="wrong_password">Wrong password</string>
 	<string name="forgot_password">Forgot Password?</string>
 	<string name="erase_title">Erase all notes and start over?</string>
-	<string name="erase_message">Without the password these notes cannot be recovered. Erasing deletes every note on this phone and returns to setup.</string>
+	<string name="erase_message">Without the password these notes cannot be recovered. Erasing deletes every note on this device and returns to setup.</string>
 	<string name="erase_action">Erase Notes</string>
 
 	<string name="new_note">New Note</string>
@@ -31,6 +32,7 @@
 	<string name="no_additional_text">No additional text</string>
 	<string name="no_notes">No Notes</string>
 	<string name="no_results">No Results</string>
+	<string name="note">Note</string>
 	<string name="no_note_selected">No Note Selected</string>
 	<string name="search">Search</string>
 	<string name="clear_search">Clear Search</string>
@@ -48,8 +50,8 @@
 	<string name="use_password">Use Password</string>
 	<string name="unlock_with_biometrics">Unlock with Biometrics</string>
 	<string name="biometric_unlock">Biometric Unlock</string>
-	<string name="biometric_unlock_explanation">Unlock with a fingerprint or face instead of the password. Enrolling a new one turns it off.</string>
-	<string name="biometric_enable_explanation">Enter your password to unlock with biometrics instead.</string>
+	<string name="biometric_unlock_explanation">Unlock with a fingerprint or face instead of the password. Adding a new fingerprint or face turns this off.</string>
+	<string name="biometric_enable_explanation">Enter your password to turn on biometric unlock.</string>
 	<string name="turn_on">Turn On</string>
 	<string name="biometric_offer_title">Unlock with Biometrics?</string>
 	<string name="biometric_offer_subtitle">Use a fingerprint or face to unlock Native Note instead of typing the password.</string>
@@ -60,13 +62,20 @@
 	<string name="sync_with_a_server">Sync with a server</string>
 	<string name="sync_with_a_server_explanation">Keep your notes on your own Native Note server, end-to-end encrypted.</string>
 	<string name="sync_now">Sync Now</string>
+	<string name="syncing">Syncing…</string>
+	<string name="not_synced_yet">Not synced yet</string>
+	<string name="sync_offer_title">Sync Your Notes</string>
+	<string name="set_up">Set Up</string>
+	<string name="turn_on_sync">Turn On Sync</string>
+	<string name="change_phrase">Change Phrase</string>
+	<string name="move_library">Move Library</string>
 	<string name="last_synced">Last synced %s</string>
 	<string name="last_synced_just_now">Last synced just now</string>
 	<string name="change_recovery_phrase_row">Change Recovery Phrase…</string>
 	<string name="change_server_row">Change Server…</string>
 	<string name="turn_off_sync_row">Turn Off Sync…</string>
 	<string name="turn_off_sync_title">Turn Off Sync?</string>
-	<string name="turn_off_sync_message">This phone keeps its notes and stops syncing them. The server keeps its copy.</string>
+	<string name="turn_off_sync_message">This device keeps its notes and stops syncing them. The server keeps its copy.</string>
 	<string name="turn_off_sync">Turn Off Sync</string>
 	<string name="set_up_sync">Set Up Sync</string>
 	<string name="change_server">Change Server</string>
@@ -78,7 +87,7 @@
 	<string name="change_server_explanation">Enter this library\'s server and its API key, also after the server moved or its key was replaced. An empty server takes the library under new recovery words; one that holds another library is refused.</string>
 	<string name="words_explanation">These words are used to encrypt your notes on your sync server. Keep them safe and never share with anyone.</string>
 	<string name="confirm_explanation">Enter words %s from the phrase you wrote down.</string>
-	<string name="join_explanation">This server already holds a library. Enter its current 24-word recovery phrase, and this phone syncs with it.</string>
+	<string name="join_explanation">This server already holds a library. Enter its current 24-word recovery phrase, and this device syncs with it.</string>
 	<string name="current_phrase_explanation">The recovery phrase was changed on another device. Enter its current 24 words to continue.</string>
 	<string name="server">Server</string>
 	<string name="api_key">API Key</string>
@@ -88,16 +97,17 @@
 	<string name="word_number">Word %d</string>
 	<string name="continue_action">Continue</string>
 	<string name="unknown_word">Word %d is not in the recovery word list.</string>
+	<string name="not_in_word_list">Not in the word list</string>
 	<string name="phrase_checksum">These words are not a recovery phrase. Check for a mistyped or swapped word.</string>
 	<string name="setup_invalid_server">Enter the server\'s address, starting with http:// or https://.</string>
 	<string name="setup_invalid_api_key">Enter the 64-character API key from the server\'s api-key file.</string>
-	<string name="setup_server_has_library">This server now holds a library. Enter its recovery phrase to sync this phone with it.</string>
+	<string name="setup_server_has_library">This server now holds a library. Enter its recovery phrase to sync this device with it.</string>
 	<string name="setup_server_holds_another">This server holds another library. Native Note cannot merge two libraries; choose a server that holds this one, or an empty one.</string>
 	<string name="setup_server_has_no_library">This server no longer holds a library. Continue to start a new one.</string>
-	<string name="setup_already_set_up">Sync is already set up on this phone.</string>
-	<string name="setup_not_set_up">Sync is not set up on this phone.</string>
+	<string name="setup_already_set_up">Sync is already set up on this device.</string>
+	<string name="setup_not_set_up">Sync is not set up on this device.</string>
 	<string name="setup_rotated_elsewhere">The recovery phrase was changed on another device, so this phrase was not saved. Enter the current phrase to continue.</string>
-	<string name="setup_server_behind">The server holds an older recovery phrase than this phone last saw. It may have been restored from a backup.</string>
+	<string name="setup_server_behind">The server holds an older recovery phrase than this device last saw. It may have been restored from a backup.</string>
 	<string name="setup_outcome_unknown">The server\'s answer did not arrive, so this phrase may already be in effect. Keep it, and any phrase it replaces, and try again.</string>
 	<string name="setup_words_do_not_match">Those words don\'t match the phrase. Check what you wrote down.</string>
 	<string name="setup_phrase_does_not_open">This phrase does not open the library on this server.</string>
@@ -122,6 +132,10 @@
 	<string name="import_passphrase_message">Enter the passphrase the export was made with.</string>
 	<string name="import_action">Import</string>
 	<string name="wrong_export_passphrase">Wrong passphrase, or the export is damaged.</string>
+	<plurals name="exported_notes">
+		<item quantity="one">Exported %d note.</item>
+		<item quantity="other">Exported %d notes.</item>
+	</plurals>
 	<plurals name="imported_notes">
 		<item quantity="one">Imported %d note.</item>
 		<item quantity="other">Imported %d notes.</item>
@@ -140,7 +154,7 @@
 
 	<string name="settings_unlock">Unlock</string>
 	<string name="change_password">Change Password</string>
-	<string name="change_password_explanation">The new password unlocks your notes on this phone. It cannot be recovered.</string>
+	<string name="change_password_explanation">The new password unlocks your notes on this device. It cannot be recovered.</string>
 	<string name="current_password">Current Password</string>
 	<string name="new_password">New Password</string>
 	<string name="verify_password">Verify</string>
@@ -196,11 +210,11 @@
 	<string name="sync_server_fault">The server could not store the changes. Its disk may be full.</string>
 	<string name="sync_protocol_violation">The server sent a reply Native Note does not understand.</string>
 	<string name="sync_unreachable">The server could not be reached. %s</string>
-	<string name="problem_server_behind">The server holds less than this phone has seen. It may have been restored from a backup.</string>
+	<string name="problem_server_behind">The server holds less than this device has seen. It may have been restored from a backup.</string>
 	<string name="problem_unverifiable">A change on the server could not be read with this library\'s key, so it was skipped.</string>
 	<string name="problem_newer">A change on the server was made by a newer version of Native Note. Update Native Note to read it.</string>
-	<string name="problem_too_large">A note is larger than 1 MB, so it stays on this phone until it is shorter.</string>
-	<string name="problem_stuck">A note can\'t sync: the server holds a newer version of it that this phone could not apply.</string>
+	<string name="problem_too_large">A note is larger than 1 MB, so it stays on this device until it is shorter.</string>
+	<string name="problem_stuck">A note can\'t sync: the server holds a newer version of it that this device could not apply.</string>
 	<string name="failure_biometric_read">Biometrics could not read the unlock key. Unlock with your password.</string>
 	<string name="failure_biometric_rejected">The key saved for biometric unlock no longer opens these notes. Unlock with your password.</string>
 	<string name="failure_biometric_unlock_first">Unlock Native Note to turn on biometric unlock.</string>
@@ -209,4 +223,7 @@
 	<string name="failure_biometric_mismatch">Biometric unlock could not be turned on. Try again.</string>
 	<string name="failure_biometric_enable">Biometric unlock could not be turned on.</string>
 	<string name="failure_biometric_disable">Biometric unlock could not be turned off.</string>
+
+	<string name="m3_adaptive_default_pane_title_primary" tools:ignore="UnusedResources" tools:override="true">Note</string>
+	<string name="m3_adaptive_default_pane_title_secondary" tools:ignore="UnusedResources" tools:override="true">Notes</string>
 </resources>
