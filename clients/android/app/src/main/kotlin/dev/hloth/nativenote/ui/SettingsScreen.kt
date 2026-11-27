@@ -2,6 +2,7 @@ package dev.hloth.nativenote.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.verticalScroll
@@ -83,6 +84,7 @@ private fun EnableBiometricsDialog(onDismiss: () -> Unit, onEnable: suspend (Str
 	}
 	AlertDialog(
 		onDismissRequest = { if (!working) onDismiss() },
+		modifier = Modifier.widthIn(max = maxDialogWidth()),
 		title = { Text(stringResource(R.string.biometric_enable_prompt_title)) },
 		text = {
 			DialogBody {
@@ -129,6 +131,7 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit, onChangePassword: suspen
 	}
 	AlertDialog(
 		onDismissRequest = { if (!working) onDismiss() },
+		modifier = Modifier.widthIn(max = maxDialogWidth()),
 		title = { Text(stringResource(R.string.change_password)) },
 		text = {
 			DialogBody {

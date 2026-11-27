@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.DeviceConfigurationOverride
@@ -21,7 +22,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -30,6 +33,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.AppModel
 import dev.hloth.nativenote.support.FakeServer
+import dev.hloth.nativenote.support.WithoutKeyboard
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
@@ -37,6 +41,7 @@ import dev.hloth.nativenote.support.onMain
 import dev.hloth.nativenote.support.pressBack
 import dev.hloth.nativenote.sync.Request
 import dev.hloth.nativenote.sync.SyncTransport
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
 import org.junit.Assert.assertEquals
@@ -67,6 +72,8 @@ class SyncSetupScreenTest {
 
 	private fun button(id: Int) = compose.onNodeWithText(text(id))
 
+	private fun press(id: Int) = button(id).assertIsEnabled().performSemanticsAction(SemanticsActions.OnClick)
+
 	private fun shown(id: Int) = compose.onAllNodes(hasText(text(id))).fetchSemanticsNodes().isNotEmpty()
 
 	private fun waitFor(id: Int) = compose.waitUntil(10_000) { shown(id) }
@@ -80,15 +87,17 @@ class SyncSetupScreenTest {
 	}
 
 	private fun show(model: AppModel) = compose.setContent {
-		DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size)) {
-			NativeNoteTheme { SyncSetupScreen(model, SyncSetupMode.SetUp, onDone = { done = true }) }
+		WithoutKeyboard {
+			DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size)) {
+				NativeNoteTheme { SyncSetupScreen(model, SyncSetupMode.SetUp, onDone = { done = true }) }
+			}
 		}
 	}
 
 	private fun enterServer() {
 		compose.onNode(hasHint(text(R.string.server))).performTextInput(FakeServer.ADDRESS)
 		compose.onNode(hasHint(text(R.string.api_key))).performTextInput(server.apiKeyHex)
-		button(R.string.continue_action).performClick()
+		press(R.string.continue_action)
 	}
 
 	private fun wordsOnScreen() = (1..24).mapNotNull { number ->
@@ -121,7 +130,7 @@ class SyncSetupScreenTest {
 		show(library())
 		enterServer()
 		waitFor(R.string.reveal)
-		button(R.string.reveal).performClick()
+		press(R.string.reveal)
 		compose.waitForIdle()
 
 		assertTrue(firstWordNode(1).config[SemanticsProperties.Focused])
@@ -136,7 +145,7 @@ class SyncSetupScreenTest {
 		show(library())
 		enterServer()
 		waitFor(R.string.reveal)
-		button(R.string.reveal).performClick()
+		press(R.string.reveal)
 		compose.waitForIdle()
 
 		val (first, second, last) = listOf(1, 2, 13).map { firstWordNode(it).parent!! }
@@ -150,11 +159,11 @@ class SyncSetupScreenTest {
 		show(library())
 		enterServer()
 		waitFor(R.string.reveal)
-		button(R.string.reveal).performClick()
+		press(R.string.reveal)
 		assertEquals(24, wordsOnScreen().size)
 
 		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
-		button(R.string.continue_action).performClick()
+		press(R.string.continue_action)
 
 		waitFor(R.string.reveal)
 		assertEquals(emptyList<String>(), wordsOnScreen())
@@ -187,15 +196,15 @@ class SyncSetupScreenTest {
 	private fun confirmWords() {
 		enterServer()
 		waitFor(R.string.reveal)
-		button(R.string.reveal).performClick()
+		press(R.string.reveal)
 		val words = wordsOnScreen()
-		button(R.string.continue_action).performClick()
+		press(R.string.continue_action)
 		waitFor(R.string.confirm_phrase)
 		for (number in 1..24) {
 			val field = compose.onAllNodes(hasHint(context.getString(R.string.word_number, number)))
 			if (field.fetchSemanticsNodes().isNotEmpty()) word(number).performTextInput(words[number - 1])
 		}
-		button(R.string.turn_on_sync).performClick()
+		press(R.string.turn_on_sync)
 	}
 
 	@Test
@@ -238,14 +247,33 @@ class SyncSetupScreenTest {
 	}
 
 	@Test
-	fun aFailureIsAssertiveAndTheStepOpensOnItsFirstField() {
+	fun aWrongAddressOrKeyIsShownOnItsOwnField() {
 		show(library())
-		compose.onNode(hasHint(text(R.string.server))).assertIsFocused()
+		compose.waitUntil(5_000) { compose.onNode(hasHint(text(R.string.server))).fetchSemanticsNode().config[SemanticsProperties.Focused] }
 		compose.onNode(hasHint(text(R.string.server))).performTextInput("not an address")
-		compose.onNode(hasHint(text(R.string.api_key))).performTextInput(server.apiKeyHex)
-		button(R.string.continue_action).performClick()
+		compose.onNode(hasHint(text(R.string.api_key))).performTextInput("short")
+		press(R.string.continue_action)
 
-		waitFor(R.string.setup_invalid_server)
-		assertEquals(LiveRegionMode.Assertive, compose.onNodeWithText(text(R.string.setup_invalid_server)).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
+		compose.waitUntil(5_000) { compose.onNode(hasHint(text(R.string.server))).fetchSemanticsNode().config.contains(SemanticsProperties.Error) }
+		assertEquals(text(R.string.setup_invalid_server), compose.onNode(hasHint(text(R.string.server))).fetchSemanticsNode().config[SemanticsProperties.Error])
+		compose.onNode(hasHint(text(R.string.server))).assertIsFocused()
+
+		compose.onNode(hasHint(text(R.string.server))).performTextReplacement(FakeServer.ADDRESS)
+		assertFalse(compose.onNode(hasHint(text(R.string.server))).fetchSemanticsNode().config.contains(SemanticsProperties.Error))
+		press(R.string.continue_action)
+
+		compose.waitUntil(5_000) { compose.onNode(hasHint(text(R.string.api_key))).fetchSemanticsNode().config.contains(SemanticsProperties.Error) }
+		assertEquals(text(R.string.setup_invalid_api_key), compose.onNode(hasHint(text(R.string.api_key))).fetchSemanticsNode().config[SemanticsProperties.Error])
+		compose.onNode(hasHint(text(R.string.api_key))).assertIsFocused()
+	}
+
+	@Test
+	fun aServerThatCannotBeReachedIsAnAssertiveMessage() {
+		show(library { throw IOException("connection refused") })
+		enterServer()
+		val message = context.getString(R.string.sync_unreachable, "connection refused")
+
+		compose.waitUntil(5_000) { compose.onAllNodes(hasText(message)).fetchSemanticsNodes().isNotEmpty() }
+		assertEquals(LiveRegionMode.Assertive, compose.onNodeWithText(message).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
 	}
 }

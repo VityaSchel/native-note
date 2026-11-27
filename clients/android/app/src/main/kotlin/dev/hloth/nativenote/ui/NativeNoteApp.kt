@@ -1,6 +1,9 @@
 package dev.hloth.nativenote.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterExitState
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
@@ -19,6 +22,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -109,40 +113,43 @@ private fun Locked(model: AppModel) {
 	)
 }
 
+private enum class Page { Notes, Settings, Licenses, SyncSetup }
+
 @Composable
 private fun Library(model: AppModel, pickers: LibraryPickers) {
-	var showingSettings by rememberSaveable { mutableStateOf(false) }
-	var showingLicenses by rememberSaveable { mutableStateOf(false) }
-	var syncSetup by rememberSaveable { mutableStateOf<SyncSetupMode?>(null) }
+	var page by rememberSaveable { mutableStateOf(Page.Notes) }
+	var syncSetup by rememberSaveable { mutableStateOf(SyncSetupMode.SetUp) }
 	val prompt = rememberBiometricPrompt(stringResource(R.string.biometric_enable_prompt_title), stringResource(R.string.cancel))
 	val screens = rememberSaveableStateHolder()
-	LaunchedEffect(model.focusesEditor) {
-		if (model.focusesEditor == null) return@LaunchedEffect
-		showingSettings = false
-		showingLicenses = false
+	LaunchedEffect(page) { Page.entries.filter { it > page }.forEach(screens::removeState) }
+	LaunchedEffect(model.focusesEditor) { if (model.focusesEditor != null && page != Page.SyncSetup) page = Page.Notes }
+	BackHandler(enabled = page == Page.Settings) { page = Page.Notes }
+	BackHandler(enabled = page == Page.Licenses) { page = Page.Settings }
+	AnimatedContent(page) { shown ->
+		val leaving = transition.targetState != EnterExitState.Visible
+		Box(if (leaving) Modifier.clearAndSetSemantics {} else Modifier) {
+			screens.SaveableStateProvider(shown) {
+				when (shown) {
+					Page.Notes -> LibraryScreen(model, onSettings = { page = Page.Settings })
+					Page.Licenses -> LicensesScreen(onBack = { page = Page.Settings })
+					Page.SyncSetup -> SyncSetupScreen(model, syncSetup, onDone = { page = if (model.focusesEditor == null) Page.Settings else Page.Notes })
+					Page.Settings -> SettingsScreen(
+						onBack = { page = Page.Notes },
+						onChangePassword = { current, new -> model.changePassword(current, new).await() },
+						biometricUnlock = model.isBiometricUnlockOn.takeIf { it || model.canUseBiometrics },
+						onEnableBiometrics = { model.enableBiometricUnlock(it, prompt).await() },
+						onDisableBiometrics = { model.disableBiometricUnlock().await() },
+						exchange = { LibraryExchange(model, pickers) },
+						sync = {
+							SyncSettingsSection(model, onSetUp = {
+								syncSetup = it
+								page = Page.SyncSetup
+							})
+						},
+						onLicenses = { page = Page.Licenses },
+					)
+				}
+			}
+		}
 	}
-	syncSetup?.let { mode ->
-		SyncSetupScreen(model, mode, onDone = { syncSetup = null })
-		return
-	}
-	if (showingLicenses) {
-		BackHandler { showingLicenses = false }
-		LicensesScreen(onBack = { showingLicenses = false })
-		return
-	}
-	if (showingSettings) {
-		BackHandler { showingSettings = false }
-		SettingsScreen(
-			onBack = { showingSettings = false },
-			onChangePassword = { current, new -> model.changePassword(current, new).await() },
-			biometricUnlock = model.isBiometricUnlockOn.takeIf { it || model.canUseBiometrics },
-			onEnableBiometrics = { model.enableBiometricUnlock(it, prompt).await() },
-			onDisableBiometrics = { model.disableBiometricUnlock().await() },
-			exchange = { LibraryExchange(model, pickers) },
-			sync = { SyncSettingsSection(model, onSetUp = { syncSetup = it }) },
-			onLicenses = { showingLicenses = true },
-		)
-		return
-	}
-	screens.SaveableStateProvider("library") { LibraryScreen(model, onSettings = { showingSettings = true }) }
 }

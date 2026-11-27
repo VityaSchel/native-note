@@ -23,6 +23,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -34,6 +35,7 @@ import dev.hloth.nativenote.model.AppModel
 import dev.hloth.nativenote.storage.Note
 import dev.hloth.nativenote.storage.NoteStore
 import dev.hloth.nativenote.storage.SQLiteConnection
+import dev.hloth.nativenote.support.WithoutKeyboard
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
@@ -69,7 +71,7 @@ class ScreenRenderTest {
 		compose.setContent {
 			DeviceConfigurationOverride(DeviceConfigurationOverride.DarkMode(isDark)) {
 				focus = LocalFocusManager.current
-				NativeNoteTheme { Surface { key(screen) { screen() } } }
+				WithoutKeyboard { NativeNoteTheme { Surface { key(screen) { screen() } } } }
 			}
 		}
 	}
@@ -134,10 +136,11 @@ class ScreenRenderTest {
 			onMain { model.select(null) }
 			compose.waitUntil(10_000) { compose.onAllNodes(hasText("Weekend trip")).fetchSemanticsNodes().size == 1 }
 
+			compose.onNodeWithContentDescription(context.getString(R.string.search)).performClick()
 			compose.onNode(hasSetTextAction()).performTextInput("kayak")
 			compose.waitUntil(10_000) { compose.onAllNodes(hasText(context.getString(R.string.results))).fetchSemanticsNodes().isNotEmpty() }
 			save("library-search")
-			onMain { model.updateSearch("") }
+			compose.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
 
 			show { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, biometricUnlock = false, exchange = { LibraryExchange(model) }) }
 			save("settings-notes")

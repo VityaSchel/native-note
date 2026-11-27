@@ -8,6 +8,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.security.NetworkSecurityPolicy
+import android.view.WindowManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -43,6 +44,14 @@ class PlatformPolicyTest {
 			ActivityInfo.CONFIG_LOCALE or ActivityInfo.CONFIG_LAYOUT_DIRECTION
 
 		assertEquals(kept, activity.configChanges and kept)
+	}
+
+	@Test
+	@Suppress("DEPRECATION")
+	fun theKeyboardResizesTheWindowInsteadOfPanningIt() {
+		val activity = context.packageManager.getActivityInfo(ComponentName(context, MainActivity::class.java), 0)
+
+		assertEquals(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE, activity.softInputMode and WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST)
 	}
 
 	@Test

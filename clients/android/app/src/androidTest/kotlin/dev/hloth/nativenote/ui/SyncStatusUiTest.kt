@@ -2,6 +2,7 @@ package dev.hloth.nativenote.ui
 
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
@@ -21,6 +22,7 @@ import dev.hloth.nativenote.model.SyncStatus
 import dev.hloth.nativenote.storage.NoteStore
 import dev.hloth.nativenote.storage.SQLiteConnection
 import dev.hloth.nativenote.storage.enableSync
+import dev.hloth.nativenote.support.WithoutKeyboard
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.onMain
@@ -53,6 +55,8 @@ class SyncStatusUiTest {
 
 	private fun text(id: Int) = context.getString(id)
 
+	private fun setContent(content: @Composable () -> Unit) = compose.setContent { WithoutKeyboard(content) }
+
 	@Test
 	fun aFailedSyncShowsWhyAndTriesAgain() {
 		val password = "correct horse"
@@ -72,7 +76,7 @@ class SyncStatusUiTest {
 			NoteStore(it).enableSync(SyncSettings("http://127.0.0.1:9/", AesGcm.randomBytes(32), AesGcm.randomBytes(32)), 0u)
 		}
 		model.await { unlock(password) }
-		compose.setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
+		setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
 
 		compose.waitUntil(10_000) { model.syncStatus.phase is SyncStatus.Phase.Failed }
 		compose.onNodeWithContentDescription(text(R.string.sync_stopped)).performClick()
@@ -91,7 +95,7 @@ class SyncStatusUiTest {
 			if (hangs) awaitCancellation()
 			throw IOException("connection refused")
 		}
-		compose.setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
+		setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
 		compose.waitUntil(10_000) { model.syncStatus.phase is SyncStatus.Phase.Failed }
 		val icon = compose.onNodeWithContentDescription(text(R.string.sync_stopped))
 		assertEquals(LiveRegionMode.Polite, icon.fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
@@ -107,7 +111,7 @@ class SyncStatusUiTest {
 	@Test
 	fun syncNowInSettingsSaysHowItEnded() {
 		val model = syncedOver { throw IOException("connection refused") }
-		compose.setContent { NativeNoteTheme { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, sync = { SyncSettingsSection(model, onSetUp = {}) }) } }
+		setContent { NativeNoteTheme { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, sync = { SyncSettingsSection(model, onSetUp = {}) }) } }
 		compose.waitUntil(10_000) { model.syncStatus.phase is SyncStatus.Phase.Failed }
 		val outcome = "${text(R.string.sync_stopped)}. ${context.getString(R.string.sync_unreachable, "connection refused")}"
 		val status = compose.onNodeWithText(outcome, useUnmergedTree = true)
@@ -138,7 +142,7 @@ class SyncStatusUiTest {
 	@Test
 	fun theStoppedIconIsAnnouncedOnceNotOnEveryReturnToTheList() {
 		val model = syncedOver { throw IOException("connection refused") }
-		compose.setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
+		setContent { NativeNoteTheme { LibraryScreen(model, onSettings = {}) } }
 		compose.waitUntil(10_000) { model.syncStatus.phase is SyncStatus.Phase.Failed }
 		val icon = compose.onNodeWithContentDescription(text(R.string.sync_stopped))
 		assertEquals(LiveRegionMode.Polite, icon.fetchSemanticsNode().config[SemanticsProperties.LiveRegion])

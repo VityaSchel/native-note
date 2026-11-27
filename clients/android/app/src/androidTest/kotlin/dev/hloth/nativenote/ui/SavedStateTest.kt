@@ -8,6 +8,7 @@ import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -105,10 +106,11 @@ class SavedStateTest {
 		onMain { model.select(null) }
 		show { LibraryScreen(model, onSettings = {}) }
 
+		compose.onNodeWithContentDescription(context.getString(R.string.search)).performClick()
 		compose.onNode(hasSetTextAction()).performTextInput("query-secret")
 		assertNotSaved("query-secret")
 
-		onMain { model.updateSearch("") }
+		compose.onNodeWithContentDescription(context.getString(R.string.back)).performClick()
 		compose.waitUntil(10_000) { compose.onAllNodes(hasText("Diary")).fetchSemanticsNodes().isNotEmpty() }
 		compose.onNodeWithText("Diary").performClick()
 		compose.waitUntil(10_000) { model.selection != null }

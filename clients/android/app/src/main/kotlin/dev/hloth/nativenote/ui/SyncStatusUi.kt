@@ -1,5 +1,6 @@
 package dev.hloth.nativenote.ui
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +47,7 @@ fun SyncStatusButton(status: SyncStatus, announced: Boolean?, onAnnounced: (Bool
 	if (!showing) return
 	AlertDialog(
 		onDismissRequest = { showing = false },
+		modifier = Modifier.widthIn(max = maxDialogWidth()),
 		title = { Text(title) },
 		text = { DialogBody { Text(failed?.let { syncFailureMessage(it) } ?: problemMessages(status.problems)) } },
 		confirmButton = {

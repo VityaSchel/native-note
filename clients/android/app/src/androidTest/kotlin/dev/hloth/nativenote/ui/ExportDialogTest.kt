@@ -1,8 +1,10 @@
 package dev.hloth.nativenote.ui
 
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsOff
@@ -22,6 +24,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
+import dev.hloth.nativenote.support.WithoutKeyboard
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
@@ -50,18 +53,21 @@ class ExportDialogTest {
 
 	private fun dialogField(id: Int) = compose.onNode(hasHint(text(id)) and hasAnyAncestor(isDialog()))
 
+	private fun setContent(content: @Composable () -> Unit) = compose.setContent { WithoutKeyboard(content) }
+
 	@Test
 	fun anEncryptedExportNeedsTheSamePassphraseTwiceAndCancelExportsNothing() {
 		val model = appModel(folder.root)
 		model.await { start() }
 		model.await { setUp("correct horse") }
-		compose.setContent { NativeNoteTheme { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, exchange = { LibraryExchange(model) }) } }
+		setContent { NativeNoteTheme { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, exchange = { LibraryExchange(model) }) } }
 
 		compose.onNodeWithText(text(R.string.export_notes)).performClick()
 		dialogNode(R.string.export_explanation).assertIsDisplayed()
 		val encrypts = compose.onNode(isToggleable() and hasText(text(R.string.encrypt_with_passphrase)) and hasAnyAncestor(isDialog()))
 		val export = compose.onNode(hasText(text(R.string.export_action)) and hasClickAction())
 		encrypts.assertIsOn()
+		assertEquals(Role.Checkbox, encrypts.fetchSemanticsNode().config[SemanticsProperties.Role])
 		export.assertIsNotEnabled()
 		encrypts.performClick()
 		encrypts.assertIsOff()
@@ -80,13 +86,13 @@ class ExportDialogTest {
 	}
 
 	@Test
-	fun turningEncryptionBackOnLeavesTheFocusOnTheSwitch() {
+	fun turningEncryptionBackOnLeavesTheFocusOnTheCheckbox() {
 		val model = appModel(folder.root)
 		model.await { start() }
 		model.await { setUp("correct horse") }
-		compose.setContent { NativeNoteTheme { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, exchange = { LibraryExchange(model) }) } }
+		setContent { NativeNoteTheme { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, exchange = { LibraryExchange(model) }) } }
 		compose.onNodeWithText(text(R.string.export_notes)).performClick()
-		dialogField(R.string.passphrase).assertIsFocused()
+		compose.waitUntil(5_000) { dialogField(R.string.passphrase).fetchSemanticsNode().config[SemanticsProperties.Focused] }
 
 		val encrypts = compose.onNode(isToggleable() and hasText(text(R.string.encrypt_with_passphrase)) and hasAnyAncestor(isDialog()))
 		encrypts.performClick()
@@ -102,7 +108,7 @@ class ExportDialogTest {
 		model.await { start() }
 		model.await { setUp("correct horse") }
 		onMain { model.finishOnboarding() }
-		compose.setContent { NativeNoteTheme { NativeNoteApp(model) } }
+		setContent { NativeNoteTheme { NativeNoteApp(model) } }
 		compose.onNodeWithContentDescription(text(R.string.settings)).performClick()
 		compose.onNodeWithText(text(R.string.export_notes)).performClick()
 		dialogField(R.string.passphrase).performTextInput("export passphrase")
@@ -122,7 +128,7 @@ class ExportDialogTest {
 		model.await { start() }
 		model.await { setUp("correct horse") }
 		onMain { model.finishOnboarding() }
-		compose.setContent { NativeNoteTheme { NativeNoteApp(model) } }
+		setContent { NativeNoteTheme { NativeNoteApp(model) } }
 		onMain { model.prepareExport(null) }
 		runBlocking { onMain { model.exportLibrary { } }.await() }
 

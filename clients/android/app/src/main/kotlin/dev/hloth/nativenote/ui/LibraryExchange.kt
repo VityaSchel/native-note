@@ -3,16 +3,20 @@ package dev.hloth.nativenote.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Switch
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -105,6 +109,7 @@ fun rememberLibraryPickers(model: AppModel): LibraryPickers {
 		model.exchanged?.let {
 			AlertDialog(
 				onDismissRequest = model::dismissExchanged,
+				modifier = Modifier.widthIn(max = maxDialogWidth()),
 				text = { DialogBody { Text(exchangedMessage(it)) } },
 				confirmButton = { TextButton(onClick = model::dismissExchanged) { Text(stringResource(R.string.ok)) } },
 			)
@@ -143,6 +148,7 @@ private fun ExportDialog(onDismiss: () -> Unit, onExport: (String?) -> Unit) {
 	val verify = remember { TextFieldState() }
 	var mismatched by remember { mutableStateOf(false) }
 	val canExport = !encrypt || passphrase.text.isNotEmpty()
+	val press = remember { MutableInteractionSource() }
 	val submit = submit@{
 		if (!canExport) return@submit
 		mismatched = encrypt && passphrase.text.toString() != verify.text.toString()
@@ -150,20 +156,20 @@ private fun ExportDialog(onDismiss: () -> Unit, onExport: (String?) -> Unit) {
 	}
 	AlertDialog(
 		onDismissRequest = onDismiss,
-		title = { Text(stringResource(R.string.export_title)) },
+		modifier = Modifier.widthIn(max = maxDialogWidth()),
+		title = { Text(stringResource(R.string.export_notes)) },
 		text = {
 			DialogBody {
 				Text(stringResource(R.string.export_explanation))
 				Row(
-					Modifier.fillMaxWidth().toggleable(value = encrypt, role = Role.Switch, onValueChange = {
+					Modifier.fillMaxWidth().toggleable(value = encrypt, interactionSource = press, indication = null, role = Role.Checkbox, onValueChange = {
 						encrypt = it
 						opening = false
 					}).heightIn(min = 48.dp),
 					verticalAlignment = Alignment.CenterVertically,
-					horizontalArrangement = Arrangement.SpaceBetween,
 				) {
-					Text(stringResource(R.string.encrypt_with_passphrase), Modifier.weight(1f))
-					Switch(checked = encrypt, onCheckedChange = null)
+					Checkbox(checked = encrypt, onCheckedChange = null, Modifier.indication(press, ripple(bounded = false, radius = 20.dp)))
+					Text(stringResource(R.string.encrypt_with_passphrase), Modifier.padding(start = 16.dp))
 				}
 				if (encrypt) {
 					PasswordField(passphrase, stringResource(R.string.passphrase), takesFocus = opening, imeAction = ImeAction.Next, onEdit = { mismatched = false })
@@ -188,6 +194,7 @@ private fun ImportPassphraseDialog(working: Boolean, wrong: Boolean, onDismiss: 
 	val submit = { if (passphrase.text.isNotEmpty() && !working) onImport(passphrase.text.toString()) }
 	AlertDialog(
 		onDismissRequest = { if (!working) onDismiss() },
+		modifier = Modifier.widthIn(max = maxDialogWidth()),
 		title = { Text(stringResource(R.string.import_passphrase_title)) },
 		text = {
 			DialogBody {

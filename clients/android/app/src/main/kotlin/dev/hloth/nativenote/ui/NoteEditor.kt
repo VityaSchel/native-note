@@ -1,5 +1,6 @@
 package dev.hloth.nativenote.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -23,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,23 +67,26 @@ fun NoteEditor(
 	onDelete: () -> Unit,
 	onBack: (() -> Unit)?,
 ) {
-	Scaffold(
-		topBar = {
-			TopAppBar(
-				title = {},
-				navigationIcon = {
-					if (onBack != null) {
-						IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
-					}
-				},
-				actions = {
-					IconButton(onClick = onDelete) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
-				},
-			)
-		},
-	) { padding ->
-		key(note.id) {
-			EditorText(note, grouping, takesFocus, onFocused, onEdit, Modifier.padding(padding).consumeWindowInsets(padding).imePadding())
+	key(note.id) {
+		val scroll = rememberScrollState()
+		val bar = TopAppBarDefaults.pinnedScrollBehavior(scroll)
+		Scaffold(
+			topBar = {
+				TopAppBar(
+					title = {},
+					navigationIcon = {
+						if (onBack != null) {
+							IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
+						}
+					},
+					actions = {
+						IconButton(onClick = onDelete) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
+					},
+					scrollBehavior = bar,
+				)
+			},
+		) { padding ->
+			EditorText(note, grouping, takesFocus, onFocused, onEdit, scroll, Modifier.padding(padding).consumeWindowInsets(padding).imePadding())
 		}
 	}
 }
@@ -93,6 +98,7 @@ private fun EditorText(
 	takesFocus: Boolean,
 	onFocused: () -> Unit,
 	onEdit: (String) -> Unit,
+	scroll: ScrollState,
 	modifier: Modifier,
 ) {
 	val text = remember { TextFieldState(note.body) }
@@ -125,7 +131,7 @@ private fun EditorText(
 
 	BoxWithConstraints(modifier.fillMaxSize()) {
 		val fieldHeight = maxHeight - with(LocalDensity.current) { dateHeight.toDp() }
-		Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+		Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
 			Text(
 				grouping.editorDateLine(note.updatedAt),
 				Modifier.fillMaxWidth().onSizeChanged { dateHeight = it.height }.padding(top = 4.dp).semantics { contentDescription = spokenDate },

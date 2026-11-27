@@ -17,6 +17,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.painterResource
@@ -85,6 +86,7 @@ fun SettingsSection(title: String, rows: List<SettingsRow>) {
 				SegmentedListItem(
 					onClick = onClick,
 					shapes = shapes,
+					verticalAlignment = Alignment.CenterVertically,
 					modifier = row.checked?.let { checked -> Modifier.semantics { role = Role.Switch; toggleableState = ToggleableState(checked) } } ?: Modifier,
 					colors = colors,
 					enabled = row.enabled,

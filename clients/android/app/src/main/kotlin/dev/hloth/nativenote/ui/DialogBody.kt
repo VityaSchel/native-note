@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -19,3 +21,8 @@ fun DialogBody(content: @Composable ColumnScope.() -> Unit) {
 		content = content,
 	)
 }
+
+@Composable
+fun maxDialogWidth(): Dp = LocalWindowInfo.current.containerDpSize.width - DIALOG_MARGIN * 2
+
+private val DIALOG_MARGIN = 24.dp

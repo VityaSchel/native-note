@@ -61,6 +61,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
 import dev.hloth.nativenote.support.RecordingAutofillManager
+import dev.hloth.nativenote.support.WithoutKeyboard
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
@@ -88,10 +89,12 @@ class AccessScreensTest {
 
 	private fun dialogButton(id: Int) = compose.onNode(hasText(text(id)) and hasClickAction() and hasAnyAncestor(isDialog()))
 
+	private fun setContent(content: @Composable () -> Unit) = compose.setContent { WithoutKeyboard(content) }
+
 	@Test
 	fun onboardingWelcomesThenRefusesMismatchedPasswords() {
 		val submitted = mutableListOf<String>()
-		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { submitted += it }) }
+		setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { submitted += it }) }
 
 		node(R.string.welcome_title).assertIsDisplayed()
 		node(R.string.next).performClick()
@@ -109,7 +112,7 @@ class AccessScreensTest {
 	@Test
 	fun onboardingSubmitsWhenBothPasswordsMatch() {
 		val submitted = mutableListOf<String>()
-		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { submitted += it }) }
+		setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { submitted += it }) }
 		node(R.string.next).performClick()
 
 		field(R.string.password).performTextInput("correct horse")
@@ -121,7 +124,7 @@ class AccessScreensTest {
 
 	@Test
 	fun onboardingWarnsWithoutSecureHardware() {
-		compose.setContent { OnboardingScreen(hasSecureHardware = false, isWorking = false, onSetUp = {}) }
+		setContent { OnboardingScreen(hasSecureHardware = false, isWorking = false, onSetUp = {}) }
 		node(R.string.next).performClick()
 
 		node(R.string.no_secure_hardware).assertIsDisplayed()
@@ -131,7 +134,7 @@ class AccessScreensTest {
 	fun unlockSubmitsThePasswordAndReportsAWrongOne() {
 		val submitted = mutableListOf<String>()
 		var wrong by mutableStateOf(false)
-		compose.setContent { UnlockScreen(wrongPassword = wrong, isWorking = false, onUnlock = { submitted += it }, onErase = {}) }
+		setContent { UnlockScreen(wrongPassword = wrong, isWorking = false, onUnlock = { submitted += it }, onErase = {}) }
 
 		node(R.string.unlock).assertIsNotEnabled()
 		field(R.string.password).performTextInput("guess")
@@ -145,7 +148,7 @@ class AccessScreensTest {
 	@Test
 	fun forgettingThePasswordErasesOnlyAfterConfirming() {
 		var erased = 0
-		compose.setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = { erased++ }) }
+		setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = { erased++ }) }
 
 		node(R.string.forgot_password).performClick()
 		node(R.string.erase_title).assertIsDisplayed()
@@ -161,7 +164,7 @@ class AccessScreensTest {
 	fun changingThePasswordChecksTheNewOneTwiceAndShowsAFailure() {
 		val attempts = mutableListOf<Pair<String, String>>()
 		var answer: Failure? = Failure.WrongPassword
-		compose.setContent {
+		setContent {
 			SettingsScreen(onBack = {}, onChangePassword = { current, new ->
 				attempts += current to new
 				answer
@@ -189,7 +192,7 @@ class AccessScreensTest {
 
 	@Test
 	fun aFilledPasswordFieldKeepsItsNameAsAHintThatDoesNotReplaceItsValue() {
-		compose.setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {}) }
+		setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {}) }
 
 		field(R.string.password).performTextInput("typed")
 
@@ -200,7 +203,7 @@ class AccessScreensTest {
 	@Test
 	fun settingsOpensTheThirdPartyLicenses() {
 		var opened = false
-		compose.setContent { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, onLicenses = { opened = true }) }
+		setContent { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, onLicenses = { opened = true }) }
 
 		node(R.string.third_party_licenses).performClick()
 
@@ -210,7 +213,7 @@ class AccessScreensTest {
 	@Test
 	fun theLicensesScreenShowsEveryNoticeThroughTheApacheTermsAndGoesBack() {
 		var closed = false
-		compose.setContent { LicensesScreen(onBack = { closed = true }) }
+		setContent { LicensesScreen(onBack = { closed = true }) }
 
 		compose.onNodeWithText("SQLCipher").assertIsDisplayed()
 		compose.onNode(hasScrollAction()).performScrollToNode(hasText("END OF TERMS AND CONDITIONS"))
@@ -222,21 +225,21 @@ class AccessScreensTest {
 
 	@Test
 	fun anEmptyFieldIsNamedOnce() {
-		compose.setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {}) }
+		setContent { UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {}) }
 
 		assertFalse(SemanticsProperties.Text in field(R.string.password).fetchSemanticsNode().config)
 	}
 
 	@Test
 	fun aFieldsErrorIsItsMessage() {
-		compose.setContent { UnlockScreen(wrongPassword = true, isWorking = false, onUnlock = {}, onErase = {}) }
+		setContent { UnlockScreen(wrongPassword = true, isWorking = false, onUnlock = {}, onErase = {}) }
 
 		assertEquals(text(R.string.wrong_password), field(R.string.password).fetchSemanticsNode().config[SemanticsProperties.Error])
 	}
 
 	@Test
 	fun aMismatchGoesAwayWhenTheFieldIsEditedAndComesBackWhenRepeated() {
-		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
+		setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
 		node(R.string.next).performClick()
 		field(R.string.password).performTextInput("correct horse")
 		field(R.string.confirm_password).performTextInput("correct")
@@ -252,7 +255,7 @@ class AccessScreensTest {
 
 	@Test
 	fun theNextKeyMovesToTheNextField() {
-		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
+		setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
 		node(R.string.next).performClick()
 
 		field(R.string.password).performTextInput("correct horse")
@@ -263,7 +266,7 @@ class AccessScreensTest {
 
 	@Test
 	fun backOnThePasswordStepReturnsToWelcome() {
-		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
+		setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) }
 		node(R.string.next).performClick()
 		node(R.string.password_title).assertIsDisplayed()
 
@@ -276,7 +279,7 @@ class AccessScreensTest {
 	fun cancelingTheBiometricPromptStaysOnTheOffer() {
 		var finished = false
 		var offers by mutableStateOf(false)
-		compose.setContent {
+		setContent {
 			OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = { offers = true }, offersBiometrics = offers, isBiometricUnlockOn = { false }, onFinish = { finished = true })
 		}
 		setPassword()
@@ -293,7 +296,7 @@ class AccessScreensTest {
 	fun theBiometricOfferAsksForThePasswordOnceTheTypedOneIsGone() {
 		var enabledWith: String? = null
 		var finished = false
-		compose.setContent {
+		setContent {
 			OnboardingScreen(
 				hasSecureHardware = true,
 				isWorking = false,
@@ -322,7 +325,7 @@ class AccessScreensTest {
 		val model = appModel(folder.root, biometricsAvailable = { available })
 		model.await { start() }
 		model.await { setUp("correct horse") }
-		compose.setContent { NativeNoteTheme { NativeNoteApp(model) } }
+		setContent { NativeNoteTheme { NativeNoteApp(model) } }
 		node(R.string.biometric_offer_title).assertIsDisplayed()
 
 		available = false
@@ -336,7 +339,7 @@ class AccessScreensTest {
 	@Test
 	fun typingAPasswordNeverLeavesAnythingToSave() {
 		val autofill = RecordingAutofillManager()
-		compose.setContent {
+		setContent {
 			CompositionLocalProvider(LocalAutofillManager provides autofill) {
 				OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {})
 			}
@@ -361,7 +364,7 @@ class AccessScreensTest {
 
 	@Test
 	fun theBiometricRowSaysWhetherItIsOn() {
-		compose.setContent { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, biometricUnlock = true) }
+		setContent { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }, biometricUnlock = true) }
 
 		node(R.string.biometric_unlock).assertIsOn()
 		assertEquals(Role.Switch, node(R.string.biometric_unlock).fetchSemanticsNode().config[SemanticsProperties.Role])
@@ -370,7 +373,7 @@ class AccessScreensTest {
 	@Test
 	fun everyScreenHasAPaneTitleAndHeadings() {
 		var shown by mutableStateOf<@Composable () -> Unit>({})
-		compose.setContent { shown() }
+		setContent { shown() }
 		val screens = listOf<@Composable () -> Unit>(
 			{ OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}) },
 			{ UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {}) },
@@ -387,7 +390,7 @@ class AccessScreensTest {
 
 	@Test
 	fun aBusyButtonKeepsItsNameAndItsSpinnerIsSilent() {
-		compose.setContent {
+		setContent {
 			host = LocalView.current
 			UnlockScreen(wrongPassword = false, isWorking = true, onUnlock = {}, onErase = {})
 		}
@@ -403,7 +406,7 @@ class AccessScreensTest {
 	fun theActionKeepsItsFocusWhenTheKeyboardTakesTheRoom() {
 		var height by mutableStateOf(500.dp)
 		val focus = FocusRequester()
-		compose.setContent {
+		setContent {
 			inputMode = LocalInputModeManager.current
 			Box(Modifier.height(height)) {
 				FormPage(pane = "Pane", title = "Title", icon = R.drawable.ic_lock, actions = { Button(onClick = {}, Modifier.focusRequester(focus)) { Text("Action") } }) {
@@ -425,7 +428,7 @@ class AccessScreensTest {
 
 	@Test
 	fun theLicensesScrollWithAKeyboardAlone() {
-		compose.setContent {
+		setContent {
 			inputMode = LocalInputModeManager.current
 			LicensesScreen(onBack = {})
 		}
@@ -445,7 +448,7 @@ class AccessScreensTest {
 
 	@Test
 	fun atTheLargestTextOnANarrowPhoneTheUnlockButtonKeepsItsLabelOnOneLine() {
-		compose.setContent {
+		setContent {
 			DeviceConfigurationOverride(DeviceConfigurationOverride.FontScale(2f) then DeviceConfigurationOverride.ForcedSize(DpSize(320.dp, 640.dp))) {
 				UnlockScreen(wrongPassword = false, isWorking = false, onUnlock = {}, onErase = {})
 			}

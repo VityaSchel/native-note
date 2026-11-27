@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
@@ -16,10 +15,8 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
@@ -38,7 +35,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.layout.AnimatedPane
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
@@ -66,7 +63,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -185,31 +181,44 @@ private fun NoteList(
 	val results = stringResource(R.string.results)
 	val groups by remember(grouping, results) { derivedStateOf { model.groups(grouping, results) } }
 	val search = remember { TextFieldState(model.searchText) }
-	val focusManager = LocalFocusManager.current
+	val searchFocus = remember { FocusRequester() }
+	var searching by remember { mutableStateOf(model.searchText.isNotEmpty()) }
+	val stopSearching = {
+		search.clearText()
+		searching = false
+	}
 	LaunchedEffect(search) { snapshotFlow { search.text.toString() }.collect(model::updateSearch) }
 	LaunchedEffect(model.searchText) { if (model.searchText.isEmpty()) search.clearText() }
-	BackHandler(enabled = search.text.isNotEmpty()) {
-		search.clearText()
-		focusManager.clearFocus()
-	}
+	LaunchedEffect(model.focusesEditor) { if (model.focusesEditor != null) searching = false }
+	BackHandler(enabled = searching, onBack = stopSearching)
 
 	Scaffold(
 		contentWindowInsets = ScaffoldDefaults.contentWindowInsets.union(WindowInsets.ime),
 		containerColor = MaterialTheme.colorScheme.surface,
 		snackbarHost = { SnackbarHost(snackbar) },
 		topBar = {
-			Row(
-				Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).windowInsetsPadding(TopAppBarDefaults.windowInsets).padding(start = 8.dp, top = 4.dp, end = 4.dp, bottom = 4.dp),
-				verticalAlignment = Alignment.CenterVertically,
-			) {
-				SearchField(search, Modifier.weight(1f))
-				SyncStatusButton(model.syncStatus, announcedSync, onSyncAnnounced, onTryAgain = { model.syncNow() })
-				IconButton(onClick = { model.lock() }) { Icon(painterResource(R.drawable.ic_lock), stringResource(R.string.lock)) }
-				IconButton(onClick = onSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings)) }
-			}
+			TopAppBar(
+				title = { if (searching) SearchField(search, searchFocus) else Text(stringResource(R.string.app_name), Modifier.semantics { heading() }) },
+				navigationIcon = {
+					if (searching) IconButton(onClick = stopSearching) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
+				},
+				actions = {
+					if (!searching) {
+						IconButton(onClick = { searching = true }) { Icon(painterResource(R.drawable.ic_search), stringResource(R.string.search)) }
+						SyncStatusButton(model.syncStatus, announcedSync, onSyncAnnounced, onTryAgain = { model.syncNow() })
+						IconButton(onClick = { model.lock() }) { Icon(painterResource(R.drawable.ic_lock), stringResource(R.string.lock)) }
+						IconButton(onClick = onSettings) { Icon(painterResource(R.drawable.ic_settings), stringResource(R.string.settings)) }
+					} else if (search.text.isNotEmpty()) {
+						IconButton(onClick = {
+							search.clearText()
+							searchFocus.requestFocus()
+						}) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.clear_search)) }
+					}
+				},
+			)
 		},
 		floatingActionButton = {
-			FloatingActionButton(onClick = { model.createNote() }) { Icon(painterResource(R.drawable.ic_add), stringResource(R.string.new_note)) }
+			if (!searching) FloatingActionButton(onClick = { model.createNote() }) { Icon(painterResource(R.drawable.ic_add), stringResource(R.string.new_note)) }
 		},
 	) { padding ->
 		val direction = LocalLayoutDirection.current
@@ -230,31 +239,25 @@ private fun NoteList(
 }
 
 @Composable
-private fun SearchField(search: TextFieldState, modifier: Modifier) {
+private fun SearchField(search: TextFieldState, focus: FocusRequester) {
 	val name = stringResource(R.string.search)
-	val focus = remember { FocusRequester() }
 	val keyboard = LocalSoftwareKeyboardController.current
+	TakeFocus(focus, takes = remember { search.text.isEmpty() })
 	TextField(
 		search,
-		modifier.focusRequester(focus).semantics { hintText = name },
+		Modifier.fillMaxWidth().focusRequester(focus).semantics { hintText = name },
+		textStyle = MaterialTheme.typography.bodyLarge,
 		placeholder = { Text(name, Modifier.clearAndSetSemantics {}) },
-		leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
-		trailingIcon = if (search.text.isEmpty()) null else ({
-			IconButton(onClick = {
-				search.clearText()
-				focus.requestFocus()
-			}) { Icon(painterResource(R.drawable.ic_close), stringResource(R.string.clear_search)) }
-		}),
 		lineLimits = TextFieldLineLimits.SingleLine,
 		keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
 		onKeyboardAction = { keyboard?.hide() },
-		shape = CircleShape,
 		colors = TextFieldDefaults.colors(
-			focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-			unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+			focusedContainerColor = Color.Transparent,
+			unfocusedContainerColor = Color.Transparent,
 			focusedIndicatorColor = Color.Transparent,
 			unfocusedIndicatorColor = Color.Transparent,
 		),
+		contentPadding = PaddingValues(),
 	)
 }
 

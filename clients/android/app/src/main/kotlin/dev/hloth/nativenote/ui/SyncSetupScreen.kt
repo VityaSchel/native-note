@@ -38,7 +38,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentDataType
@@ -71,6 +73,7 @@ import dev.hloth.nativenote.model.SetupStart
 import dev.hloth.nativenote.sync.PhraseEntry
 import dev.hloth.nativenote.sync.SyncError
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 enum class SyncSetupMode { SetUp, ChangeServer, Rotate }
@@ -228,7 +231,8 @@ fun SyncSetupScreen(model: AppModel, mode: SyncSetupMode, onDone: () -> Unit) {
 					Modifier.padding(start = 24.dp, end = 24.dp, bottom = 16.dp),
 					actions = { Button(onClick = proceed, enabled = canProceed) { BusyLabel(stringResource(action), working) } },
 				) {
-					failure?.let {
+					val fieldFailure = failure?.takeIf { step == Step.Server && (it == SetupFailure.InvalidServer || it == SetupFailure.InvalidApiKey) }
+					failure?.takeIf { it != fieldFailure }?.let {
 						Text(
 							setupFailureMessage(it),
 							Modifier.bringIntoViewRequester(failureInView).semantics { liveRegion = LiveRegionMode.Assertive },
@@ -238,8 +242,21 @@ fun SyncSetupScreen(model: AppModel, mode: SyncSetupMode, onDone: () -> Unit) {
 					}
 					when (val current = step) {
 						Step.Server -> {
-							ServerField(server, enabled = !working, takesFocus = !opensOnFailure)
-							PasswordField(apiKey, stringResource(R.string.api_key), enabled = !working, onAction = proceedIfReady)
+							ServerField(
+								server,
+								enabled = !working,
+								error = fieldFailure?.takeIf { it == SetupFailure.InvalidServer }?.let { setupFailureMessage(it) },
+								takesFocus = !opensOnFailure,
+								onEdit = { if (failure == SetupFailure.InvalidServer) failure = null },
+							)
+							PasswordField(
+								apiKey,
+								stringResource(R.string.api_key),
+								enabled = !working,
+								error = fieldFailure?.takeIf { it == SetupFailure.InvalidApiKey }?.let { setupFailureMessage(it) },
+								onEdit = { if (failure == SetupFailure.InvalidApiKey) failure = null },
+								onAction = proceedIfReady,
+							)
 						}
 						Step.Preparing -> Unit
 						is Step.Words -> RecoveryWords(current.phrase.words, revealed, onReveal = { revealed = true })
@@ -270,17 +287,24 @@ fun SyncSetupScreen(model: AppModel, mode: SyncSetupMode, onDone: () -> Unit) {
 }
 
 @Composable
-private fun ServerField(server: TextFieldState, enabled: Boolean, takesFocus: Boolean) {
+private fun ServerField(server: TextFieldState, enabled: Boolean, error: String?, takesFocus: Boolean, onEdit: () -> Unit) {
 	val name = stringResource(R.string.server)
 	val focus = remember { FocusRequester() }
+	val edited by rememberUpdatedState(onEdit)
 	TakeFocus(focus, takesFocus)
 	NeverOfferedForSaving(server)
+	LaunchedEffect(server) { snapshotFlow { server.text.toString() }.drop(1).collect { edited() } }
+	LaunchedEffect(error) { if (error != null) focus.requestFocus() }
 	OutlinedTextField(
 		server,
-		Modifier.fillMaxWidth().focusRequester(focus).semantics { hintText = name },
+		Modifier.fillMaxWidth().focusRequester(focus).semantics {
+			hintText = name
+			if (error != null) error(error)
+		},
 		enabled = enabled,
-		placeholder = { Text(name, Modifier.clearAndSetSemantics {}) },
-		supportingText = { Text(stringResource(R.string.server_example)) },
+		label = { Text(name, Modifier.clearAndSetSemantics {}) },
+		isError = error != null,
+		supportingText = { if (error == null) Text(stringResource(R.string.server_example)) else Text(error, Modifier.semantics { hideFromAccessibility() }) },
 		lineLimits = TextFieldLineLimits.SingleLine,
 		keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false, imeAction = ImeAction.Next),
 	)

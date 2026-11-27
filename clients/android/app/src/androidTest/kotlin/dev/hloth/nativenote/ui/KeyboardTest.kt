@@ -16,6 +16,7 @@ import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.onMain
+import kotlinx.coroutines.awaitCancellation
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -41,9 +42,9 @@ class KeyboardTest {
 		InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
 		compose.setContent {
 			InterceptPlatformTextInput(
-				interceptor = { request, next ->
+				interceptor = { _, _ ->
 					sessions++
-					next.startInputMethod(request)
+					awaitCancellation()
 				},
 			) { NativeNoteTheme(content) }
 		}
@@ -65,11 +66,11 @@ class KeyboardTest {
 	}
 
 	@Test
-	fun tappingTheSearchFieldOpensTheKeyboard() {
+	fun openingTheSearchOpensTheKeyboard() {
 		val model = library()
 		show { LibraryScreen(model, onSettings = {}) }
 
-		assertTappingOpensTheKeyboard(field(R.string.search))
+		assertTappingOpensTheKeyboard(compose.onNodeWithContentDescription(text(R.string.search)))
 	}
 
 	@Test

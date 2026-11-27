@@ -3,10 +3,12 @@ package dev.hloth.nativenote.ui
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.selectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -80,13 +82,17 @@ fun UnlockScreen(
 	if (confirmingErase) {
 		AlertDialog(
 			onDismissRequest = { confirmingErase = false },
+			modifier = Modifier.widthIn(max = maxDialogWidth()),
 			title = { Text(stringResource(R.string.erase_title)) },
 			text = { DialogBody { Text(stringResource(R.string.erase_message)) } },
 			confirmButton = {
-				TextButton(onClick = {
-					confirmingErase = false
-					onErase()
-				}) { Text(stringResource(R.string.erase_action), color = MaterialTheme.colorScheme.error) }
+				TextButton(
+					onClick = {
+						confirmingErase = false
+						onErase()
+					},
+					colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+				) { Text(stringResource(R.string.erase_action)) }
 			},
 			dismissButton = { TextButton(onClick = { confirmingErase = false }) { Text(stringResource(R.string.cancel)) } },
 		)

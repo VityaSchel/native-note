@@ -43,6 +43,8 @@ These libraries are licensed under the Apache License, Version 2.0, reproduced b
 
 AndroidX, including Jetpack Compose and Material 3. Copyright The Android Open Source Project.
 
+Material Symbols icons. Copyright Google LLC.
+
 The Kotlin standard library and kotlinx.coroutines. Copyright JetBrains s.r.o. and Kotlin Programming Language contributors.
 
 JetBrains Java Annotations. Copyright JetBrains s.r.o.

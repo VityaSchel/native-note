@@ -1,9 +1,11 @@
 package dev.hloth.nativenote.ui
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
@@ -25,6 +27,7 @@ fun FailureDialog(failure: Failure, onDismiss: () -> Unit) {
 	}
 	AlertDialog(
 		onDismissRequest = onDismiss,
+		modifier = Modifier.widthIn(max = maxDialogWidth()),
 		title = { Text(title) },
 		text = { DialogBody { Text(message) } },
 		confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ok)) } },

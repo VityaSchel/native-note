@@ -50,10 +50,10 @@ fun PasswordField(
 	val edited by rememberUpdatedState(onEdit)
 	val keyboard = WindowInsets.ime.getBottom(LocalDensity.current)
 	TakeFocus(focus, takesFocus)
+	NeverOfferedForSaving(state)
 	LaunchedEffect(state) { snapshotFlow { state.text.toString() }.drop(1).collect { edited() } }
 	LaunchedEffect(error) { if (error != null) focus.requestFocus() }
 	LaunchedEffect(error, keyboard) { if (error != null) inView.bringIntoView() }
-	NeverOfferedForSaving(state)
 	NoPersonalizedLearning {
 		OutlinedSecureTextField(
 			state = state,
@@ -62,13 +62,19 @@ fun PasswordField(
 				if (error != null) error(error)
 			},
 			enabled = enabled,
-			placeholder = { Text(label, Modifier.clearAndSetSemantics {}) },
+			label = { Text(label, Modifier.clearAndSetSemantics {}) },
 			isError = error != null,
 			supportingText = error?.let { { Text(it, Modifier.semantics { hideFromAccessibility() }) } },
 			keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = imeAction),
 			onKeyboardAction = onAction?.let { action -> KeyboardActionHandler { action() } },
 		)
 	}
+}
+
+@Composable
+fun NeverOfferedForSaving(state: TextFieldState) {
+	val autofill = LocalAutofillManager.current
+	LaunchedEffect(state, autofill) { snapshotFlow { state.text.toString() }.drop(1).collect { autofill?.cancel() } }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -85,10 +91,4 @@ fun NoPersonalizedLearning(content: @Composable () -> Unit) {
 		},
 		content = content,
 	)
-}
-
-@Composable
-fun NeverOfferedForSaving(state: TextFieldState) {
-	val autofill = LocalAutofillManager.current
-	LaunchedEffect(state, autofill) { snapshotFlow { state.text.toString() }.drop(1).collect { autofill?.cancel() } }
 }

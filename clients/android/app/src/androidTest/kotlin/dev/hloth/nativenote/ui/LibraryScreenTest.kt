@@ -40,6 +40,7 @@ import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.AppModel
 import dev.hloth.nativenote.storage.NoteStore
 import dev.hloth.nativenote.storage.SQLiteConnection
+import dev.hloth.nativenote.support.WithoutKeyboard
 import dev.hloth.nativenote.support.appModel
 import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
@@ -87,11 +88,13 @@ class LibraryScreenTest {
 
 	private fun show(model: AppModel) = compose.setContent {
 		focusManager = LocalFocusManager.current
-		if (size == DpSize.Unspecified) {
-			NativeNoteTheme { LibraryScreen(model, onSettings = {}) }
-		} else {
-			DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size) then DeviceConfigurationOverride.WindowSize(size)) {
+		WithoutKeyboard {
+			if (size == DpSize.Unspecified) {
 				NativeNoteTheme { LibraryScreen(model, onSettings = {}) }
+			} else {
+				DeviceConfigurationOverride(DeviceConfigurationOverride.ForcedSize(size) then DeviceConfigurationOverride.WindowSize(size)) {
+					NativeNoteTheme { LibraryScreen(model, onSettings = {}) }
+				}
 			}
 		}
 	}
@@ -101,6 +104,17 @@ class LibraryScreenTest {
 	}
 
 	private val editor get() = compose.onNode(hasHint(text(R.string.note)))
+	private val searchField get() = compose.onNode(hasHint(text(R.string.search)))
+
+	private fun isSearching() = compose.onAllNodes(hasHint(text(R.string.search))).fetchSemanticsNodes().isNotEmpty()
+
+	private fun leaveSearchWithBack() {
+		compose.waitForIdle()
+		pressBack()
+		waitFor { !isSearching() }
+	}
+
+	private fun openSearch() = compose.onNodeWithContentDescription(text(R.string.search)).performClick()
 	private val newNote get() = compose.onNodeWithContentDescription(text(R.string.new_note))
 	private val back get() = compose.onNodeWithContentDescription(text(R.string.back))
 
@@ -111,19 +125,32 @@ class LibraryScreenTest {
 	private fun count(text: String) = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size
 
 	@Test
-	fun theSearchFieldTakesFocusOnlyWhenTapped() {
+	fun theSearchFieldOpensFocusedOnlyWhenAskedFor() {
 		InstrumentationRegistry.getInstrumentation().setInTouchMode(true)
 		show(unlocked("Groceries"))
-		compose.waitForIdle()
+		compose.onNodeWithText(text(R.string.app_name)).assertIsDisplayed()
+		searchField.assertDoesNotExist()
 
-		compose.onNode(hasSetTextAction()).assertIsNotFocused()
 		compose.onNodeWithText("Groceries").performClick()
 		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
 		compose.waitForIdle()
-		compose.onNode(hasSetTextAction()).assertIsNotFocused()
+		searchField.assertDoesNotExist()
 
-		compose.onNode(hasSetTextAction()).performClick()
-		compose.onNode(hasSetTextAction()).assertIsFocused()
+		openSearch()
+		searchField.assertIsFocused()
+		newNote.assertDoesNotExist()
+		compose.onNodeWithContentDescription(text(R.string.settings)).assertDoesNotExist()
+
+		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+		searchField.assertDoesNotExist()
+		newNote.assertIsDisplayed()
+
+		openSearch()
+		compose.onNodeWithText("Groceries").performClick()
+		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+		compose.waitForIdle()
+		searchField.assertDoesNotExist()
+		newNote.assertIsDisplayed()
 	}
 
 	@Test
@@ -172,28 +199,32 @@ class LibraryScreenTest {
 	fun backLeavesTheSearchBeforeTheApp() {
 		val model = unlocked("Groceries", "Kayak")
 		show(model)
-		compose.onNode(hasSetTextAction()).performTextInput("kayak")
+		openSearch()
+		searchField.performTextInput("kayak")
 		waitFor { count("Groceries") == 0 }
 
-		pressBack()
-		compose.waitForIdle()
-		if (onMain { model.searchText }.isNotEmpty()) pressBack()
-
+		leaveSearchWithBack()
 		waitFor { count("Groceries") == 1 }
 		compose.onNodeWithText("Kayak").assertIsDisplayed()
+
+		openSearch()
+		searchField.assertIsDisplayed()
+		leaveSearchWithBack()
+		newNote.assertIsDisplayed()
 	}
 
 	@Test
 	fun noResultsIsAnnouncedAndClearingReturnsToTheField() {
 		show(unlocked("Groceries"))
-		compose.onNode(hasSetTextAction()).performTextInput("kayak")
+		openSearch()
+		searchField.performTextInput("kayak")
 		waitFor { count(text(R.string.no_results)) == 1 }
 		assertEquals(LiveRegionMode.Polite, compose.onNodeWithText(text(R.string.no_results)).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
 
 		compose.runOnIdle { focusManager!!.clearFocus(force = true) }
-		compose.onNode(hasSetTextAction()).assertIsNotFocused()
+		searchField.assertIsNotFocused()
 		compose.onNodeWithContentDescription(text(R.string.clear_search)).performClick()
-		compose.onNode(hasSetTextAction()).assertIsFocused()
+		searchField.assertIsFocused()
 	}
 
 	@Test
@@ -333,12 +364,54 @@ class LibraryScreenTest {
 	}
 
 	@Test
-	fun aKeyboardStartsAtTheSearchField() {
+	fun aKeyboardStartsSomewhereWithoutOpeningTheSearch() {
 		InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
 		show(unlocked("Groceries"))
 		compose.waitForIdle()
 
-		compose.onNode(hasSetTextAction()).assertIsFocused()
+		assertEquals(1, compose.onAllNodes(isFocused()).fetchSemanticsNodes().size)
+		searchField.assertDoesNotExist()
+	}
+
+	@Test
+	fun aSearchInProgressIsStillOpenAfterUnlocking() {
+		val model = unlocked("Groceries", "Kayak")
+		onMain { model.updateSearch("kayak") }
+		show(model)
+
+		searchField.assertIsDisplayed()
+		searchField.assertIsNotFocused()
+		waitFor { count("Groceries") == 0 }
+	}
+
+	@Test
+	fun aNewNoteFromElsewhereLeavesTheSearch() {
+		val model = unlocked("Groceries")
+		show(model)
+		openSearch()
+		searchField.performTextInput("gro")
+		waitFor { model.searchText == "gro" }
+
+		model.await { createNote() }
+		waitFor { compose.onAllNodes(hasHint(text(R.string.note))).fetchSemanticsNodes().size == 1 }
+		compose.onNodeWithContentDescription(text(R.string.back)).performClick()
+
+		compose.waitForIdle()
+		searchField.assertDoesNotExist()
+		newNote.assertIsDisplayed()
+	}
+
+	@Test
+	fun aNewNoteBesideTheSearchLeavesIt() {
+		val model = unlocked("Groceries")
+		size = DpSize(1000.dp, 800.dp)
+		show(model)
+		openSearch()
+
+		model.await { createNote() }
+
+		waitFor { !isSearching() }
+		newNote.assertIsDisplayed()
 	}
 
 	@Test
@@ -377,12 +450,13 @@ class LibraryScreenTest {
 		show(model)
 		compose.onNodeWithText("Groceries").assertIsDisplayed()
 
-		compose.onNode(hasSetTextAction()).performTextInput("kayak")
+		openSearch()
+		searchField.performTextInput("kayak")
 		waitFor { count("Groceries") == 0 }
 		compose.onNodeWithText("Trip").assertIsDisplayed()
 		compose.onNodeWithText(text(R.string.results)).assertIsDisplayed()
 
-		compose.onNode(hasSetTextAction()).performTextInput(" absent")
+		searchField.performTextInput(" absent")
 		waitFor { count(text(R.string.no_results)) == 1 }
 
 		compose.onNodeWithContentDescription(text(R.string.clear_search)).performClick()

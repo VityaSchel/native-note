@@ -18,8 +18,12 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - One `AppModel` held by the `Application`, with Compose snapshot state, mirroring macOS; no ViewModels
 - `NavigableListDetailPaneScaffold`: two panes on wide windows, one on phones. Onboarding, locked and unlocked are model state, not navigation
 - `MaterialExpressiveTheme` with `dynamicLightColorScheme` or `dynamicDarkColorScheme` and no colors of its own. On API 34+ these read the system's color roles, which One UI 9 leaves fixed while its palette follows the user; when the primary role's hue contradicts `system_accent1` and the contrast level is standard, the scheme is the one Compose builds from the palette on API 31–33
+- Layout, spacing, shapes, motion and icons come from Material components and their slots; a custom layout needs a reason
+- An option in a dialog that applies only when the dialog is confirmed is a leading checkbox, not a switch. The whole row toggles it and the press shows on the checkbox alone, as on the platform's `CompoundButton`, since `AlertDialog` pads its content and a row ripple would start at the label's first letter
+- Keyboard focus shows as an inset ring (`InsetFocusRingThemeConfiguration`) instead of the default faint state layer
+- Dialogs are at most the window's width minus Material's 24dp on each side. `AlertDialog` leaves its width to the platform, which on stock Android leaves about that much, but One UI makes the app's dialog windows full width; inside a test activity with a stock Material theme it does not, so the journey test checks it in `MainActivity`
 - The editor is `BasicTextField(TextFieldState)`; an `OutputTransformation` styles the first line as the title
-- The search field is a plain `TextField`: `AppBarWithSearch` blocks the keyboard of the field inside it, since it expects a separate expanded search
+- The search field is a plain `TextField` in the `TopAppBar`: `AppBarWithSearch` blocks the keyboard of the field inside it, since it expects a separate expanded search
 - HKDF is written over `Mac("HmacSHA256")`
 - The export zip writer and reader are our own, as on macOS: `ZipOutputStream` records MS-DOS as the creator, so `unzip` reads UTF-8 names in a DOS code page, and it refuses repeated names and adds a timestamp extra field after 2099. An import needing more than a quarter of the free heap is refused as too large for this device
 - The export and import pickers keep the library unlocked while they are in front; turning the screen off locks it anyway, and a lock cancels the export the save picker was opened for
@@ -36,7 +40,7 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 
 ## Accessibility
 
-- An editable field's name is its `hintText`, and a visible placeholder is cleared from semantics: `contentDescription` on an editable field replaces its value. An error's text is set with `error()`; `isError` alone is spoken as "Invalid input"
+- An editable field's name is its `hintText`, and its visible label (a floating label, or a placeholder in the search bar) is cleared from semantics: `contentDescription` on an editable field replaces its value. An error's text is set with `error()`; `isError` alone is spoken as "Invalid input"
 - Each screen and step has a pane title that differs from its heading and from the screen before it, which is what makes TalkBack announce the change and move to the heading. The adaptive panes' own titles are replaced through their string resources
 - With touch exploration on, a screen's first field takes focus only once the screen has been announced, and the Undo snackbar stays until it is dismissed or a note opens
 - The pane scaffold focuses the pane it shows; in touch mode an empty focus target takes that focus, so neither the search field nor the editor opens the keyboard
@@ -123,4 +127,4 @@ Turning it on takes one touch: encrypt `localDbKey`, store the blob, read it bac
 - The package and the off-Play key are registered for Android developer verification
 - The launcher icon is adaptive, generated from macOS's `AppIcon.icon`: the page is the background, so the launcher's mask is the page, and the rows and rings are the foreground and the monochrome layer
 - Store metadata lives in `clients/android/fastlane` for F-Droid and Play. Play's Data safety form declares no data collected or shared, since notes leave the phone only end-to-end encrypted to a server the user runs; the privacy policy is [docs/PRIVACY.md](../../docs/PRIVACY.md)
-- Settings → Third-Party Licenses shows `assets/licenses.txt`: SQLCipher's BSD notice, the SQLite and LibTomCrypt public-domain statements, Argon2's header (used under CC0) and the Apache-2.0 libraries with the license's full text. `LicensesTest` holds each text word for word to the pinned source and fails for a declared dependency group the file does not name
+- Settings → Third-party licenses shows `assets/licenses.txt`: SQLCipher's BSD notice, the SQLite and LibTomCrypt public-domain statements, Argon2's header (used under CC0) and the Apache-2.0 libraries with the license's full text. `LicensesTest` holds each text word for word to the pinned source and fails for a declared dependency group the file does not name
