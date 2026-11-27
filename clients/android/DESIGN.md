@@ -31,7 +31,7 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - Share to Native Note (`ACTION_SEND`, `text/plain`) and a New Note launcher shortcut unlock first; shared text stays in memory only
 - Password fields, the editor, the search field, the API key and the recovery words keep their text in `remember`, never in saveable state: a stopped activity's saved state goes to the system process. `configChanges` keeps the activity through every change Compose applies itself, so a rotation or a new font size loses none of it
 - The pane scaffold's navigator moves its panes only when navigated, so the list screen re-applies its value when the window changes
-- An edit carries the `v` of the note the editor shows, not of the row now in the list, so a key handled after a pull lands on a copy; a note left during a commit is flushed when the commit ends
+- An edit carries the `v` of the note the editor shows, not of the row now in the list, so a key handled after a pull lands on a copy; a note left during a commit is flushed when the commit ends. A pulled text clears the editor's undo history, as on macOS, so undo never restores the text from before it
 - An export refused or cut off deletes the document it left empty or partly written
 
 ## Accessibility

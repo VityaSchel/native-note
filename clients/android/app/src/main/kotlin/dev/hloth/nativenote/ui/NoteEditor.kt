@@ -118,6 +118,7 @@ private fun EditorText(
 		} else if (text.text.toString() != note.body) {
 			sent.clear()
 			text.setTextAndPlaceCursorAtEnd(note.body)
+			text.undoState.clearHistory()
 		}
 	}
 	TakeFocus(focus, takesFocus, onFocused)

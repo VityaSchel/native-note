@@ -4,15 +4,21 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.withKeyDown
 import androidx.compose.ui.text.AnnotatedString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.hloth.nativenote.storage.Note
 import java.util.UUID
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -50,5 +56,24 @@ class NoteEditorTest {
 
 		compose.runOnIdle { note = note.copy(body = "pulled") }
 		editor.assertTextContains("pulled")
+	}
+
+	@Test
+	fun undoAfterAPullNeverBringsBackTheTextFromBeforeIt() {
+		val editor = compose.onNode(hasSetTextAction())
+		compose.setContent {
+			NativeNoteTheme {
+				NoteEditor(note, rememberGrouping(), takesFocus = false, onFocused = {}, onEdit = { note = note.copy(body = it) }, onDelete = {}, onBack = null)
+			}
+		}
+		editor.performTextInput("typed here")
+		compose.runOnIdle { note = note.copy(body = "pulled from another device") }
+		editor.assertTextEquals("pulled from another device")
+
+		editor.performKeyInput { withKeyDown(Key.CtrlLeft) { pressKey(Key.Z) } }
+
+		compose.waitForIdle()
+		editor.assertTextEquals("pulled from another device")
+		assertEquals("pulled from another device", note.body)
 	}
 }
