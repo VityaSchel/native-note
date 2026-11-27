@@ -582,12 +582,12 @@ class AppModel(
 		return id
 	}
 
-	fun restore(kept: UUID): UUID? {
+	fun restore(kept: UUID, selects: Boolean = true): UUID? {
 		val store = store ?: return null
 		if (notes.any { it.id == kept }) return null
 		val note = keptForUndo.remove(kept)?.unsyncedCopy() ?: return null
 		notes = notes + note
-		select(note.id)
+		if (selects) select(note.id)
 		scheduleSave(note, store)
 		sync.soon()
 		val ranked = matches

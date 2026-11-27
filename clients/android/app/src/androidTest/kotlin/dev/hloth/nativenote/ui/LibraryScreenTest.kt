@@ -19,16 +19,21 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.rightClick
 import androidx.compose.ui.test.then
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.ResolvedTextDirection
@@ -120,6 +125,8 @@ class LibraryScreenTest {
 
 	private fun click(node: SemanticsNodeInteraction) = node.fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
 
+	private fun text(id: Int, quantity: Int) = InstrumentationRegistry.getInstrumentation().targetContext.resources.getQuantityString(id, quantity, quantity)
+
 	private fun waitFor(condition: () -> Boolean) = compose.waitUntil(10_000, condition)
 
 	private fun count(text: String) = compose.onAllNodes(hasText(text)).fetchSemanticsNodes().size
@@ -151,6 +158,46 @@ class LibraryScreenTest {
 		compose.waitForIdle()
 		searchField.assertDoesNotExist()
 		newNote.assertIsDisplayed()
+	}
+
+	@Test
+	fun holdingANoteOffersDeleteWithUndo() {
+		val model = unlocked("Groceries", "Kayak")
+		show(model)
+		compose.onNodeWithText(text(R.plurals.notes_count, 2)).assertIsDisplayed()
+
+		compose.onNodeWithText("Groceries").performTouchInput { longClick() }
+		compose.onNodeWithText(text(R.string.delete)).performClick()
+
+		waitFor { count("Groceries") == 0 }
+		assertEquals(null, onMain { model.selection })
+		compose.onNodeWithText(text(R.plurals.notes_count, 1)).assertIsDisplayed()
+		waitFor { count(text(R.string.undo)) == 1 }
+		compose.onNodeWithText(text(R.string.undo)).performClick()
+		waitFor { onMain { model.notes.size } == 2 }
+		compose.waitForIdle()
+		assertEquals(null, onMain { model.selection })
+		compose.onNode(hasHint(text(R.string.note))).assertDoesNotExist()
+		compose.onNodeWithText(text(R.plurals.notes_count, 2)).assertIsDisplayed()
+	}
+
+	@Test
+	fun aRightClickOpensTheSameMenuWithoutOpeningTheNote() {
+		val model = unlocked("Groceries")
+		show(model)
+
+		compose.onNodeWithText("Groceries").performMouseInput { rightClick() }
+
+		compose.onNodeWithText(text(R.string.delete)).assertIsDisplayed()
+		assertEquals(null, onMain { model.selection })
+	}
+
+	@Test
+	fun holdingIsOfferedToScreenReadersAsShowingActions() {
+		show(unlocked("Groceries"))
+
+		val row = compose.onNode(hasText("Groceries") and hasClickAction()).fetchSemanticsNode().config
+		assertEquals(text(R.string.note_actions), row[SemanticsActions.OnLongClick].label)
 	}
 
 	@Test

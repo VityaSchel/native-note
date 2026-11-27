@@ -33,6 +33,8 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - Recovery-word fields set `ContentDataType.None`, which keeps autofill services out; `importantForAutofill` on the Compose view does not. Passwords and the API key keep Compose's tags, so they can be filled, but typing in them cancels the autofill session, so no service offers to save them
 - English only, every string in `strings.xml`; the libraries' translations are left out
 - Share to Native Note (`ACTION_SEND`, `text/plain`) and a New Note launcher shortcut unlock first; shared text stays in memory only
+- Help opens the getting-started guide in the browser, from Settings only: leaving the app locks it, and a lock ends onboarding and sync setup, so neither links out
+- The editor's Undo and Redo use the text field's own history
 - Password fields, the editor, the search field, the API key and the recovery words keep their text in `remember`, never in saveable state: a stopped activity's saved state goes to the system process. `configChanges` keeps the activity through every change Compose applies itself, so a rotation or a new font size loses none of it
 - The pane scaffold's navigator moves its panes only when navigated, so the list screen re-applies its value when the window changes
 - An edit carries the `v` of the note the editor shows, not of the row now in the list, so a key handled after a pull lands on a copy; a note left during a commit is flushed when the commit ends. A pulled text clears the editor's undo history, as on macOS, so undo never restores the text from before it
@@ -60,7 +62,7 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 | Enrollment state hash                            | `KeyPermanentlyInvalidatedException` from `Cipher.init`                                                                  |
 | Copy the recovery words, concealed and transient | Not offered: leaving the app to paste them would lock and cancel setup                                                   |
 | Editor zoom                                      | The system font scale                                                                                                    |
-| Menus and keyboard shortcuts                     | None                                                                                                                     |
+| Menus and keyboard shortcuts                     | A note row's menu, opened by touch and hold or a right-click, with Delete and the editor's Undo snackbar; no keyboard shortcuts|
 
 The database, its sidecars, the unlock record and the biometric blob live in `noBackupFilesDir`. `allowBackup` is off and `dataExtractionRules` exclude everything.
 

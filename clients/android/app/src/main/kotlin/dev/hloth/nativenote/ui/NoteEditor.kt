@@ -70,6 +70,7 @@ fun NoteEditor(
 	key(note.id) {
 		val scroll = rememberScrollState()
 		val bar = TopAppBarDefaults.pinnedScrollBehavior(scroll)
+		val text = remember { TextFieldState(note.body) }
 		Scaffold(
 			topBar = {
 				TopAppBar(
@@ -80,13 +81,15 @@ fun NoteEditor(
 						}
 					},
 					actions = {
+						IconButton(onClick = text.undoState::undo, enabled = text.undoState.canUndo) { Icon(painterResource(R.drawable.ic_undo), stringResource(R.string.undo)) }
+						IconButton(onClick = text.undoState::redo, enabled = text.undoState.canRedo) { Icon(painterResource(R.drawable.ic_redo), stringResource(R.string.redo)) }
 						IconButton(onClick = onDelete) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
 					},
 					scrollBehavior = bar,
 				)
 			},
 		) { padding ->
-			EditorText(note, grouping, takesFocus, onFocused, onEdit, scroll, Modifier.padding(padding).consumeWindowInsets(padding).imePadding())
+			EditorText(note, text, grouping, takesFocus, onFocused, onEdit, scroll, Modifier.padding(padding).consumeWindowInsets(padding).imePadding())
 		}
 	}
 }
@@ -94,6 +97,7 @@ fun NoteEditor(
 @Composable
 private fun EditorText(
 	note: Note,
+	text: TextFieldState,
 	grouping: NoteGrouping,
 	takesFocus: Boolean,
 	onFocused: () -> Unit,
@@ -101,7 +105,6 @@ private fun EditorText(
 	scroll: ScrollState,
 	modifier: Modifier,
 ) {
-	val text = remember { TextFieldState(note.body) }
 	val focus = remember { FocusRequester() }
 	val edit by rememberUpdatedState(onEdit)
 	val titleStyle = MaterialTheme.typography.titleLarge.toSpanStyle().copy(fontWeight = FontWeight.Bold)

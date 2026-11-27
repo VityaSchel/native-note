@@ -17,6 +17,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -39,6 +41,10 @@ fun SettingsScreen(
 	var enablingBiometrics by rememberSaveable { mutableStateOf(false) }
 	var failure by remember { mutableStateOf<Failure?>(null) }
 	val scope = rememberCoroutineScope()
+	val uriHandler = LocalUriHandler.current
+	val context = LocalContext.current
+	@Suppress("DEPRECATION")
+	val version = remember(context) { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
 	SubpageScaffold(stringResource(R.string.settings), onBack) { padding ->
 		Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
 			SettingsSection(
@@ -57,7 +63,20 @@ fun SettingsScreen(
 			)
 			sync()
 			exchange()
-			SettingsSection(stringResource(R.string.settings_about), listOf(SettingsRow(stringResource(R.string.third_party_licenses), onClick = onLicenses)))
+			SettingsSection(
+				stringResource(R.string.settings_about),
+				listOf(
+					SettingsRow(stringResource(R.string.help), onClick = {
+						try {
+							uriHandler.openUri(HELP)
+						} catch (_: IllegalArgumentException) {
+							failure = Failure.Unexpected(R.string.help_unopened, HELP)
+						}
+					}),
+					SettingsRow(stringResource(R.string.third_party_licenses), onClick = onLicenses),
+					SettingsRow(stringResource(R.string.version), version),
+				),
+			)
 		}
 	}
 	if (changingPassword) ChangePasswordDialog(onDismiss = { changingPassword = false }, onChangePassword)
@@ -164,3 +183,5 @@ private fun ChangePasswordDialog(onDismiss: () -> Unit, onChangePassword: suspen
 		dismissButton = { TextButton(onClick = onDismiss, enabled = !working) { Text(stringResource(R.string.cancel)) } },
 	)
 }
+
+private const val HELP = "https://git.hloth.dev/hloth/native-note/src/branch/main/docs/guides/getting-started.md"

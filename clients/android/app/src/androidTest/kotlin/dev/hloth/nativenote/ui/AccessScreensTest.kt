@@ -18,7 +18,9 @@ import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -47,6 +49,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -360,6 +363,37 @@ class AccessScreensTest {
 		field(R.string.password).performTextInput("correct horse")
 		field(R.string.confirm_password).performTextInput("correct horse")
 		node(R.string.next).performClick()
+	}
+
+	@Test
+	fun aboutOffersHelpAndTheVersion() {
+		val opened = mutableListOf<String>()
+		val handler = object : UriHandler {
+			override fun openUri(uri: String) {
+				opened += uri
+			}
+		}
+		val context = InstrumentationRegistry.getInstrumentation().targetContext
+		@Suppress("DEPRECATION")
+		val version = context.packageManager.getPackageInfo(context.packageName, 0).versionName!!
+		setContent { CompositionLocalProvider(LocalUriHandler provides handler) { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }) } }
+
+		compose.onNodeWithText(version).performScrollTo().assertIsDisplayed()
+		node(R.string.help).performScrollTo().performClick()
+
+		assertEquals(listOf("https://git.hloth.dev/hloth/native-note/src/branch/main/docs/guides/getting-started.md"), opened)
+	}
+
+	@Test
+	fun helpWithoutABrowserGivesTheAddressInstead() {
+		val handler = object : UriHandler {
+			override fun openUri(uri: String) = throw IllegalArgumentException("Can't open $uri.")
+		}
+		setContent { CompositionLocalProvider(LocalUriHandler provides handler) { SettingsScreen(onBack = {}, onChangePassword = { _, _ -> null }) } }
+
+		node(R.string.help).performScrollTo().performClick()
+
+		compose.onNode(hasText("https://git.hloth.dev/hloth/native-note/src/branch/main/docs/guides/getting-started.md", substring = true) and hasAnyAncestor(isDialog())).assertIsDisplayed()
 	}
 
 	@Test

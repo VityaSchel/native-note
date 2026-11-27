@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.clearText
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +68,7 @@ import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -83,6 +85,7 @@ import dev.hloth.nativenote.model.NoteGroup
 import dev.hloth.nativenote.model.NoteGrouping
 import dev.hloth.nativenote.model.SyncStatus
 import dev.hloth.nativenote.storage.Note
+import java.util.UUID
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -116,12 +119,25 @@ fun LibraryScreen(model: AppModel, onSettings: () -> Unit) {
 		if (showsDetail && !twoPane) snackbar.currentSnackbarData?.takeIf { it.visuals.duration == SnackbarDuration.Indefinite }?.dismiss()
 	}
 
+	val deleteWithUndo = { id: UUID, reopens: Boolean ->
+		val kept = model.keepForUndo(id)
+		val deleting = model.delete(id)
+		scope.launch {
+			if (!deleting.await() || kept == null) return@launch
+			snackbar.currentSnackbarData?.dismiss()
+			val explores = accessibility.isTouchExplorationEnabled
+			val duration = if (explores) SnackbarDuration.Indefinite else SnackbarDuration.Long
+			if (snackbar.showSnackbar(deleted, undo, withDismissAction = explores, duration) == SnackbarResult.ActionPerformed) model.restore(kept, selects = reopens)
+		}
+		Unit
+	}
+
 	NavigableListDetailPaneScaffold(
 		navigator = navigator,
 		listPane = {
 			AnimatedPane {
 				PaneFocusSink()
-				NoteList(model, grouping, twoPane, snackbar, announcedSync, onSyncAnnounced = { announcedSync = it }, onSettings)
+				NoteList(model, grouping, twoPane, snackbar, announcedSync, onSyncAnnounced = { announcedSync = it }, onSettings, onDelete = { deleteWithUndo(it, false) })
 			}
 		},
 		detailPane = {
@@ -142,17 +158,7 @@ fun LibraryScreen(model: AppModel, onSettings: () -> Unit) {
 						takesFocus = model.focusesEditor == note.id,
 						onFocused = model::editorTookFocus,
 						onEdit = { model.edit(note.id, it, shownAt = note.v) },
-						onDelete = {
-							val kept = model.keepForUndo(note.id)
-							val deleting = model.delete(note.id)
-							scope.launch {
-								if (!deleting.await() || kept == null) return@launch
-								snackbar.currentSnackbarData?.dismiss()
-								val explores = accessibility.isTouchExplorationEnabled
-								val duration = if (explores) SnackbarDuration.Indefinite else SnackbarDuration.Long
-								if (snackbar.showSnackbar(deleted, undo, withDismissAction = explores, duration) == SnackbarResult.ActionPerformed) model.restore(kept)
-							}
-						},
+						onDelete = { deleteWithUndo(note.id, true) },
 						onBack = if (twoPane) null else ({ scope.launch { if (navigator.canNavigateBack(BackNavigationBehavior.PopLatest)) navigator.navigateBack(BackNavigationBehavior.PopLatest) } }),
 					)
 				}
@@ -167,7 +173,7 @@ private fun PaneFocusSink() {
 	Box(Modifier.size(1.dp).focusProperties { canFocus = inputMode.inputMode == InputMode.Touch }.clearAndSetSemantics {}.focusable())
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun NoteList(
 	model: AppModel,
@@ -177,6 +183,7 @@ private fun NoteList(
 	announcedSync: Boolean?,
 	onSyncAnnounced: (Boolean?) -> Unit,
 	onSettings: () -> Unit,
+	onDelete: (UUID) -> Unit,
 ) {
 	val results = stringResource(R.string.results)
 	val groups by remember(grouping, results) { derivedStateOf { model.groups(grouping, results) } }
@@ -199,6 +206,7 @@ private fun NoteList(
 		topBar = {
 			TopAppBar(
 				title = { if (searching) SearchField(search, searchFocus) else Text(stringResource(R.string.app_name), Modifier.semantics { heading() }) },
+				subtitle = { if (!searching) Text(pluralStringResource(R.plurals.notes_count, model.notes.size, model.notes.size)) },
 				navigationIcon = {
 					if (searching) IconButton(onClick = stopSearching) { Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back)) }
 				},
@@ -229,7 +237,7 @@ private fun NoteList(
 			modifier = Modifier.padding(top = padding.calculateTopPadding()),
 			enabled = syncs,
 		) {
-			NoteRows(model, grouping, twoPane, groups, PaddingValues(
+			NoteRows(model, grouping, twoPane, groups, onDelete, PaddingValues(
 				start = padding.calculateStartPadding(direction),
 				end = padding.calculateEndPadding(direction),
 				bottom = padding.calculateBottomPadding() + FAB_CLEARANCE,
@@ -262,7 +270,7 @@ private fun SearchField(search: TextFieldState, focus: FocusRequester) {
 }
 
 @Composable
-private fun NoteRows(model: AppModel, grouping: NoteGrouping, twoPane: Boolean, groups: List<NoteGroup>, contentPadding: PaddingValues) {
+private fun NoteRows(model: AppModel, grouping: NoteGrouping, twoPane: Boolean, groups: List<NoteGroup>, onDelete: (UUID) -> Unit, contentPadding: PaddingValues) {
 	LazyColumn(Modifier.fillMaxSize().semantics { traversalIndex = 1f }, contentPadding = contentPadding) {
 		if (groups.isEmpty()) {
 			item(key = "empty") {
@@ -286,7 +294,7 @@ private fun NoteRows(model: AppModel, grouping: NoteGrouping, twoPane: Boolean, 
 				)
 			}
 			items(group.notes, key = { it.id }, contentType = { "note" }) { note ->
-				NoteRow(note, grouping, selected = (note.id == model.selection).takeIf { twoPane }, onClick = { model.select(note.id) })
+				NoteRow(note, grouping, selected = (note.id == model.selection).takeIf { twoPane }, onClick = { model.select(note.id) }, onDelete = { onDelete(note.id) })
 			}
 		}
 	}

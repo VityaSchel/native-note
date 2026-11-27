@@ -44,6 +44,8 @@
 	<string name="delete">Delete</string>
 	<string name="note_deleted">Note deleted</string>
 	<string name="undo">Undo</string>
+	<string name="redo">Redo</string>
+	<string name="note_actions">Show actions</string>
 
 	<string name="biometric_prompt_title">Unlock Native Note</string>
 	<string name="biometric_enable_prompt_title">Turn on biometric unlock</string>
@@ -129,6 +131,10 @@
 	<string name="import_passphrase_message">Enter the passphrase the export was made with.</string>
 	<string name="import_action">Import</string>
 	<string name="wrong_export_passphrase">Wrong passphrase, or the export is damaged.</string>
+	<plurals name="notes_count">
+		<item quantity="one">%d note</item>
+		<item quantity="other">%d notes</item>
+	</plurals>
 	<plurals name="exported_notes">
 		<item quantity="one">Exported %d note.</item>
 		<item quantity="other">Exported %d notes.</item>
@@ -148,6 +154,9 @@
 
 	<string name="settings_about">About</string>
 	<string name="third_party_licenses">Third-party licenses</string>
+	<string name="help">Help</string>
+	<string name="help_unopened">No app on this device opens web pages. The help is at this address:</string>
+	<string name="version">Version</string>
 
 	<string name="settings_unlock">Unlock</string>
 	<string name="change_password">Change password</string>
