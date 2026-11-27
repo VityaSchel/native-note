@@ -17,7 +17,7 @@ No Google Play services, Firebase, crash reporter, analytics, dependency-injecti
 - AGP's built-in Kotlin, with the Compose compiler plugin at the Kotlin version. Versions are pinned inline in the build files, and every artifact is checked by `gradle/verification-metadata.xml`
 - One `AppModel` held by the `Application`, with Compose snapshot state, mirroring macOS; no ViewModels
 - `NavigableListDetailPaneScaffold`: two panes on wide windows, one on phones. Onboarding, locked and unlocked are model state, not navigation
-- `MaterialExpressiveTheme` with `dynamicLightColorScheme` or `dynamicDarkColorScheme` and no colors of its own
+- `MaterialExpressiveTheme` with `dynamicLightColorScheme` or `dynamicDarkColorScheme` and no colors of its own. On API 34+ these read the system's color roles, which One UI 9 leaves fixed while its palette follows the user; when the primary role's hue contradicts `system_accent1` and the contrast level is standard, the scheme is the one Compose builds from the palette on API 31–33
 - The editor is `BasicTextField(TextFieldState)`; an `OutputTransformation` styles the first line as the title
 - The search field is a plain `TextField`: `AppBarWithSearch` blocks the keyboard of the field inside it, since it expects a separate expanded search
 - HKDF is written over `Mac("HmacSHA256")`
