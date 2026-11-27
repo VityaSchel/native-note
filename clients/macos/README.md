@@ -2,10 +2,8 @@
 
 Native, free, libre, open-source, end-to-end encrypted, lightweight personal note-taking macOS app built with SwiftUI.
 
-<picture>
-	<source media="(prefers-color-scheme: dark)" srcset="https://git.hloth.dev/hloth/native-note/raw/branch/main/docs/screenshots/macos-1-dark.avif">
-	<img alt="Native Note on macOS" src="https://git.hloth.dev/hloth/native-note/raw/branch/main/docs/screenshots/macos-1-light.avif" width="1012">
-</picture>
+![Native Note on macOS](../../docs/screenshots/macos-1-light.avif#gh-light-mode-only)
+![Native Note on macOS](../../docs/screenshots/macos-1-dark.avif#gh-dark-mode-only)
 
 - [Download v0.1.1 for Apple silicon](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.1/native-note-v0.1.1-macos-arm64.zip) (2.4 MB)
 - [Download v0.1.1 for Intel](https://git.hloth.dev/hloth/native-note/releases/download/v0.1.1/native-note-v0.1.1-macos-x86_64.zip) (2.5 MB)
