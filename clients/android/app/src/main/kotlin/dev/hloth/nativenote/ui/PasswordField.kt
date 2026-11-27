@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -52,6 +53,7 @@ fun PasswordField(
 	LaunchedEffect(state) { snapshotFlow { state.text.toString() }.drop(1).collect { edited() } }
 	LaunchedEffect(error) { if (error != null) focus.requestFocus() }
 	LaunchedEffect(error, keyboard) { if (error != null) inView.bringIntoView() }
+	NeverOfferedForSaving(state)
 	NoPersonalizedLearning {
 		OutlinedSecureTextField(
 			state = state,
@@ -83,4 +85,10 @@ fun NoPersonalizedLearning(content: @Composable () -> Unit) {
 		},
 		content = content,
 	)
+}
+
+@Composable
+fun NeverOfferedForSaving(state: TextFieldState) {
+	val autofill = LocalAutofillManager.current
+	LaunchedEffect(state, autofill) { snapshotFlow { state.text.toString() }.drop(1).collect { autofill?.cancel() } }
 }

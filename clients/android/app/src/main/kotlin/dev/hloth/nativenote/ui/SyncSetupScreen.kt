@@ -274,6 +274,7 @@ private fun ServerField(server: TextFieldState, enabled: Boolean, takesFocus: Bo
 	val name = stringResource(R.string.server)
 	val focus = remember { FocusRequester() }
 	TakeFocus(focus, takesFocus)
+	NeverOfferedForSaving(server)
 	OutlinedTextField(
 		server,
 		Modifier.fillMaxWidth().focusRequester(focus).semantics { hintText = name },

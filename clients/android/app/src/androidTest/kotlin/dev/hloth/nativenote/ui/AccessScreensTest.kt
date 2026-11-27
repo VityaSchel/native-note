@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -15,8 +16,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -57,6 +60,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.hloth.nativenote.R
 import dev.hloth.nativenote.model.Failure
+import dev.hloth.nativenote.support.RecordingAutofillManager
+import dev.hloth.nativenote.support.appModel
+import dev.hloth.nativenote.support.await
 import dev.hloth.nativenote.support.hasHint
 import dev.hloth.nativenote.support.pressBack
 import org.junit.Assert.assertEquals
@@ -64,10 +70,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AccessScreensTest {
+	@get:Rule
+	val folder = TemporaryFolder()
+
 	@get:Rule
 	val compose = createComposeRule()
 
@@ -276,15 +286,70 @@ class AccessScreensTest {
 
 		assertFalse(finished)
 		node(R.string.biometric_offer_title).assertIsDisplayed()
+		assertEquals(LiveRegionMode.Assertive, node(R.string.biometric_not_set_up).fetchSemanticsNode().config[SemanticsProperties.LiveRegion])
 	}
 
 	@Test
-	fun theBiometricOfferIsOverOnceTheTypedPasswordIsGone() {
+	fun theBiometricOfferAsksForThePasswordOnceTheTypedOneIsGone() {
+		var enabledWith: String? = null
 		var finished = false
-		compose.setContent { OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {}, offersBiometrics = true, onFinish = { finished = true }) }
+		compose.setContent {
+			OnboardingScreen(
+				hasSecureHardware = true,
+				isWorking = false,
+				onSetUp = {},
+				offersBiometrics = true,
+				onEnableBiometrics = {
+					enabledWith = it
+					null
+				},
+				onFinish = { finished = true },
+			)
+		}
+
+		node(R.string.set_up_biometric_unlock).assertIsNotEnabled()
+		assertFalse(finished)
+		field(R.string.password).performTextInput("correct horse")
+		node(R.string.set_up_biometric_unlock).performClick()
 
 		compose.waitUntil(5_000) { finished }
-		node(R.string.set_up_biometric_unlock).assertDoesNotExist()
+		assertEquals("correct horse", enabledWith)
+	}
+
+	@Test
+	fun theBiometricOfferStaysUntilItIsAnswered() {
+		var available by mutableStateOf(true)
+		val model = appModel(folder.root, biometricsAvailable = { available })
+		model.await { start() }
+		model.await { setUp("correct horse") }
+		compose.setContent { NativeNoteTheme { NativeNoteApp(model) } }
+		node(R.string.biometric_offer_title).assertIsDisplayed()
+
+		available = false
+		compose.waitForIdle()
+		node(R.string.biometric_offer_title).assertIsDisplayed()
+
+		node(R.string.not_now).performClick()
+		node(R.string.sync_offer_title).assertIsDisplayed()
+	}
+
+	@Test
+	fun typingAPasswordNeverLeavesAnythingToSave() {
+		val autofill = RecordingAutofillManager()
+		compose.setContent {
+			CompositionLocalProvider(LocalAutofillManager provides autofill) {
+				OnboardingScreen(hasSecureHardware = true, isWorking = false, onSetUp = {})
+			}
+		}
+		node(R.string.next).performClick()
+
+		for (id in listOf(R.string.password, R.string.confirm_password)) {
+			val before = autofill.cancels
+			field(id).performTextInput("correct horse")
+			compose.waitForIdle()
+			assertTrue(autofill.cancels > before)
+		}
+		assertEquals(0, autofill.commits)
 	}
 
 	private fun setPassword() {

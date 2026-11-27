@@ -55,6 +55,7 @@
 	<string name="turn_on">Turn On</string>
 	<string name="biometric_offer_title">Unlock with Biometrics?</string>
 	<string name="biometric_offer_subtitle">Use a fingerprint or face to unlock Native Note instead of typing the password.</string>
+	<string name="biometric_not_set_up">Biometric unlock was not set up. Try again, or choose Not now.</string>
 	<string name="set_up_biometric_unlock">Set Up Biometric Unlock</string>
 	<string name="not_now">Not Now</string>
 

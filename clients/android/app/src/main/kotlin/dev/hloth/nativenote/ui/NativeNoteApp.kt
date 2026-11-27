@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -47,7 +48,8 @@ private fun Onboarding(model: AppModel) {
 	val prompt = rememberBiometricPrompt(stringResource(R.string.biometric_enable_prompt_title), stringResource(R.string.cancel))
 	var biometricsAnswered by rememberSaveable { mutableStateOf(false) }
 	var settingUpSync by rememberSaveable { mutableStateOf(false) }
-	val offersBiometrics = model.isOnboarding && model.canUseBiometrics && !biometricsAnswered
+	val canUseBiometrics = remember(model.isOnboarding) { model.canUseBiometrics }
+	val offersBiometrics = model.isOnboarding && canUseBiometrics && !biometricsAnswered
 	when {
 		!model.isOnboarding || offersBiometrics -> OnboardingScreen(
 			model.hasSecureHardware,
